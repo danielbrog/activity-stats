@@ -42,6 +42,7 @@ class LocationTrackingService : Service() {
     private var isRunning = false
     private var startedAtMillis = 0L
     private var seq = 0
+    private var filter = GpsFilter()
 
     private val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
         .setMinUpdateIntervalMillis(500L)
@@ -50,8 +51,19 @@ class LocationTrackingService : Service() {
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            val newFixes = result.locations.map { it.toGpsData(++seq) }.reversed()
-            TrackingState.update { it.copy(fixes = (newFixes + it.fixes).take(MAX_FIXES)) }
+            // Classify in arrival order, since the filter compares to the last kept fix.
+            val newFixes = result.locations.map { location ->
+                val fix = location.toGpsData(++seq)
+                fix.copy(status = filter.classify(fix))
+            }
+            val newlyKept = newFixes.count { it.status == FixStatus.Kept }
+            TrackingState.update {
+                it.copy(
+                    fixes = (newFixes.reversed() + it.fixes).take(MAX_FIXES),
+                    totalCount = it.totalCount + newFixes.size,
+                    keptCount = it.keptCount + newlyKept,
+                )
+            }
             postNotification()
         }
     }
@@ -89,11 +101,12 @@ class LocationTrackingService : Service() {
 
         startedAtMillis = System.currentTimeMillis()
         seq = 0
+        filter = GpsFilter()
         // Must be called promptly after startForegroundService().
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildNotification(fixCount = 0),
+            buildNotification(kept = 0, total = 0),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             } else {
@@ -149,10 +162,14 @@ class LocationTrackingService : Service() {
         ) {
             return
         }
-        notifications.notify(NOTIFICATION_ID, buildNotification(TrackingState.state.value.fixes.size))
+        val state = TrackingState.state.value
+        notifications.notify(
+            NOTIFICATION_ID,
+            buildNotification(kept = state.keptCount, total = state.totalCount),
+        )
     }
 
-    private fun buildNotification(fixCount: Int): Notification {
+    private fun buildNotification(kept: Int, total: Int): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -169,7 +186,7 @@ class LocationTrackingService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_tracking)
             .setContentTitle("Recording")
-            .setContentText(if (fixCount == 1) "1 fix" else "$fixCount fixes")
+            .setContentText("$kept kept of $total ${if (total == 1) "fix" else "fixes"}")
             .setWhen(startedAtMillis)
             .setShowWhen(true)
             .setUsesChronometer(true)

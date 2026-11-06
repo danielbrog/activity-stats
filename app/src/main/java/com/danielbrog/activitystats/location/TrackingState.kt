@@ -16,12 +16,18 @@ data class GpsData(
     val accuracyMeters: Float?,
     /** Speed in metres per second, or null if the provider gave none. */
     val speedMps: Float?,
+    /** The noise filter's decision; see [GpsFilter]. */
+    val status: FixStatus = FixStatus.Kept,
 )
 
 data class TrackingUiState(
     val isTracking: Boolean = false,
-    /** Newest first. */
+    /** Newest first, capped to the most recent fixes. */
     val fixes: List<GpsData> = emptyList(),
+    /** All fixes received this recording, including ones no longer in [fixes]. */
+    val totalCount: Int = 0,
+    /** Fixes the noise filter kept this recording. */
+    val keptCount: Int = 0,
     val locationServicesOff: Boolean = false,
 )
 

@@ -36,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -161,7 +162,9 @@ private fun GPSDisplayContent(
         Spacer(Modifier.height(12.dp))
         Text(
             text = when {
-                state.fixes.isNotEmpty() -> "${state.fixes.size} fixes, newest first"
+                state.totalCount > 0 ->
+                    "${state.totalCount} fixes · ${state.keptCount} kept · " +
+                        "${state.totalCount - state.keptCount} dropped"
                 state.isTracking -> "Waiting for the first fix… (can take a minute outdoors)"
                 else -> "Press Start to list GPS fixes as they arrive."
             },
@@ -207,9 +210,26 @@ private fun Notice(text: String) {
 private fun FixRow(fix: GpsData) {
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val mono = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    val kept = fix.status == FixStatus.Kept
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (kept) 1f else 0.45f)
+            .padding(vertical = 8.dp)
+    ) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("#${fix.seq}", fontWeight = FontWeight.Bold)
+            if (!kept) {
+                Text(
+                    text = "dropped · " + when (fix.status) {
+                        FixStatus.DroppedAccuracy -> fix.accuracyMeters
+                            ?.let { "accuracy %.0f m".format(Locale.US, it) } ?: "no accuracy"
+                        else -> "standing still"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Text(timeFormat.format(Date(fix.timeMillis)), style = mono)
         }
         Text("lat  %.6f".format(Locale.US, fix.latitude), style = mono)
@@ -253,10 +273,13 @@ private fun GPSDisplayPreview() {
             state = TrackingUiState(
                 isTracking = true,
                 fixes = listOf(
-                    GpsData(3, now, 43.653226, -79.383184, 4.2f, 2.85f),
-                    GpsData(2, now - 1_000, 43.653201, -79.383150, 5.0f, 2.70f),
-                    GpsData(1, now - 2_000, 43.653180, -79.383119, 12.6f, null),
+                    GpsData(4, now, 43.653226, -79.383184, 4.2f, 2.85f),
+                    GpsData(3, now - 1_000, 43.653220, -79.383180, 5.0f, 0.1f, FixStatus.DroppedStationary),
+                    GpsData(2, now - 2_000, 43.653201, -79.383150, 34.0f, 2.70f, FixStatus.DroppedAccuracy),
+                    GpsData(1, now - 3_000, 43.653180, -79.383119, 12.6f, null),
                 ),
+                totalCount = 4,
+                keptCount = 2,
             ),
             problem = PermissionProblem.None,
             notificationsOff = false,
