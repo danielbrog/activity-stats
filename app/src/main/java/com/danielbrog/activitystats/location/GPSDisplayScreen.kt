@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -28,19 +29,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -60,6 +61,8 @@ fun GPSDisplayScreen(
     val activity = LocalActivity.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     var problem by remember { mutableStateOf(PermissionProblem.None) }
+    // Ask for notification permission once per screen visit, not on every Start.
+    var askedForNotifications by rememberSaveable { mutableStateOf(false) }
 
     @SuppressLint("MissingPermission") // only called after checking ACCESS_FINE_LOCATION
     fun startIfAllowed(): Boolean {
@@ -83,25 +86,27 @@ fun GPSDisplayScreen(
         }
     }
 
-    // GPS updates stop when the screen turns off until the foreground service (M3) exists,
-    // so keep the screen on while recording.
-    val view = LocalView.current
-    DisposableEffect(state.isTracking) {
-        view.keepScreenOn = state.isTracking
-        onDispose { view.keepScreenOn = false }
-    }
-
     GPSDisplayContent(
         state = state,
         problem = problem,
+        notificationsOff = state.isTracking && !context.canPostNotifications(),
         onStart = {
-            if (!startIfAllowed()) {
-                permissionLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                    )
-                )
+            val missing = buildList {
+                if (!context.hasFineLocation()) {
+                    add(Manifest.permission.ACCESS_FINE_LOCATION)
+                    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    !askedForNotifications && !context.canPostNotifications()
+                ) {
+                    add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+            if (missing.isEmpty()) {
+                startIfAllowed()
+            } else {
+                askedForNotifications = true
+                permissionLauncher.launch(missing.toTypedArray())
             }
         },
         onStop = viewModel::stop,
@@ -114,6 +119,7 @@ fun GPSDisplayScreen(
 private fun GPSDisplayContent(
     state: TrackingUiState,
     problem: PermissionProblem,
+    notificationsOff: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -143,6 +149,13 @@ private fun GPSDisplayContent(
 
         if (state.isTracking && state.locationServicesOff) {
             Notice("Location is turned off on this phone. Turn it on in quick settings to get fixes.")
+        }
+
+        if (notificationsOff) {
+            Notice(
+                "Notifications are off, so the recording notification and its Stop button are " +
+                    "hidden. Tracking still works with the screen off."
+            )
         }
 
         Spacer(Modifier.height(12.dp))
@@ -221,6 +234,9 @@ private fun Context.hasFineLocation() =
     ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
 
+private fun Context.canPostNotifications() =
+    NotificationManagerCompat.from(this).areNotificationsEnabled()
+
 private fun Context.openAppSettings() {
     startActivity(
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
@@ -243,6 +259,7 @@ private fun GPSDisplayPreview() {
                 ),
             ),
             problem = PermissionProblem.None,
+            notificationsOff = false,
             onStart = {},
             onStop = {},
             onOpenSettings = {},
