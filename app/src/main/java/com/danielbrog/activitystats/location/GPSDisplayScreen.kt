@@ -191,7 +191,7 @@ private fun Notice(text: String) {
 }
 
 @Composable
-private fun FixRow(fix: GpsFix) {
+private fun FixRow(fix: GpsData) {
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val mono = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -237,9 +237,9 @@ private fun GPSDisplayPreview() {
             state = TrackingUiState(
                 isTracking = true,
                 fixes = listOf(
-                    GpsFix(3, now, 43.653226, -79.383184, 4.2f, 2.85f),
-                    GpsFix(2, now - 1_000, 43.653201, -79.383150, 5.0f, 2.70f),
-                    GpsFix(1, now - 2_000, 43.653180, -79.383119, 12.6f, null),
+                    GpsData(3, now, 43.653226, -79.383184, 4.2f, 2.85f),
+                    GpsData(2, now - 1_000, 43.653201, -79.383150, 5.0f, 2.70f),
+                    GpsData(1, now - 2_000, 43.653180, -79.383119, 12.6f, null),
                 ),
             ),
             problem = PermissionProblem.None,

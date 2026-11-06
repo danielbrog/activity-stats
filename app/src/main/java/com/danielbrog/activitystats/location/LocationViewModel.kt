@@ -18,8 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** One GPS fix as delivered by the fused location provider. */
-data class GpsFix(
+/** One GPS reading as delivered by the fused location provider. */
+data class GpsData(
     /** 1-based order of arrival within the current recording. */
     val seq: Int,
     val timeMillis: Long,
@@ -34,7 +34,7 @@ data class GpsFix(
 data class TrackingUiState(
     val isTracking: Boolean = false,
     /** Newest first. */
-    val fixes: List<GpsFix> = emptyList(),
+    val fixes: List<GpsData> = emptyList(),
     val locationServicesOff: Boolean = false,
 )
 
@@ -60,7 +60,7 @@ class LocationViewModel(application: Application) : AndroidViewModel(application
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            val newFixes = result.locations.map { it.toGpsFix(++seq) }.reversed()
+            val newFixes = result.locations.map { it.toGpsData(++seq) }.reversed()
             _state.update { it.copy(fixes = (newFixes + it.fixes).take(MAX_FIXES)) }
         }
     }
@@ -84,7 +84,7 @@ class LocationViewModel(application: Application) : AndroidViewModel(application
         client.removeLocationUpdates(callback)
     }
 
-    private fun Location.toGpsFix(seq: Int) = GpsFix(
+    private fun Location.toGpsData(seq: Int) = GpsData(
         seq = seq,
         timeMillis = time,
         latitude = latitude,
