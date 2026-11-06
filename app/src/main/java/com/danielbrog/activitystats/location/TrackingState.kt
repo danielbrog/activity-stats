@@ -20,6 +20,8 @@ data class GpsData(
     val speedMps: Float?,
     /** The noise filter's decision; see [GpsFilter]. */
     val status: FixStatus = FixStatus.Kept,
+    /** Metres above the WGS84 ellipsoid, or null if the provider gave none. */
+    val altitudeMeters: Double? = null,
 )
 
 data class TrackingUiState(

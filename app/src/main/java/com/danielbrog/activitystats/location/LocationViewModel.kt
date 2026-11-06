@@ -9,10 +9,15 @@ import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.SpeedDisplay
+import com.danielbrog.activitystats.ActivityStatsApp
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** What the live screen shows about saved activities. */
+data class SavedSummary(val title: String, val count: Int)
 
 /**
  * Gives the screens the live tracking state and display settings, and starts or stops
@@ -27,6 +32,14 @@ class LocationViewModel(application: Application) : AndroidViewModel(application
 
     val settings: StateFlow<DisplaySettings> = settingsRepository.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, DisplaySettings())
+
+    private val activities = (application as ActivityStatsApp).activityRepository
+
+    /** The latest saved activity and how many are saved, or null before the first one. */
+    val savedSummary: StateFlow<SavedSummary?> =
+        combine(activities.latestSaved, activities.savedCount) { latest, count ->
+            latest?.let { SavedSummary(title = it.title, count = count) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
     fun start() {

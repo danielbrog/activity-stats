@@ -51,6 +51,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.danielbrog.activitystats.location.LocationViewModel
+import com.danielbrog.activitystats.location.SavedSummary
 import com.danielbrog.activitystats.location.TrackingUiState
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.ActivityStats
@@ -73,6 +74,7 @@ fun LiveScreen(
     val activity = LocalActivity.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val saved by viewModel.savedSummary.collectAsStateWithLifecycle()
     var problem by remember { mutableStateOf(PermissionProblem.None) }
     // Ask for notification permission once per screen visit, not on every Start.
     var askedForNotifications by rememberSaveable { mutableStateOf(false) }
@@ -102,6 +104,7 @@ fun LiveScreen(
     LiveContent(
         state = state,
         settings = settings,
+        saved = saved,
         problem = problem,
         notificationsOff = state.isTracking && !context.canPostNotifications(),
         onStart = {
@@ -136,6 +139,7 @@ fun LiveScreen(
 private fun LiveContent(
     state: TrackingUiState,
     settings: DisplaySettings,
+    saved: SavedSummary?,
     problem: PermissionProblem,
     notificationsOff: Boolean,
     onStart: () -> Unit,
@@ -216,6 +220,15 @@ private fun LiveContent(
             style = MaterialTheme.typography.bodyLarge.withTabularDigits(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (!state.isTracking && saved != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Saved \"${saved.title}\" · ${saved.count} " +
+                    (if (saved.count == 1) "ride" else "rides") + " on this phone",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
 
         Spacer(Modifier.weight(1f))
 
@@ -361,6 +374,7 @@ private fun LivePreview() {
                 ),
             ),
             settings = DisplaySettings(),
+            saved = SavedSummary(title = "Morning ride", count = 3),
             problem = PermissionProblem.None,
             notificationsOff = false,
             onStart = {},
