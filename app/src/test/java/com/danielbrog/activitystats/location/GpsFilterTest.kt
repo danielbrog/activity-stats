@@ -1,5 +1,6 @@
 package com.danielbrog.activitystats.location
 
+import com.danielbrog.activitystats.stats.Geo
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -98,14 +99,14 @@ class GpsFilterTest {
 
     @Test
     fun oneDegreeOfLatitudeIsAbout111Km() {
-        val d = GpsFilter.distanceMeters(43.0, -79.0, 44.0, -79.0)
+        val d = Geo.distanceMeters(43.0, -79.0, 44.0, -79.0)
         assertEquals(111_195.0, d, 111_195.0 * 0.01)
     }
 
     @Test
     fun knownDistanceTorontoToMontrealWithinOnePercent() {
         // Toronto City Hall to Montreal City Hall is about 504 km great-circle.
-        val d = GpsFilter.distanceMeters(43.6534, -79.3841, 45.5088, -73.5540)
+        val d = Geo.distanceMeters(43.6534, -79.3841, 45.5088, -73.5540)
         assertEquals(504_000.0, d, 504_000.0 * 0.01)
     }
 }
