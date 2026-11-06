@@ -1,5 +1,7 @@
 package com.danielbrog.activitystats.location
 
+import com.danielbrog.activitystats.stats.ActivityStats
+import com.danielbrog.activitystats.stats.StatsEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +30,10 @@ data class TrackingUiState(
     val totalCount: Int = 0,
     /** Fixes the noise filter kept this recording. */
     val keptCount: Int = 0,
+    /** System clock time when this recording started, or 0 if none has started yet. */
+    val startedAtMillis: Long = 0L,
+    /** Latest stats from the [StatsEngine]. */
+    val stats: ActivityStats = ActivityStats(),
     val locationServicesOff: Boolean = false,
 )
 

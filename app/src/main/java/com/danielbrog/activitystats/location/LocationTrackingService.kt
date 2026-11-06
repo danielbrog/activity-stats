@@ -23,12 +23,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import com.danielbrog.activitystats.MainActivity
 import com.danielbrog.activitystats.R
+import com.danielbrog.activitystats.stats.StatsEngine
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import java.util.Locale
 
 /**
  * Foreground service of type `location` that owns GPS updates while recording, so tracking
@@ -43,6 +45,7 @@ class LocationTrackingService : Service() {
     private var startedAtMillis = 0L
     private var seq = 0
     private var filter = GpsFilter()
+    private var stats = StatsEngine(startedAtMillis = 0L)
 
     private val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
         .setMinUpdateIntervalMillis(500L)
@@ -57,11 +60,16 @@ class LocationTrackingService : Service() {
                 fix.copy(status = filter.classify(fix))
             }
             val newlyKept = newFixes.count { it.status == FixStatus.Kept }
+            newFixes.forEach(stats::add)
+            // Recalculate on every update, dropped fixes included, so current speed falls
+            // to 0 when standing still. "Now" is the newest fix's time, the engine's clock.
+            val latestStats = stats.snapshot(newFixes.maxOf { it.timeMillis })
             TrackingState.update {
                 it.copy(
                     fixes = (newFixes.reversed() + it.fixes).take(MAX_FIXES),
                     totalCount = it.totalCount + newFixes.size,
                     keptCount = it.keptCount + newlyKept,
+                    stats = latestStats,
                 )
             }
             postNotification()
@@ -102,11 +110,12 @@ class LocationTrackingService : Service() {
         startedAtMillis = System.currentTimeMillis()
         seq = 0
         filter = GpsFilter()
+        stats = StatsEngine(startedAtMillis)
         // Must be called promptly after startForegroundService().
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildNotification(kept = 0, total = 0),
+            buildNotification(distanceMeters = 0.0, kept = 0, total = 0),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             } else {
@@ -119,6 +128,7 @@ class LocationTrackingService : Service() {
         TrackingState.update {
             TrackingUiState(
                 isTracking = true,
+                startedAtMillis = startedAtMillis,
                 locationServicesOff = !LocationManagerCompat.isLocationEnabled(locationManager),
             )
         }
@@ -134,8 +144,8 @@ class LocationTrackingService : Service() {
         if (isRunning) {
             client.removeLocationUpdates(callback)
             isRunning = false
+            TrackingState.update { it.copy(isTracking = false, stats = finalStats()) }
         }
-        TrackingState.update { it.copy(isTracking = false) }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -144,10 +154,14 @@ class LocationTrackingService : Service() {
         if (isRunning) {
             client.removeLocationUpdates(callback)
             isRunning = false
-            TrackingState.update { it.copy(isTracking = false) }
+            TrackingState.update { it.copy(isTracking = false, stats = finalStats()) }
         }
         super.onDestroy()
     }
+
+    /** Stats frozen at the moment of stopping: full elapsed time, no current speed. */
+    private fun finalStats() =
+        stats.snapshot(System.currentTimeMillis()).copy(currentSpeedMps = 0.0)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -165,11 +179,15 @@ class LocationTrackingService : Service() {
         val state = TrackingState.state.value
         notifications.notify(
             NOTIFICATION_ID,
-            buildNotification(kept = state.keptCount, total = state.totalCount),
+            buildNotification(
+                distanceMeters = state.stats.distanceMeters,
+                kept = state.keptCount,
+                total = state.totalCount,
+            ),
         )
     }
 
-    private fun buildNotification(kept: Int, total: Int): Notification {
+    private fun buildNotification(distanceMeters: Double, kept: Int, total: Int): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -186,7 +204,11 @@ class LocationTrackingService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_tracking)
             .setContentTitle("Recording")
-            .setContentText("$kept kept of $total ${if (total == 1) "fix" else "fixes"}")
+            .setContentText(
+                "%.2f km · %d kept of %d %s".format(
+                    Locale.US, distanceMeters / 1_000.0, kept, total, if (total == 1) "fix" else "fixes",
+                )
+            )
             .setWhen(startedAtMillis)
             .setShowWhen(true)
             .setUsesChronometer(true)

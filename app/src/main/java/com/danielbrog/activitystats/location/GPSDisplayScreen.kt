@@ -29,7 +29,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -46,7 +48,11 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.danielbrog.activitystats.stats.ActivityStats
+import com.danielbrog.activitystats.stats.paceSecondsPerKm
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
+import kotlinx.coroutines.delay
+import kotlin.math.roundToLong
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -159,6 +165,10 @@ private fun GPSDisplayContent(
             )
         }
 
+        if (state.startedAtMillis > 0L) {
+            StatsCard(state)
+        }
+
         Spacer(Modifier.height(12.dp))
         Text(
             text = when {
@@ -180,6 +190,70 @@ private fun GPSDisplayContent(
             }
         }
     }
+}
+
+@Composable
+private fun StatsCard(state: TrackingUiState) {
+    val stats = state.stats
+    // Tick the elapsed time every second while recording; after Stop, show the final value.
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(state.isTracking) {
+        while (state.isTracking) {
+            now = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+    val elapsedMs = if (state.isTracking) now - state.startedAtMillis else stats.elapsedMs
+
+    Card(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            StatsRow("Distance", formatKm(stats.distanceMeters), "Pace", formatPace(stats.avgSpeedMps))
+            StatsRow("Elapsed", formatDuration(elapsedMs), "Moving", formatDuration(stats.movingMs))
+            StatsRow("Current", formatKmh(stats.currentSpeedMps), "Average", formatKmh(stats.avgSpeedMps))
+            StatsRow("Max", formatKmh(stats.maxSpeedMps), null, null)
+        }
+    }
+}
+
+@Composable
+private fun StatsRow(label1: String, value1: String, label2: String?, value2: String?) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        StatItem(label1, value1, Modifier.weight(1f))
+        if (label2 != null && value2 != null) {
+            StatItem(label2, value2, Modifier.weight(1f))
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun StatItem(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private fun formatKm(meters: Double) = "%.2f km".format(Locale.US, meters / 1_000.0)
+
+private fun formatKmh(mps: Double) = "%.1f km/h".format(Locale.US, mps * 3.6)
+
+private fun formatDuration(ms: Long): String {
+    val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
+    return "%d:%02d:%02d".format(
+        Locale.US, totalSeconds / 3_600, (totalSeconds % 3_600) / 60, totalSeconds % 60,
+    )
+}
+
+/** Average pace as m:ss per km, or a dash when too slow for pace to mean anything. */
+private fun formatPace(avgSpeedMps: Double): String {
+    val seconds = paceSecondsPerKm(avgSpeedMps)?.roundToLong() ?: return "– /km"
+    return "%d:%02d /km".format(Locale.US, seconds / 60, seconds % 60)
 }
 
 @Composable
@@ -280,6 +354,15 @@ private fun GPSDisplayPreview() {
                 ),
                 totalCount = 4,
                 keptCount = 2,
+                startedAtMillis = now - 754_000L,
+                stats = ActivityStats(
+                    distanceMeters = 1_243.0,
+                    elapsedMs = 754_000L,
+                    movingMs = 701_000L,
+                    currentSpeedMps = 2.85,
+                    avgSpeedMps = 1.77,
+                    maxSpeedMps = 3.4,
+                ),
             ),
             problem = PermissionProblem.None,
             notificationsOff = false,
