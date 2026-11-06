@@ -22,6 +22,18 @@ data class ActivityStats(
     val maxSpeedMps: Double = 0.0,
 )
 
+/**
+ * Stats for a saved recording, rebuilt from its points with the same engine used live.
+ * Used to finish activities cut off by a crash. "Now" is the last point's time.
+ */
+fun summarize(startedAtMillis: Long, points: List<GpsData>): ActivityStats {
+    val engine = StatsEngine(startedAtMillis)
+    val ordered = points.sortedBy { it.seq }
+    ordered.forEach(engine::add)
+    val end = ordered.maxOfOrNull { it.timeMillis } ?: startedAtMillis
+    return engine.snapshot(end).copy(currentSpeedMps = 0.0)
+}
+
 /** Seconds per kilometre at [speedMps], or null below [minSpeedMps] where pace means nothing. */
 fun paceSecondsPerKm(speedMps: Double, minSpeedMps: Double = 0.5): Double? =
     if (speedMps < minSpeedMps) null else 1_000.0 / speedMps

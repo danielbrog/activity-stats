@@ -23,6 +23,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import com.danielbrog.activitystats.MainActivity
 import com.danielbrog.activitystats.R
+import com.danielbrog.activitystats.ActivityStatsApp
+import com.danielbrog.activitystats.data.RecordingWriter
+import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.StatsEngine
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -31,11 +34,13 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import java.util.Locale
+import java.util.UUID
 
 /**
  * Foreground service of type `location` that owns GPS updates while recording, so tracking
  * keeps going with the screen off or the app in the background. Shows an ongoing
- * notification with elapsed time, the fix count and a Stop action.
+ * notification with elapsed time, the fix count and a Stop action. Saves the activity and
+ * its points to Room while recording, through the app's [RecordingWriter] queue.
  */
 class LocationTrackingService : Service() {
 
@@ -46,6 +51,12 @@ class LocationTrackingService : Service() {
     private var seq = 0
     private var filter = GpsFilter()
     private var stats = StatsEngine(startedAtMillis = 0L)
+
+    // Saving: fixes are buffered and written in batches, so a crash loses at most ~10 s.
+    private val writer by lazy { (application as ActivityStatsApp).recordingWriter }
+    private var activityId = ""
+    private val pendingFixes = mutableListOf<GpsData>()
+    private var lastSavedAtMillis = 0L
 
     private val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
         .setMinUpdateIntervalMillis(500L)
@@ -63,7 +74,8 @@ class LocationTrackingService : Service() {
             newFixes.forEach(stats::add)
             // Recalculate on every update, dropped fixes included, so current speed falls
             // to 0 when standing still. "Now" is the newest fix's time, the engine's clock.
-            val latestStats = stats.snapshot(newFixes.maxOf { it.timeMillis })
+            val newestMillis = newFixes.maxOf { it.timeMillis }
+            val latestStats = stats.snapshot(newestMillis)
             TrackingState.update {
                 it.copy(
                     fixes = (newFixes.reversed() + it.fixes).take(MAX_FIXES),
@@ -71,6 +83,12 @@ class LocationTrackingService : Service() {
                     keptCount = it.keptCount + newlyKept,
                     stats = latestStats,
                 )
+            }
+            pendingFixes += newFixes
+            if (pendingFixes.size >= SAVE_EVERY_FIXES ||
+                newestMillis - lastSavedAtMillis >= SAVE_EVERY_MS
+            ) {
+                savePending(latestStats, newestMillis)
             }
             postNotification()
         }
@@ -111,6 +129,12 @@ class LocationTrackingService : Service() {
         seq = 0
         filter = GpsFilter()
         stats = StatsEngine(startedAtMillis)
+        activityId = UUID.randomUUID().toString()
+        pendingFixes.clear()
+        lastSavedAtMillis = startedAtMillis
+        val id = activityId
+        val startedAt = startedAtMillis
+        writer.enqueue { startActivity(id, startedAt) }
         // Must be called promptly after startForegroundService().
         ServiceCompat.startForeground(
             this,
@@ -141,27 +165,39 @@ class LocationTrackingService : Service() {
     }
 
     private fun stopTracking() {
-        if (isRunning) {
-            client.removeLocationUpdates(callback)
-            isRunning = false
-            TrackingState.update { it.copy(isTracking = false, stats = finalStats()) }
-        }
+        if (isRunning) endRecording()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
-        if (isRunning) {
-            client.removeLocationUpdates(callback)
-            isRunning = false
-            TrackingState.update { it.copy(isTracking = false, stats = finalStats()) }
-        }
+        if (isRunning) endRecording()
         super.onDestroy()
     }
 
-    /** Stats frozen at the moment of stopping: full elapsed time, no current speed. */
-    private fun finalStats() =
-        stats.snapshot(System.currentTimeMillis()).copy(currentSpeedMps = 0.0)
+    /**
+     * Stops GPS, saves the last fixes and finalizes the activity. Stats are frozen at this
+     * moment: full elapsed time, no current speed.
+     */
+    private fun endRecording() {
+        client.removeLocationUpdates(callback)
+        isRunning = false
+        val endedAt = System.currentTimeMillis()
+        val finalStats = stats.snapshot(endedAt).copy(currentSpeedMps = 0.0)
+        savePending(finalStats, endedAt)
+        val id = activityId
+        writer.enqueue { finishActivity(id, endedAt, finalStats) }
+        TrackingState.update { it.copy(isTracking = false, stats = finalStats) }
+    }
+
+    /** Queues the buffered fixes and the stats so far for saving. */
+    private fun savePending(latestStats: ActivityStats, nowMillis: Long) {
+        val batch = pendingFixes.toList()
+        pendingFixes.clear()
+        lastSavedAtMillis = nowMillis
+        val id = activityId
+        writer.enqueue { savePoints(id, batch, latestStats, nowMillis) }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -229,6 +265,7 @@ class LocationTrackingService : Service() {
         longitude = longitude,
         accuracyMeters = if (hasAccuracy()) accuracy else null,
         speedMps = if (hasSpeed()) speed else null,
+        altitudeMeters = if (hasAltitude()) altitude else null,
     )
 
     companion object {
@@ -237,6 +274,8 @@ class LocationTrackingService : Service() {
         private const val ACTION_START = "com.danielbrog.activitystats.action.START_TRACKING"
         private const val ACTION_STOP = "com.danielbrog.activitystats.action.STOP_TRACKING"
         private const val MAX_FIXES = 1_000
+        private const val SAVE_EVERY_FIXES = 10
+        private const val SAVE_EVERY_MS = 10_000L
 
         /** Call from the foreground (e.g. a button press) after fine location is granted. */
         @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)

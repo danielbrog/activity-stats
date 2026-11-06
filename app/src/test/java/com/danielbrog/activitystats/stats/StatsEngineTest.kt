@@ -115,6 +115,34 @@ class StatsEngineTest {
     }
 
     @Test
+    fun summarizeMatchesTheLiveEngine() {
+        // Walk, stop with dropped jitter, walk again, as the service would record it.
+        val points = buildList {
+            for (s in 0..30) add(fix(s, s * 3.0))
+            for (s in 31..59) add(fix(s, 90.0 + (s % 3), FixStatus.DroppedStationary))
+            for (s in 60..90) add(fix(s, 90.0 + (s - 60) * 3.0))
+        }
+        val live = StatsEngine(start).apply { points.forEach(::add) }.snapshot(ms(90))
+
+        // Saved points can come back in any order; summarize sorts them by seq.
+        val recovered = summarize(start, points.shuffled(java.util.Random(7)))
+
+        assertEquals(live.distanceMeters, recovered.distanceMeters, 0.001)
+        assertEquals(live.movingMs, recovered.movingMs)
+        assertEquals(live.elapsedMs, recovered.elapsedMs)
+        assertEquals(live.avgSpeedMps, recovered.avgSpeedMps, 0.001)
+        assertEquals(live.maxSpeedMps, recovered.maxSpeedMps, 0.001)
+        assertEquals(0.0, recovered.currentSpeedMps, 0.0)
+    }
+
+    @Test
+    fun summarizeWithNoPointsGivesZeros() {
+        val stats = summarize(start, emptyList())
+        assertEquals(0.0, stats.distanceMeters, 0.0)
+        assertEquals(0L, stats.elapsedMs)
+    }
+
+    @Test
     fun noFixesGivesZeros() {
         val stats = StatsEngine(start).snapshot(ms(10))
         assertEquals(0.0, stats.distanceMeters, 0.0)
