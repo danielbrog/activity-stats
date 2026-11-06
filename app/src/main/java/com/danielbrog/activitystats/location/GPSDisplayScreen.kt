@@ -52,7 +52,7 @@ import java.util.Locale
 private enum class PermissionProblem { None, OnlyApproximate, Denied, DeniedPermanently }
 
 @Composable
-fun GpsFixesScreen(
+fun GPSDisplayScreen(
     modifier: Modifier = Modifier,
     viewModel: LocationViewModel = viewModel(),
 ) {
@@ -91,7 +91,7 @@ fun GpsFixesScreen(
         onDispose { view.keepScreenOn = false }
     }
 
-    GpsFixesContent(
+    GPSDisplayContent(
         state = state,
         problem = problem,
         onStart = {
@@ -111,7 +111,7 @@ fun GpsFixesScreen(
 }
 
 @Composable
-private fun GpsFixesContent(
+private fun GPSDisplayContent(
     state: TrackingUiState,
     problem: PermissionProblem,
     onStart: () -> Unit,
@@ -230,10 +230,10 @@ private fun Context.openAppSettings() {
 
 @Preview(showBackground = true)
 @Composable
-private fun GpsFixesPreview() {
+private fun GPSDisplayPreview() {
     val now = System.currentTimeMillis()
     ActivityStatsTheme {
-        GpsFixesContent(
+        GPSDisplayContent(
             state = TrackingUiState(
                 isTracking = true,
                 fixes = listOf(

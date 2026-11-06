@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
-import com.danielbrog.activitystats.location.GpsFixesScreen
+import com.danielbrog.activitystats.location.GPSDisplayScreen
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 class MainActivity : ComponentActivity() {
@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             ActivityStatsTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    GpsFixesScreen(modifier = Modifier.padding(innerPadding))
+                    GPSDisplayScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
