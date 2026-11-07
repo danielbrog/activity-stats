@@ -30,6 +30,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.danielbrog.activitystats.data.RideTitle
+import com.danielbrog.activitystats.stats.SpeedSample
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -132,18 +135,21 @@ private fun RideDetailContent(
             RideDetailState.NotFound -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("This ride is no longer on this phone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            is RideDetailState.Loaded -> LoadedRide(state.ride, state.route, settings, use24Hour)
+            is RideDetailState.Loaded ->
+                LoadedRide(state.ride, state.route, state.speedSamples, settings, use24Hour)
         }
     }
 }
 
+/** Scrolls: date, map, stats, then the speed chart. */
 @Composable
-private fun androidx.compose.foundation.layout.ColumnScope.LoadedRide(
+private fun LoadedRide(
     ride: ActivityEntity,
     route: List<RoutePoint>,
+    speedSamples: List<SpeedSample>,
     settings: DisplaySettings,
     use24Hour: Boolean,
-) {
+) = Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
     val unit = settings.unit
     val display = settings.speedDisplay
     val speedWord = if (display == SpeedDisplay.Speed) "speed" else "pace"
@@ -161,7 +167,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.LoadedRide(
     }
     Spacer(Modifier.height(12.dp))
 
-    val mapModifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp))
+    val mapModifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(16.dp))
     if (route.isEmpty()) {
         Box(
             modifier = mapModifier.background(MaterialTheme.colorScheme.surfaceVariant),
@@ -185,6 +191,19 @@ private fun androidx.compose.foundation.layout.ColumnScope.LoadedRide(
             Format.speedOrPace(ride.maxSpeedMps, unit, display),
         null,
     )
+
+    Spacer(Modifier.height(16.dp))
+    Text("Speed", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    if (speedSamples.size >= 2) {
+        SpeedChart(speedSamples, ride.avgSpeedMps, unit)
+    } else {
+        Text(
+            "Not enough data for a speed chart",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Spacer(Modifier.height(16.dp))
 }
 
 /** The ⋮ button and its drop-down with Edit and Delete. */
@@ -302,6 +321,9 @@ private fun RideDetailPreview() {
                     avgSpeedMps = 7.6, maxSpeedMps = 12.4, updatedAt = start,
                 ),
                 route = listOf(RoutePoint(43.65, -79.38), RoutePoint(43.66, -79.37)),
+                speedSamples = (0..200).map {
+                    SpeedSample(it * 107.0, 7.6 + 2.5 * kotlin.math.sin(it / 12.0))
+                },
             ),
             settings = DisplaySettings(),
             use24Hour = false,
