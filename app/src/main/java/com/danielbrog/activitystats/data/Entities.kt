@@ -46,6 +46,20 @@ data class ActivityEntity(
 )
 
 /**
+ * A ride's fastest time over one set distance, worked out from its track points. Every ride
+ * gets a row for every [com.danielbrog.activitystats.stats.Effort], with [elapsedMs] null
+ * when the ride is shorter than it, so a ride with no rows is one still to be worked out.
+ * Derived data: it can be rebuilt from the points, so it is never synced.
+ */
+@Entity(tableName = "best_efforts", primaryKeys = ["activityId", "effort"], indices = [Index("effort")])
+data class BestEffortEntity(
+    val activityId: String,
+    /** An [com.danielbrog.activitystats.stats.Effort.key], like "10km". */
+    val effort: String,
+    val elapsedMs: Long?,
+)
+
+/**
  * One row per GPS fix. Every fix is kept, dropped ones included, with the noise filter's
  * decision in [status], so the filter can be re-tuned and re-run on old activities.
  */

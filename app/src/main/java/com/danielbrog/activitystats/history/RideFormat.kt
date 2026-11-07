@@ -24,6 +24,14 @@ object RideFormat {
         return "$date · ${timeFormatter(use24Hour, locale).format(start)}"
     }
 
+    /** "Nov 6, 2026": the day a ride started, with the year, for records. */
+    fun date(
+        startedAtMillis: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+    ): String = DateTimeFormatter.ofPattern("MMM d, yyyy", locale)
+        .format(Instant.ofEpochMilli(startedAtMillis).atZone(zone))
+
     /** "7:42 AM – 8:31 AM", with "(+1 day)" when the ride ends on a later date. */
     fun timeRange(
         startedAtMillis: Long,

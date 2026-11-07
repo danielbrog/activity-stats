@@ -20,6 +20,11 @@ class RideFormatTest {
     }
 
     @Test
+    fun dateWithYear() {
+        assertEquals("Nov 6, 2026", RideFormat.date(at(6, 7, 42), zone, locale))
+    }
+
+    @Test
     fun dateLineIn24HourTime() {
         assertEquals("Fri, Nov 6 · 19:05", RideFormat.dateLine(at(6, 19, 5), zone, locale, use24Hour = true))
     }
