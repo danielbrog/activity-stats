@@ -30,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.danielbrog.activitystats.data.RideTitle
+import com.danielbrog.activitystats.stats.ElevationSample
 import com.danielbrog.activitystats.stats.SpeedSample
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -135,8 +136,9 @@ private fun RideDetailContent(
             RideDetailState.NotFound -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("This ride is no longer on this phone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            is RideDetailState.Loaded ->
-                LoadedRide(state.ride, state.route, state.speedSamples, settings, use24Hour)
+            is RideDetailState.Loaded -> LoadedRide(
+                state.ride, state.route, state.speedSamples, state.elevationSamples, settings, use24Hour,
+            )
         }
     }
 }
@@ -147,6 +149,7 @@ private fun LoadedRide(
     ride: ActivityEntity,
     route: List<RoutePoint>,
     speedSamples: List<SpeedSample>,
+    elevationSamples: List<ElevationSample>,
     settings: DisplaySettings,
     use24Hour: Boolean,
 ) = Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -200,6 +203,20 @@ private fun LoadedRide(
     } else {
         Text(
             "Not enough data for a speed chart",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    Spacer(Modifier.height(24.dp))
+    // "(GPS)": phone altitude is height above the GPS reference shape of the Earth, which can
+    // be tens of metres off sea level. The shape of the climbs is right; the numbers are offset.
+    Text("Elevation (GPS)", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    if (elevationSamples.size >= 2) {
+        ElevationChart(elevationSamples, unit)
+    } else {
+        Text(
+            "No elevation data for this ride",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -323,6 +340,9 @@ private fun RideDetailPreview() {
                 route = listOf(RoutePoint(43.65, -79.38), RoutePoint(43.66, -79.37)),
                 speedSamples = (0..200).map {
                     SpeedSample(it * 107.0, 7.6 + 2.5 * kotlin.math.sin(it / 12.0))
+                },
+                elevationSamples = (0..200).map {
+                    ElevationSample(it * 107.0, 110.0 + 25.0 * kotlin.math.sin(it / 30.0))
                 },
             ),
             settings = DisplaySettings(),

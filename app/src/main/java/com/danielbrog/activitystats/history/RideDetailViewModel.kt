@@ -13,6 +13,8 @@ import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.navigation.RideDetailRoute
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
+import com.danielbrog.activitystats.stats.ElevationSample
+import com.danielbrog.activitystats.stats.ElevationSeries
 import com.danielbrog.activitystats.stats.SpeedSample
 import com.danielbrog.activitystats.stats.SpeedSeries
 import kotlinx.coroutines.Dispatchers
@@ -32,11 +34,16 @@ sealed interface RideDetailState {
         val ride: ActivityEntity,
         val route: List<RoutePoint>,
         val speedSamples: List<SpeedSample>,
+        val elevationSamples: List<ElevationSample>,
     ) : RideDetailState
 }
 
 /** The parts of a ride built from its saved points; they never change once loaded. */
-private data class RideTrack(val route: List<RoutePoint>, val speedSamples: List<SpeedSample>)
+private data class RideTrack(
+    val route: List<RoutePoint>,
+    val speedSamples: List<SpeedSample>,
+    val elevationSamples: List<ElevationSample>,
+)
 
 /**
  * One saved ride and its route, by the id in the navigation route. The ride is watched,
@@ -57,7 +64,7 @@ class RideDetailViewModel(
             when {
                 ride == null || ride.deletedAt != null -> RideDetailState.NotFound
                 loaded == null -> RideDetailState.Loading
-                else -> RideDetailState.Loaded(ride, loaded.route, loaded.speedSamples)
+                else -> RideDetailState.Loaded(ride, loaded.route, loaded.speedSamples, loaded.elevationSamples)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), RideDetailState.Loading)
 
@@ -74,6 +81,7 @@ class RideDetailViewModel(
                         .filter { it.status == FixStatus.Kept }
                         .map { RoutePoint(it.latitude, it.longitude) },
                     speedSamples = SpeedSeries.downsample(SpeedSeries.fromFixes(points)),
+                    elevationSamples = ElevationSeries.downsample(ElevationSeries.fromFixes(points)),
                 )
             }
         }

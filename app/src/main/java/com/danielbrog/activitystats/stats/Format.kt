@@ -13,6 +13,13 @@ enum class SpeedDisplay { Speed, Pace }
  */
 object Format {
     const val METERS_PER_MILE = 1_609.344
+    const val FEET_PER_METER = 3.280_839_9
+
+    /** Elevation in metres alongside km, feet alongside miles: "152 m", "499 ft". */
+    fun elevation(meters: Double, unit: DistanceUnit): String = when (unit) {
+        DistanceUnit.Km -> "%.0f m".format(Locale.US, meters)
+        DistanceUnit.Mi -> "%.0f ft".format(Locale.US, meters * FEET_PER_METER)
+    }
 
     fun distance(meters: Double, unit: DistanceUnit): String = when (unit) {
         DistanceUnit.Km -> "%.2f km".format(Locale.US, meters / 1_000.0)
