@@ -20,15 +20,113 @@ class StatsEngineTest {
         second: Int,
         northMeters: Double,
         status: FixStatus = FixStatus.Kept,
+        speed: Float? = null,
     ) = GpsData(
         seq = ++seq,
         timeMillis = start + second * 1_000L,
         latitude = baseLat + northMeters / metresPerDegreeLat,
         longitude = baseLon,
         accuracyMeters = 5f,
-        speedMps = null,
+        speedMps = speed,
         status = status,
     )
+
+    /** Ride north at [speed] m/s with GPS-reported speed, one fix per second. */
+    private fun StatsEngine.ride(fromSecond: Int, toSecond: Int, fromMeters: Double, speed: Float) {
+        for (s in fromSecond..toSecond) {
+            add(fix(s, fromMeters + (s - fromSecond) * speed, speed = speed))
+        }
+    }
+
+    /** Stand still at [atMeters] with GPS-reported [speed], as a kept fix each second. */
+    private fun StatsEngine.standKept(fromSecond: Int, toSecond: Int, atMeters: Double, speed: Float = 0.1f) {
+        for (s in fromSecond..toSecond) add(fix(s, atMeters, speed = speed))
+    }
+
+    // --- Auto-pause ---
+
+    @Test
+    fun aBriefSlowSpellDoesNotPauseAndStillCountsAsMoving() {
+        val engine = StatsEngine(start)
+        engine.ride(0, 10, 0.0, 6f)
+        engine.standKept(11, 13, 60.0) // 3 slow seconds, under the 5 s limit
+        engine.ride(14, 20, 60.0, 6f)
+        val stats = engine.snapshot(ms(20))
+
+        assertEquals(false, stats.isPaused)
+        assertEquals(20_000L, stats.movingMs)
+    }
+
+    @Test
+    fun fiveSlowSecondsPause() {
+        val engine = StatsEngine(start)
+        engine.ride(0, 10, 0.0, 6f)
+        engine.standKept(11, 15, 60.0) // first slow fix at 11; 15 is 4 s later
+        assertEquals(false, engine.snapshot(ms(15)).isPaused)
+        engine.standKept(16, 16, 60.0) // 5 s after the first slow fix
+        assertEquals(true, engine.snapshot(ms(16)).isPaused)
+    }
+
+    @Test
+    fun pausedTimeIsLeftOutFromTheFirstSlowFix() {
+        val engine = StatsEngine(start)
+        engine.ride(0, 10, 0.0, 6f)       // 10 s moving
+        engine.standKept(11, 40, 60.0)    // stopped 11..40
+        engine.ride(41, 50, 60.0, 6f)     // resumes at 41; 41..50 is 9 s moving
+        val stats = engine.snapshot(ms(50))
+
+        // 0..11 counts (moving until the first slow fix), the stop doesn't, 41..50 does.
+        assertEquals(11_000L + 9_000L, stats.movingMs)
+        assertEquals(50_000L, stats.elapsedMs)
+        assertEquals(false, stats.isPaused)
+    }
+
+    @Test
+    fun theFirstMovingFixResumes() {
+        val engine = StatsEngine(start)
+        engine.ride(0, 5, 0.0, 6f)
+        engine.standKept(6, 20, 30.0)
+        assertEquals(true, engine.snapshot(ms(20)).isPaused)
+        engine.add(fix(21, 33.0, speed = 3f))
+        assertEquals(false, engine.snapshot(ms(21)).isPaused)
+    }
+
+    @Test
+    fun standingStillDropsPauseAndPoorAccuracyFixesAreIgnored() {
+        val engine = StatsEngine(start)
+        engine.ride(0, 10, 0.0, 6f)
+        // The filter marks the stop as standing still; the speed it reports doesn't matter.
+        for (s in 11..20) engine.add(fix(s, 60.0, FixStatus.DroppedStationary, speed = 0.3f))
+        assertEquals(true, engine.snapshot(ms(20)).isPaused)
+
+        // A wild poor-accuracy fix claiming 20 m/s must not resume.
+        engine.add(fix(21, 500.0, FixStatus.DroppedAccuracy, speed = 20f))
+        assertEquals(true, engine.snapshot(ms(21)).isPaused)
+    }
+
+    @Test
+    fun aGpsGapWhileMovingStillCountsAsMoving() {
+        val engine = StatsEngine(start)
+        engine.ride(0, 10, 0.0, 6f)
+        engine.add(fix(30, 180.0, speed = 6f)) // tunnel: no fixes for 20 s, still riding
+        assertEquals(30_000L, engine.snapshot(ms(30)).movingMs)
+    }
+
+    @Test
+    fun displayTimeFollowsTheAutoPauseSetting() {
+        val stats = ActivityStats(movingMs = 600_000L, elapsedMs = 700_000L, isPaused = false, asOfMillis = 2_000_000L)
+        val started = 2_000_000L - 700_000L
+
+        // Off: elapsed time, live while recording.
+        assertEquals(701_000L, displayTimeMs(false, true, stats, started, 2_001_000L))
+        assertEquals(700_000L, displayTimeMs(false, false, stats, started, 2_001_000L))
+        // On and moving: moving time, ticking since the last fix.
+        assertEquals(601_000L, displayTimeMs(true, true, stats, started, 2_001_000L))
+        // On and paused: frozen at moving time.
+        assertEquals(600_000L, displayTimeMs(true, true, stats.copy(isPaused = true), started, 2_009_000L))
+        // On, after Stop: moving time.
+        assertEquals(600_000L, displayTimeMs(true, false, stats, started, 2_009_000L))
+    }
 
     private fun ms(second: Int) = start + second * 1_000L
 

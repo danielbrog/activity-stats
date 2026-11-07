@@ -59,6 +59,10 @@ import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
+import com.danielbrog.activitystats.stats.displayTimeMs
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Surface
 import com.danielbrog.activitystats.stats.SpeedDisplay
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 import kotlinx.coroutines.delay
@@ -133,6 +137,7 @@ fun LiveScreen(
         onStop = viewModel::stop,
         onUnitChange = viewModel::setUnit,
         onSpeedDisplayChange = viewModel::setSpeedDisplay,
+        onAutoPauseChange = viewModel::setAutoPause,
         onOpenSettings = { context.openAppSettings() },
         onOpenGpsDetails = onOpenGpsDetails,
         modifier = modifier,
@@ -151,6 +156,7 @@ private fun LiveContent(
     onStop: () -> Unit,
     onUnitChange: (DistanceUnit) -> Unit,
     onSpeedDisplayChange: (SpeedDisplay) -> Unit,
+    onAutoPauseChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenGpsDetails: () -> Unit,
     modifier: Modifier = Modifier,
@@ -158,8 +164,9 @@ private fun LiveContent(
     val stats = state.stats
     val unit = settings.unit
     val display = settings.speedDisplay
+    val showPaused = settings.autoPause && state.isTracking && stats.isPaused
 
-    // Tick the elapsed time every second while recording; after Stop, show the final value.
+    // Tick the clock every second while recording; after Stop, show the final values.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.isTracking) {
         while (state.isTracking) {
@@ -171,14 +178,21 @@ private fun LiveContent(
         state.isTracking -> now - state.startedAtMillis
         else -> stats.elapsedMs
     }
+    val timeMs = displayTimeMs(settings.autoPause, state.isTracking, stats, state.startedAtMillis, now)
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                if (state.isTracking) "Recording" else "Ready",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f),
-            )
+            Box(modifier = Modifier.weight(1f)) {
+                if (showPaused) {
+                    PausedBadge()
+                } else {
+                    Text(
+                        if (state.isTracking) "Recording" else "Ready",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+            }
+            AutoPauseChip(settings.autoPause, onAutoPauseChange)
             TextButton(onClick = onOpenGpsDetails) { Text("GPS details") }
         }
 
@@ -208,8 +222,8 @@ private fun LiveContent(
         val speedLabel = if (display == SpeedDisplay.Speed) "speed" else "pace"
         Row(modifier = Modifier.fillMaxWidth()) {
             BigStat(
-                "Time",
-                Format.clock(elapsedMs),
+                if (settings.autoPause) "Moving time" else "Time",
+                Format.clock(timeMs),
                 MaterialTheme.typography.displayMedium,
                 Modifier.weight(1f),
             )
@@ -239,8 +253,9 @@ private fun LiveContent(
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Moving ${Format.clock(stats.movingMs)} · " +
-                (if (display == SpeedDisplay.Speed) "Max " else "Best ") +
+            // Whichever time isn't the big one goes here.
+            text = (if (settings.autoPause) "Elapsed ${Format.clock(elapsedMs)}" else "Moving ${Format.clock(stats.movingMs)}") +
+                " · " + (if (display == SpeedDisplay.Speed) "Max " else "Best ") +
                 Format.speedOrPace(stats.maxSpeedMps, unit, display),
             style = MaterialTheme.typography.bodyLarge.withTabularDigits(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -307,6 +322,32 @@ private fun SettingsRow(
             }
         }
     }
+}
+
+/** Shown in place of "Recording" while auto-pause has you stopped. */
+@Composable
+private fun PausedBadge() {
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Text(
+            "PAUSED",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun AutoPauseChip(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    FilterChip(
+        selected = enabled,
+        onClick = { onChange(!enabled) },
+        label = { Text("Auto-pause") },
+    )
 }
 
 /** A label over a large number, with the unit set smaller after it ("24.3" + "km/h"). */
@@ -407,6 +448,7 @@ private fun LivePreview() {
             onStop = {},
             onUnitChange = {},
             onSpeedDisplayChange = {},
+            onAutoPauseChange = {},
             onOpenSettings = {},
             onOpenGpsDetails = {},
         )

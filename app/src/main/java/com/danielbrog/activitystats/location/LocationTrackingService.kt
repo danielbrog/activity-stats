@@ -27,6 +27,11 @@ import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.data.RecordingWriter
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.StatsEngine
+import com.danielbrog.activitystats.settings.DisplaySettingsRepository
+import com.danielbrog.activitystats.stats.Format
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -54,6 +59,10 @@ class LocationTrackingService : Service() {
 
     // Saving: fixes are buffered and written in batches, so a crash loses at most ~10 s.
     private val writer by lazy { (application as ActivityStatsApp).recordingWriter }
+
+    // Auto-pause setting, kept in step with what the user picked on the Record screen.
+    private var autoPause = true
+    private var settingsJob: Job? = null
     private var activityId = ""
     private val pendingFixes = mutableListOf<GpsData>()
     private var lastSavedAtMillis = 0L
@@ -99,6 +108,13 @@ class LocationTrackingService : Service() {
         super.onCreate()
         client = LocationServices.getFusedLocationProviderClient(this)
         notifications = NotificationManagerCompat.from(this)
+        // Follow the auto-pause setting, so the notification's timer matches the Record screen.
+        settingsJob = (application as ActivityStatsApp).appScope.launch(Dispatchers.Main) {
+            DisplaySettingsRepository(this@LocationTrackingService).settings.collect {
+                autoPause = it.autoPause
+                postNotification()
+            }
+        }
         notifications.createNotificationChannel(
             NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
                 .setName("Tracking")
@@ -140,7 +156,7 @@ class LocationTrackingService : Service() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildNotification(distanceMeters = 0.0, kept = 0, total = 0),
+            buildNotification(stats = ActivityStats(), kept = 0, total = 0),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             } else {
@@ -173,6 +189,7 @@ class LocationTrackingService : Service() {
 
     override fun onDestroy() {
         if (isRunning) endRecording()
+        settingsJob?.cancel()
         super.onDestroy()
     }
 
@@ -184,7 +201,7 @@ class LocationTrackingService : Service() {
         client.removeLocationUpdates(callback)
         isRunning = false
         val endedAt = System.currentTimeMillis()
-        val finalStats = stats.snapshot(endedAt).copy(currentSpeedMps = 0.0)
+        val finalStats = stats.snapshot(endedAt).copy(currentSpeedMps = 0.0, isPaused = false)
         savePending(finalStats, endedAt)
         val id = activityId
         writer.enqueue { finishActivity(id, endedAt, finalStats) }
@@ -216,15 +233,11 @@ class LocationTrackingService : Service() {
         val state = TrackingState.state.value
         notifications.notify(
             NOTIFICATION_ID,
-            buildNotification(
-                distanceMeters = state.stats.distanceMeters,
-                kept = state.keptCount,
-                total = state.totalCount,
-            ),
+            buildNotification(stats = state.stats, kept = state.keptCount, total = state.totalCount),
         )
     }
 
-    private fun buildNotification(distanceMeters: Double, kept: Int, total: Int): Notification {
+    private fun buildNotification(stats: ActivityStats, kept: Int, total: Int): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -238,17 +251,34 @@ class LocationTrackingService : Service() {
             Intent(this, LocationTrackingService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val paused = autoPause && stats.isPaused
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_tracking)
-            .setContentTitle("Recording")
             .setContentText(
                 "%.2f km · %d kept of %d %s".format(
-                    Locale.US, distanceMeters / 1_000.0, kept, total, if (total == 1) "fix" else "fixes",
+                    Locale.US, stats.distanceMeters / 1_000.0, kept, total, if (total == 1) "fix" else "fixes",
                 )
             )
-            .setWhen(startedAtMillis)
-            .setShowWhen(true)
-            .setUsesChronometer(true)
+        when {
+            // Paused: stop the timer and show the moving time reached so far.
+            paused -> builder
+                .setContentTitle("Paused · ${Format.clock(stats.movingMs)}")
+                .setShowWhen(false)
+                .setUsesChronometer(false)
+            // Auto-pause on: the timer counts moving time, picking up where it paused.
+            autoPause -> builder
+                .setContentTitle("Recording")
+                .setWhen(System.currentTimeMillis() - stats.movingMs)
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+            // Auto-pause off: the timer counts elapsed time since Start.
+            else -> builder
+                .setContentTitle("Recording")
+                .setWhen(startedAtMillis)
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+        }
+        return builder
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)

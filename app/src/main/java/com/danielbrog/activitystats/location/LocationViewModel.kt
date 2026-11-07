@@ -59,4 +59,8 @@ class LocationViewModel(application: Application) : AndroidViewModel(application
     fun setSpeedDisplay(display: SpeedDisplay) {
         viewModelScope.launch { settingsRepository.setSpeedDisplay(display) }
     }
+
+    fun setAutoPause(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setAutoPause(enabled) }
+    }
 }
