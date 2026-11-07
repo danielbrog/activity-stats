@@ -28,6 +28,8 @@ data class TrackingUiState(
     val isTracking: Boolean = false,
     /** Newest first, capped to the most recent fixes. */
     val fixes: List<GpsData> = emptyList(),
+    /** Every kept position of this recording, oldest first, for drawing on the map. */
+    val route: List<RoutePoint> = emptyList(),
     /** All fixes received this recording, including ones no longer in [fixes]. */
     val totalCount: Int = 0,
     /** Fixes the noise filter kept this recording. */
