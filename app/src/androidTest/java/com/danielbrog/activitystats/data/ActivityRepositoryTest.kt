@@ -95,6 +95,25 @@ class ActivityRepositoryTest {
     }
 
     @Test
+    fun historyListsFinishedRidesNewestFirst() = runBlocking {
+        repo.startActivity("older", start)
+        repo.finishActivity("older", start + 60_000, ActivityStats())
+        repo.startActivity("newer", start + 3_600_000)
+        repo.finishActivity("newer", start + 3_660_000, ActivityStats())
+        // Still recording: not in history.
+        repo.startActivity("open", start + 7_200_000)
+        // Soft-deleted: not in history.
+        db.activityDao().insertActivity(
+            ActivityEntity(
+                id = "deleted", startedAt = start + 1_800_000, endedAt = start + 1_860_000,
+                title = "Gone", updatedAt = start, deletedAt = start + 2_000_000,
+            )
+        )
+
+        assertEquals(listOf("newer", "older"), repo.finishedActivities.first().map { it.id })
+    }
+
+    @Test
     fun unfinishedRidesAreRecoveredFromTheirPoints() = runBlocking {
         repo.startActivity("cut-off", start)
         repo.savePoints(

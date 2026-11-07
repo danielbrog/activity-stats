@@ -18,6 +18,9 @@ class ActivityRepository(private val db: AppDatabase) {
     /** The most recent finished activity, or null if none is saved yet. */
     val latestSaved: Flow<ActivityEntity?> = activities.latestFinished()
 
+    /** Every finished activity, newest first, for the history list. */
+    val finishedActivities: Flow<List<ActivityEntity>> = activities.allFinished()
+
     /** How many finished activities are saved on this phone. */
     val savedCount: Flow<Int> = activities.finishedCount()
 
