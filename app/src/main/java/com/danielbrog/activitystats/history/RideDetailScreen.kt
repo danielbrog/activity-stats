@@ -1,6 +1,11 @@
 package com.danielbrog.activitystats.history
 
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
 import android.text.format.DateFormat
+import android.widget.Toast
+import com.danielbrog.activitystats.export.GpxWriter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,7 +70,8 @@ fun RideDetailScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val use24Hour = DateFormat.is24HourFormat(LocalContext.current)
+    val context = LocalContext.current
+    val use24Hour = DateFormat.is24HourFormat(context)
     var showEdit by rememberSaveable { mutableStateOf(false) }
     var showDelete by rememberSaveable { mutableStateOf(false) }
     val ride = (state as? RideDetailState.Loaded)?.ride
@@ -75,6 +81,12 @@ fun RideDetailScreen(
         settings = settings,
         use24Hour = use24Hour,
         onBack = onBack,
+        onExport = {
+            viewModel.exportGpx(
+                onReady = { shareGpx(context, it) },
+                onError = { Toast.makeText(context, "Couldn't export this ride", Toast.LENGTH_SHORT).show() },
+            )
+        },
         onEdit = { showEdit = true },
         onDelete = { showDelete = true },
         modifier = modifier,
@@ -102,12 +114,26 @@ fun RideDetailScreen(
     }
 }
 
+/** Opens the share sheet for an exported GPX file, letting the chosen app read it. */
+private fun shareGpx(context: Context, export: GpxExport) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = GpxWriter.MIME_TYPE
+        putExtra(Intent.EXTRA_STREAM, export.uri)
+        putExtra(Intent.EXTRA_TITLE, export.fileName)
+        // ClipData carries the read grant through the chooser to the chosen app.
+        clipData = ClipData.newRawUri(export.fileName, export.uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(send, "Export GPX"))
+}
+
 @Composable
 private fun RideDetailContent(
     state: RideDetailState,
     settings: DisplaySettings,
     use24Hour: Boolean,
     onBack: () -> Unit,
+    onExport: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
@@ -125,7 +151,7 @@ private fun RideDetailContent(
                 modifier = Modifier.weight(1f),
             )
             if (state is RideDetailState.Loaded) {
-                RideMenu(onEdit = onEdit, onDelete = onDelete)
+                RideMenu(onExport = onExport, onEdit = onEdit, onDelete = onDelete)
             }
         }
 
@@ -223,15 +249,23 @@ private fun LoadedRide(
     Spacer(Modifier.height(16.dp))
 }
 
-/** The ⋮ button and its drop-down with Edit and Delete. */
+/** The ⋮ button and its drop-down with Export GPX, Edit and Delete. */
 @Composable
-private fun RideMenu(onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun RideMenu(onExport: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
             Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "More options")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Export GPX") },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_share), contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onExport()
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Edit") },
                 leadingIcon = { Icon(painterResource(R.drawable.ic_edit), contentDescription = null) },
@@ -348,6 +382,7 @@ private fun RideDetailPreview() {
             settings = DisplaySettings(),
             use24Hour = false,
             onBack = {},
+            onExport = {},
             onEdit = {},
             onDelete = {},
         )

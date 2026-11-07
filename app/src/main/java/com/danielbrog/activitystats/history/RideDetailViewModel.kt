@@ -1,6 +1,9 @@
 package com.danielbrog.activitystats.history
 
 import android.app.Application
+import android.net.Uri
+import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -17,7 +20,11 @@ import com.danielbrog.activitystats.stats.ElevationSample
 import com.danielbrog.activitystats.stats.ElevationSeries
 import com.danielbrog.activitystats.stats.SpeedSample
 import com.danielbrog.activitystats.stats.SpeedSeries
+import com.danielbrog.activitystats.export.GpxWriter
+import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -37,6 +44,9 @@ sealed interface RideDetailState {
         val elevationSamples: List<ElevationSample>,
     ) : RideDetailState
 }
+
+/** A written GPX file, ready to share. */
+data class GpxExport(val uri: Uri, val fileName: String)
 
 /** The parts of a ride built from its saved points; they never change once loaded. */
 private data class RideTrack(
@@ -91,6 +101,39 @@ class RideDetailViewModel(
     fun rename(input: String) {
         val title = RideTitle.clean(input) ?: return
         viewModelScope.launch { repository.rename(rideId, title) }
+    }
+
+    private var exportJob: Job? = null
+
+    /**
+     * Writes the ride as a GPX file in the app's cache (replacing the last export) and calls
+     * [onReady] with a content link other apps can read, or [onError] if it could not be written.
+     */
+    fun exportGpx(onReady: (GpxExport) -> Unit, onError: () -> Unit) {
+        if (exportJob?.isActive == true) return
+        val ride = (state.value as? RideDetailState.Loaded)?.ride ?: return
+        val app = getApplication<Application>()
+        exportJob = viewModelScope.launch {
+            val export = try {
+                withContext(Dispatchers.IO) {
+                    val points = repository.pointsFor(rideId)
+                    val dir = File(app.cacheDir, "gpx").apply { mkdirs() }
+                    dir.listFiles()?.forEach { it.delete() }
+                    val file = File(dir, GpxWriter.fileName(ride.title, ride.startedAt))
+                    file.bufferedWriter().use { out ->
+                        GpxWriter.write(out, ride.title, ride.type, ride.startedAt, points)
+                    }
+                    GpxExport(
+                        uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file),
+                        fileName = file.name,
+                    )
+                }
+            } catch (e: IOException) {
+                Log.w("RideDetail", "GPX export failed", e)
+                null
+            }
+            if (export != null) onReady(export) else onError()
+        }
     }
 
     /** Soft-deletes the ride, then calls [onDeleted] so the screen can close. */
