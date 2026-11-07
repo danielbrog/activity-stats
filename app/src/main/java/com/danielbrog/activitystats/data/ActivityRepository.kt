@@ -82,5 +82,21 @@ class ActivityRepository(private val db: AppDatabase) {
 
     suspend fun getActivity(id: String): ActivityEntity? = activities.getActivity(id)
 
+    fun observeActivity(id: String): Flow<ActivityEntity?> = activities.observeActivity(id)
+
+    /** Renames an activity. [title] should already be cleaned with [RideTitle.clean]. */
+    suspend fun rename(id: String, title: String, nowMillis: Long = System.currentTimeMillis()) {
+        activities.rename(id, title, nowMillis)
+    }
+
+    /** Soft-deletes an activity; [restore] brings it back. Its points are kept for now. */
+    suspend fun delete(id: String, nowMillis: Long = System.currentTimeMillis()) {
+        activities.softDelete(id, nowMillis)
+    }
+
+    suspend fun restore(id: String, nowMillis: Long = System.currentTimeMillis()) {
+        activities.restore(id, nowMillis)
+    }
+
     suspend fun pointsFor(id: String): List<GpsData> = points.pointsFor(id).map { it.toGpsData() }
 }

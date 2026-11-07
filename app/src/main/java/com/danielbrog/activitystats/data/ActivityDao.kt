@@ -16,6 +16,36 @@ abstract class ActivityDao {
     @Query("SELECT * FROM activities WHERE id = :id")
     abstract suspend fun getActivity(id: String): ActivityEntity?
 
+    /** One activity, updating itself whenever it changes (renamed, deleted, restored). */
+    @Query("SELECT * FROM activities WHERE id = :id")
+    abstract fun observeActivity(id: String): Flow<ActivityEntity?>
+
+    // Edits bump updatedAt so sync can tell which copy is newer, and turn an already
+    // synced activity back to PENDING so the change gets uploaded.
+
+    @Query(
+        "UPDATE activities SET title = :title, updatedAt = :now, " +
+            "syncState = CASE WHEN syncState = '${SyncState.SYNCED}' THEN '${SyncState.PENDING}' " +
+            "ELSE syncState END WHERE id = :id"
+    )
+    abstract suspend fun rename(id: String, title: String, now: Long)
+
+    /** Soft delete: the row stays, marked with when it was deleted. */
+    @Query(
+        "UPDATE activities SET deletedAt = :now, updatedAt = :now, " +
+            "syncState = CASE WHEN syncState = '${SyncState.SYNCED}' THEN '${SyncState.PENDING}' " +
+            "ELSE syncState END WHERE id = :id"
+    )
+    abstract suspend fun softDelete(id: String, now: Long)
+
+    /** Undoes a soft delete. */
+    @Query(
+        "UPDATE activities SET deletedAt = NULL, updatedAt = :now, " +
+            "syncState = CASE WHEN syncState = '${SyncState.SYNCED}' THEN '${SyncState.PENDING}' " +
+            "ELSE syncState END WHERE id = :id"
+    )
+    abstract suspend fun restore(id: String, now: Long)
+
     /** Activities that never got an end time and started before [startedBefore]. */
     @Query(
         "SELECT * FROM activities WHERE endedAt IS NULL AND deletedAt IS NULL " +

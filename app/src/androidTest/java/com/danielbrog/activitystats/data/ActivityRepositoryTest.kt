@@ -114,6 +114,50 @@ class ActivityRepositoryTest {
     }
 
     @Test
+    fun renameChangesTitleAndUpdatedAt() = runBlocking {
+        repo.startActivity("ride-1", start)
+        repo.finishActivity("ride-1", start + 60_000, ActivityStats())
+
+        repo.rename("ride-1", "Lakeshore loop", nowMillis = start + 120_000)
+
+        val saved = repo.getActivity("ride-1")!!
+        assertEquals("Lakeshore loop", saved.title)
+        assertEquals(start + 120_000, saved.updatedAt)
+        assertEquals(SyncState.LOCAL_ONLY, saved.syncState)
+    }
+
+    @Test
+    fun deleteHidesTheRideAndUndoBringsItBack() = runBlocking {
+        repo.startActivity("ride-1", start)
+        repo.finishActivity("ride-1", start + 60_000, ActivityStats())
+
+        repo.delete("ride-1", nowMillis = start + 120_000)
+        assertTrue(repo.finishedActivities.first().isEmpty())
+        assertNull(repo.latestSaved.first())
+        assertEquals(0, repo.savedCount.first())
+        assertEquals(start + 120_000, repo.getActivity("ride-1")!!.deletedAt)
+
+        repo.restore("ride-1", nowMillis = start + 130_000)
+        assertEquals(listOf("ride-1"), repo.finishedActivities.first().map { it.id })
+        assertEquals(1, repo.savedCount.first())
+        val restored = repo.getActivity("ride-1")!!
+        assertNull(restored.deletedAt)
+        assertEquals(start + 130_000, restored.updatedAt)
+    }
+
+    @Test
+    fun editingASyncedRideMarksItPending() = runBlocking {
+        db.activityDao().insertActivity(
+            ActivityEntity(
+                id = "synced", startedAt = start, endedAt = start + 60_000, title = "Ride",
+                updatedAt = start, syncState = SyncState.SYNCED,
+            )
+        )
+        repo.rename("synced", "Renamed", nowMillis = start + 1)
+        assertEquals(SyncState.PENDING, repo.getActivity("synced")!!.syncState)
+    }
+
+    @Test
     fun unfinishedRidesAreRecoveredFromTheirPoints() = runBlocking {
         repo.startActivity("cut-off", start)
         repo.savePoints(
