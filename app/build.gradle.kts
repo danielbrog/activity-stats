@@ -3,6 +3,14 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+    alias(libs.plugins.secrets)
+}
+
+secrets {
+    // The real key lives in local.properties, which Git ignores. The committed defaults
+    // file holds a placeholder, so a fresh checkout still builds (the map stays blank).
+    propertiesFileName = "local.properties"
+    defaultPropertiesFileName = "secrets.defaults.properties"
 }
 
 room {
@@ -35,8 +43,10 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        // Java 17: Maps Compose 9 is compiled for it, and Kotlin can't inline its code into
+        // an older target. Android supports Java 17 bytecode on every version we run on.
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
@@ -55,6 +65,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.play.services.location)
+    implementation(libs.maps.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

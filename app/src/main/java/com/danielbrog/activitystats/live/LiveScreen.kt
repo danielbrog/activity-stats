@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -107,6 +109,8 @@ fun LiveScreen(
         saved = saved,
         problem = problem,
         notificationsOff = state.isTracking && !context.canPostNotifications(),
+        // Re-checked on every recomposition, so the map's blue dot appears once allowed.
+        hasLocationPermission = context.hasFineLocation(),
         onStart = {
             val missing = buildList {
                 if (!context.hasFineLocation()) {
@@ -142,6 +146,7 @@ private fun LiveContent(
     saved: SavedSummary?,
     problem: PermissionProblem,
     notificationsOff: Boolean,
+    hasLocationPermission: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onUnitChange: (DistanceUnit) -> Unit,
@@ -190,13 +195,33 @@ private fun LiveContent(
             )
         }
 
-        Spacer(Modifier.weight(1f))
+        LiveMap(
+            route = state.route,
+            hasLocationPermission = hasLocationPermission,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(vertical = 8.dp)
+                .clip(RoundedCornerShape(16.dp)),
+        )
 
         val speedLabel = if (display == SpeedDisplay.Speed) "speed" else "pace"
-        BigStat("Time", Format.clock(elapsedMs), MaterialTheme.typography.displayLarge)
-        Spacer(Modifier.height(16.dp))
-        BigStat("Distance", Format.distance(stats.distanceMeters, unit), MaterialTheme.typography.displayLarge)
-        Spacer(Modifier.height(16.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            BigStat(
+                "Time",
+                Format.clock(elapsedMs),
+                MaterialTheme.typography.displayMedium,
+                Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
+            BigStat(
+                "Distance",
+                Format.distance(stats.distanceMeters, unit),
+                MaterialTheme.typography.displayMedium,
+                Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
             BigStat(
                 "Current $speedLabel",
@@ -230,7 +255,7 @@ private fun LiveContent(
             )
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(12.dp))
 
         if (state.isTracking) {
             Button(
@@ -377,6 +402,7 @@ private fun LivePreview() {
             saved = SavedSummary(title = "Morning ride", count = 3),
             problem = PermissionProblem.None,
             notificationsOff = false,
+            hasLocationPermission = true,
             onStart = {},
             onStop = {},
             onUnitChange = {},

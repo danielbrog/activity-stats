@@ -31,6 +31,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Google Maps key, filled in at build time from local.properties (see secrets.defaults.properties). -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
+
         <service
             android:name=".location.LocationTrackingService"
             android:exported="false"

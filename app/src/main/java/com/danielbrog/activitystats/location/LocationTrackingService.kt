@@ -79,6 +79,7 @@ class LocationTrackingService : Service() {
             TrackingState.update {
                 it.copy(
                     fixes = (newFixes.reversed() + it.fixes).take(MAX_FIXES),
+                    route = Route.extend(it.route, newFixes),
                     totalCount = it.totalCount + newFixes.size,
                     keptCount = it.keptCount + newlyKept,
                     stats = latestStats,
