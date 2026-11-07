@@ -12,6 +12,10 @@ object RecordRoute
 @Serializable
 object HistoryRoute
 
+/** Personal records: longest ride, longest moving time and best efforts. */
+@Serializable
+object RecordsRoute
+
 /** One saved ride, by its activity id. */
 @Serializable
 data class RideDetailRoute(val id: String)

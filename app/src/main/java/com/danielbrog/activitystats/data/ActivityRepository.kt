@@ -3,6 +3,7 @@ package com.danielbrog.activitystats.data
 import androidx.room.withTransaction
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.stats.ActivityStats
+import com.danielbrog.activitystats.stats.BestEfforts
 import com.danielbrog.activitystats.stats.summarize
 import kotlinx.coroutines.flow.Flow
 
@@ -14,6 +15,7 @@ class ActivityRepository(private val db: AppDatabase) {
 
     private val activities = db.activityDao()
     private val points = db.trackPointDao()
+    private val efforts = db.bestEffortDao()
 
     /** The most recent finished activity, or null if none is saved yet. */
     val latestSaved: Flow<ActivityEntity?> = activities.latestFinished()
@@ -52,6 +54,7 @@ class ActivityRepository(private val db: AppDatabase) {
         }
     }
 
+    /** Writes the final stats and end time, then works out the ride's best efforts. */
     suspend fun finishActivity(id: String, endedAtMillis: Long, stats: ActivityStats) {
         activities.finish(
             id = id,
@@ -62,6 +65,23 @@ class ActivityRepository(private val db: AppDatabase) {
             avgSpeedMps = stats.avgSpeedMps,
             maxSpeedMps = stats.maxSpeedMps,
         )
+        updateBestEfforts(id)
+    }
+
+    /** Every best effort a ride reached, deleted rides included; screens filter those out. */
+    val bestEfforts: Flow<List<BestEffortEntity>> = efforts.observeReached()
+
+    /** Works out and saves one ride's best efforts from its saved points. */
+    suspend fun updateBestEfforts(id: String) {
+        val found = BestEfforts.find(pointsFor(id))
+        efforts.replaceFor(id, found.map { (effort, ms) -> BestEffortEntity(id, effort.key, ms) })
+    }
+
+    /** Works out best efforts for finished rides that don't have them yet. Returns how many. */
+    suspend fun fillMissingBestEfforts(): Int {
+        val missing = efforts.finishedWithoutEfforts()
+        missing.forEach { updateBestEfforts(it) }
+        return missing.size
     }
 
     /**

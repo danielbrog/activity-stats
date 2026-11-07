@@ -26,6 +26,7 @@ import com.danielbrog.activitystats.history.HistoryScreen
 import com.danielbrog.activitystats.history.RideDetailScreen
 import com.danielbrog.activitystats.live.LiveScreen
 import com.danielbrog.activitystats.location.GPSDisplayScreen
+import com.danielbrog.activitystats.records.RecordsScreen
 
 /** Navigation result key: the id of a ride just deleted from its detail screen. */
 private const val DELETED_RIDE_ID = "deletedRideId"
@@ -35,6 +36,7 @@ private data class Tab(val route: Any, val label: String, @DrawableRes val icon:
     fun isSelected(destination: NavDestination?): Boolean = when (route) {
         RecordRoute -> destination?.hasRoute<RecordRoute>() == true
         HistoryRoute -> destination?.hasRoute<HistoryRoute>() == true
+        RecordsRoute -> destination?.hasRoute<RecordsRoute>() == true
         else -> false
     }
 }
@@ -42,11 +44,13 @@ private data class Tab(val route: Any, val label: String, @DrawableRes val icon:
 private val tabs = listOf(
     Tab(RecordRoute, "Record", R.drawable.ic_nav_record),
     Tab(HistoryRoute, "History", R.drawable.ic_nav_history),
+    Tab(RecordsRoute, "Records", R.drawable.ic_nav_records),
 )
 
 /**
- * The app's screens and how to move between them. Record and History are tabs in a bottom
- * bar; ride detail and GPS details open on top of them, without the bar, and Back closes them.
+ * The app's screens and how to move between them. Record, History and Records are tabs in a
+ * bottom bar; ride detail and GPS details open on top of them, without the bar, and Back
+ * closes them.
  */
 @Composable
 fun AppNavigation(navController: NavHostController = rememberNavController()) {
@@ -85,6 +89,16 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                     .getStateFlow<String?>(DELETED_RIDE_ID, null)
                     .collectAsStateWithLifecycle()
                 HistoryScreen(
+                    onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                    deletedRideId = deletedRideId,
+                    onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                )
+            }
+            composable<RecordsRoute> { entry ->
+                val deletedRideId by entry.savedStateHandle
+                    .getStateFlow<String?>(DELETED_RIDE_ID, null)
+                    .collectAsStateWithLifecycle()
+                RecordsScreen(
                     onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
                     deletedRideId = deletedRideId,
                     onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },

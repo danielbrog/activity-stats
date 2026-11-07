@@ -32,6 +32,13 @@ class ActivityStatsApp : Application() {
             } catch (e: Exception) {
                 Log.e("ActivityStatsApp", "Recovery failed", e)
             }
+            // Rides saved before best efforts existed (or whose first try failed) get them now.
+            try {
+                val filled = activityRepository.fillMissingBestEfforts()
+                if (filled > 0) Log.i("ActivityStatsApp", "Worked out best efforts for $filled rides")
+            } catch (e: Exception) {
+                Log.e("ActivityStatsApp", "Best efforts backfill failed", e)
+            }
         }
     }
 }
