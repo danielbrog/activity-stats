@@ -12,6 +12,7 @@ import androidx.room.RoomDatabase
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun activityDao(): ActivityDao
+    abstract fun trackPointDao(): TrackPointDao
 
     companion object {
         fun create(context: Context): AppDatabase =

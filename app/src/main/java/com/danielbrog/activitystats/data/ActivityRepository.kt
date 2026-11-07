@@ -1,5 +1,6 @@
 package com.danielbrog.activitystats.data
 
+import androidx.room.withTransaction
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.summarize
@@ -9,16 +10,19 @@ import kotlinx.coroutines.flow.Flow
  * The only way into the activity database (build guide rule): screens and the tracking
  * service go through here, so cloud sync can slot in behind it later.
  */
-class ActivityRepository(private val dao: ActivityDao) {
+class ActivityRepository(private val db: AppDatabase) {
+
+    private val activities = db.activityDao()
+    private val points = db.trackPointDao()
 
     /** The most recent finished activity, or null if none is saved yet. */
-    val latestSaved: Flow<ActivityEntity?> = dao.latestFinished()
+    val latestSaved: Flow<ActivityEntity?> = activities.latestFinished()
 
     /** How many finished activities are saved on this phone. */
-    val savedCount: Flow<Int> = dao.finishedCount()
+    val savedCount: Flow<Int> = activities.finishedCount()
 
     suspend fun startActivity(id: String, startedAtMillis: Long) {
-        dao.insertActivity(
+        activities.insertActivity(
             ActivityEntity(
                 id = id,
                 type = ActivityType.RIDE,
@@ -29,22 +33,24 @@ class ActivityRepository(private val dao: ActivityDao) {
         )
     }
 
-    /** Saves a batch of fixes (kept and dropped) and the stats so far. */
+    /** Saves a batch of fixes (kept and dropped) and the stats so far, together. */
     suspend fun savePoints(id: String, fixes: List<GpsData>, stats: ActivityStats, nowMillis: Long) {
-        dao.savePointsAndStats(
-            points = fixes.map { it.toTrackPoint(id) },
-            id = id,
-            distanceMeters = stats.distanceMeters,
-            movingTimeMs = stats.movingMs,
-            elapsedTimeMs = stats.elapsedMs,
-            avgSpeedMps = stats.avgSpeedMps,
-            maxSpeedMps = stats.maxSpeedMps,
-            updatedAt = nowMillis,
-        )
+        db.withTransaction {
+            if (fixes.isNotEmpty()) points.insertPoints(fixes.map { it.toTrackPoint(id) })
+            activities.updateStats(
+                id = id,
+                distanceMeters = stats.distanceMeters,
+                movingTimeMs = stats.movingMs,
+                elapsedTimeMs = stats.elapsedMs,
+                avgSpeedMps = stats.avgSpeedMps,
+                maxSpeedMps = stats.maxSpeedMps,
+                updatedAt = nowMillis,
+            )
+        }
     }
 
     suspend fun finishActivity(id: String, endedAtMillis: Long, stats: ActivityStats) {
-        dao.finish(
+        activities.finish(
             id = id,
             endedAt = endedAtMillis,
             distanceMeters = stats.distanceMeters,
@@ -61,17 +67,17 @@ class ActivityRepository(private val dao: ActivityDao) {
      * began after the app opened is never closed by mistake. Returns how many were recovered.
      */
     suspend fun recoverUnfinished(startedBefore: Long): Int {
-        val open = dao.unfinishedStartedBefore(startedBefore)
+        val open = activities.unfinishedStartedBefore(startedBefore)
         for (activity in open) {
-            val points = dao.pointsFor(activity.id).map { it.toGpsData() }
-            val stats = summarize(activity.startedAt, points)
-            val endedAt = points.maxOfOrNull { it.timeMillis } ?: activity.startedAt
+            val saved = pointsFor(activity.id)
+            val stats = summarize(activity.startedAt, saved)
+            val endedAt = saved.maxOfOrNull { it.timeMillis } ?: activity.startedAt
             finishActivity(activity.id, endedAt, stats)
         }
         return open.size
     }
 
-    suspend fun getActivity(id: String): ActivityEntity? = dao.getActivity(id)
+    suspend fun getActivity(id: String): ActivityEntity? = activities.getActivity(id)
 
-    suspend fun pointsFor(id: String): List<GpsData> = dao.pointsFor(id).map { it.toGpsData() }
+    suspend fun pointsFor(id: String): List<GpsData> = points.pointsFor(id).map { it.toGpsData() }
 }

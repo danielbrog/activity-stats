@@ -17,7 +17,7 @@ class ActivityStatsApp : Application() {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val database: AppDatabase by lazy { AppDatabase.create(this) }
-    val activityRepository: ActivityRepository by lazy { ActivityRepository(database.activityDao()) }
+    val activityRepository: ActivityRepository by lazy { ActivityRepository(database) }
     val recordingWriter: RecordingWriter by lazy { RecordingWriter(activityRepository, appScope) }
 
     override fun onCreate() {
