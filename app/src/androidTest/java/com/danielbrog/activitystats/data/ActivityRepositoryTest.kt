@@ -42,7 +42,7 @@ class ActivityRepositoryTest {
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
-        repo = ActivityRepository(db.activityDao())
+        repo = ActivityRepository(db)
     }
 
     @After

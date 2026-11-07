@@ -2,26 +2,19 @@ package com.danielbrog.activitystats.data
 
 import androidx.room.Dao
 import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
+/** Queries on the `activities` table: one row per recorded ride. */
 @Dao
 abstract class ActivityDao {
 
     @Insert
     abstract suspend fun insertActivity(activity: ActivityEntity)
 
-    /** Ignores points already saved, so a repeated batch can't fail or duplicate. */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    abstract suspend fun insertPoints(points: List<TrackPointEntity>)
-
     @Query("SELECT * FROM activities WHERE id = :id")
     abstract suspend fun getActivity(id: String): ActivityEntity?
-
-    @Query("SELECT * FROM track_points WHERE activityId = :activityId ORDER BY seq")
-    abstract suspend fun pointsFor(activityId: String): List<TrackPointEntity>
 
     /** Activities that never got an end time and started before [startedBefore]. */
     @Query(
@@ -56,22 +49,6 @@ abstract class ActivityDao {
 
     @Query("UPDATE activities SET endedAt = :endedAt, updatedAt = :updatedAt WHERE id = :id")
     abstract suspend fun setEndedAt(id: String, endedAt: Long, updatedAt: Long)
-
-    /** Saves a batch of points and the activity's latest stats together. */
-    @Transaction
-    open suspend fun savePointsAndStats(
-        points: List<TrackPointEntity>,
-        id: String,
-        distanceMeters: Double,
-        movingTimeMs: Long,
-        elapsedTimeMs: Long,
-        avgSpeedMps: Double,
-        maxSpeedMps: Double,
-        updatedAt: Long,
-    ) {
-        if (points.isNotEmpty()) insertPoints(points)
-        updateStats(id, distanceMeters, movingTimeMs, elapsedTimeMs, avgSpeedMps, maxSpeedMps, updatedAt)
-    }
 
     /** Writes the final stats and the end time together. */
     @Transaction
