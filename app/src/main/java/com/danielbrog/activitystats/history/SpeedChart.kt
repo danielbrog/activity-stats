@@ -160,8 +160,19 @@ private fun RideChart(
             val label = textMeasurer.measure(formatTick(t), labelStyle)
             drawText(label, topLeft = Offset(leftPad - label.size.width - 6f, y - label.size.height / 2))
         }
-        for (t in xTicks) {
-            val label = textMeasurer.measure(formatTick(t), labelStyle)
+        // The vertical axis's unit sits above its top label ("km/h", "m").
+        val yUnitLabel = textMeasurer.measure(yUnit, labelStyle)
+        drawText(
+            yUnitLabel,
+            topLeft = Offset(
+                (leftPad - yUnitLabel.size.width - 6f).coerceAtLeast(0f),
+                (yOf(yTicks.last()) - yUnitLabel.size.height * 1.6f).coerceAtLeast(0f),
+            ),
+        )
+        // The distance axis's unit follows its last label ("20 km").
+        xTicks.forEachIndexed { i, t ->
+            val text = if (i == xTicks.lastIndex) "${formatTick(t)} $xUnit" else formatTick(t)
+            val label = textMeasurer.measure(text, labelStyle)
             val x = (xOf(t) - label.size.width / 2).coerceIn(leftPad, size.width - label.size.width)
             drawText(label, topLeft = Offset(x, topPad + plotH + 4f))
         }
