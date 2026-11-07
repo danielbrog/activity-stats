@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /** The ride list, or null while it is first loading. */
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
@@ -23,4 +24,9 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
     val settings: StateFlow<DisplaySettings> = DisplaySettingsRepository(application).settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DisplaySettings())
+
+    /** Undoes a delete made from the ride detail screen. */
+    fun restore(id: String) {
+        viewModelScope.launch { repository.restore(id) }
+    }
 }

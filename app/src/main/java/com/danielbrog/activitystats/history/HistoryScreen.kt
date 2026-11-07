@@ -16,9 +16,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,17 +42,48 @@ import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
-/** The History tab: every saved ride, newest first. */
+/**
+ * The History tab: every saved ride, newest first. When [deletedRideId] is set (a ride was
+ * just deleted from its detail screen), shows a "Ride deleted" bar with Undo, then calls
+ * [onDeletedRideHandled] so it isn't shown again.
+ */
 @Composable
 fun HistoryScreen(
     onOpenRide: (id: String) -> Unit,
+    deletedRideId: String?,
+    onDeletedRideHandled: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HistoryViewModel = viewModel(),
 ) {
     val rides by viewModel.rides.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val use24Hour = DateFormat.is24HourFormat(LocalContext.current)
-    HistoryContent(rides, settings, use24Hour, onOpenRide, modifier)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Take the id into local state and clear the navigation result first, so the bar is
+    // shown once. Showing it from a separate effect means clearing can't cancel it.
+    var undoRideId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(deletedRideId) {
+        if (deletedRideId != null) {
+            undoRideId = deletedRideId
+            onDeletedRideHandled()
+        }
+    }
+    LaunchedEffect(undoRideId) {
+        val id = undoRideId ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "Ride deleted",
+            actionLabel = "Undo",
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.ActionPerformed) viewModel.restore(id)
+        undoRideId = null
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        HistoryContent(rides, settings, use24Hour, onOpenRide)
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+    }
 }
 
 @Composable

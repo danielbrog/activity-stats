@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -25,6 +26,9 @@ import com.danielbrog.activitystats.history.HistoryScreen
 import com.danielbrog.activitystats.history.RideDetailScreen
 import com.danielbrog.activitystats.live.LiveScreen
 import com.danielbrog.activitystats.location.GPSDisplayScreen
+
+/** Navigation result key: the id of a ride just deleted from its detail screen. */
+private const val DELETED_RIDE_ID = "deletedRideId"
 
 /** A tab in the bottom bar. */
 private data class Tab(val route: Any, val label: String, @DrawableRes val icon: Int) {
@@ -75,11 +79,25 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
             composable<RecordRoute> {
                 LiveScreen(onOpenGpsDetails = { navController.navigate(GpsDetailsRoute) })
             }
-            composable<HistoryRoute> {
-                HistoryScreen(onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) })
+            composable<HistoryRoute> { entry ->
+                // Set by the detail screen when it deletes a ride, so History can offer Undo.
+                val deletedRideId by entry.savedStateHandle
+                    .getStateFlow<String?>(DELETED_RIDE_ID, null)
+                    .collectAsStateWithLifecycle()
+                HistoryScreen(
+                    onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                    deletedRideId = deletedRideId,
+                    onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                )
             }
             composable<RideDetailRoute> {
-                RideDetailScreen(onBack = { navController.popBackStack() })
+                RideDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onDeleted = { id ->
+                        navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_RIDE_ID, id)
+                        navController.popBackStack()
+                    },
+                )
             }
             composable<GpsDetailsRoute> {
                 GPSDisplayScreen(onBack = { navController.popBackStack() })

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.data.ActivityEntity
+import com.danielbrog.activitystats.data.RideTitle
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.navigation.RideDetailRoute
@@ -15,7 +16,7 @@ import com.danielbrog.activitystats.settings.DisplaySettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -26,32 +27,51 @@ sealed interface RideDetailState {
     data class Loaded(val ride: ActivityEntity, val route: List<RoutePoint>) : RideDetailState
 }
 
-/** Loads one saved ride and its route, by the id in the navigation route. */
+/**
+ * One saved ride and its route, by the id in the navigation route. The ride is watched,
+ * so a rename shows up at once; the route is loaded once, since it never changes.
+ */
 class RideDetailViewModel(
     application: Application,
     savedStateHandle: SavedStateHandle,
 ) : AndroidViewModel(application) {
 
     private val repository = (application as ActivityStatsApp).activityRepository
-    private val rideId = savedStateHandle.toRoute<RideDetailRoute>().id
+    val rideId: String = savedStateHandle.toRoute<RideDetailRoute>().id
 
-    private val _state = MutableStateFlow<RideDetailState>(RideDetailState.Loading)
-    val state: StateFlow<RideDetailState> = _state.asStateFlow()
+    private val route = MutableStateFlow<List<RoutePoint>?>(null)
+
+    val state: StateFlow<RideDetailState> =
+        combine(repository.observeActivity(rideId), route) { ride, points ->
+            when {
+                ride == null || ride.deletedAt != null -> RideDetailState.NotFound
+                points == null -> RideDetailState.Loading
+                else -> RideDetailState.Loaded(ride, points)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), RideDetailState.Loading)
 
     val settings: StateFlow<DisplaySettings> = DisplaySettingsRepository(application).settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DisplaySettings())
 
     init {
         viewModelScope.launch {
-            val ride = repository.getActivity(rideId)
-            _state.value = if (ride == null || ride.deletedAt != null) {
-                RideDetailState.NotFound
-            } else {
-                val route = repository.pointsFor(rideId)
-                    .filter { it.status == FixStatus.Kept }
-                    .map { RoutePoint(it.latitude, it.longitude) }
-                RideDetailState.Loaded(ride, route)
-            }
+            route.value = repository.pointsFor(rideId)
+                .filter { it.status == FixStatus.Kept }
+                .map { RoutePoint(it.latitude, it.longitude) }
+        }
+    }
+
+    /** Saves a new name; ignored if it is blank after cleaning. */
+    fun rename(input: String) {
+        val title = RideTitle.clean(input) ?: return
+        viewModelScope.launch { repository.rename(rideId, title) }
+    }
+
+    /** Soft-deletes the ride, then calls [onDeleted] so the screen can close. */
+    fun delete(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            repository.delete(rideId)
+            onDeleted()
         }
     }
 }
