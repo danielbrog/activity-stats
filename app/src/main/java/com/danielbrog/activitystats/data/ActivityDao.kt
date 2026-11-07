@@ -29,6 +29,13 @@ abstract class ActivityDao {
     )
     abstract fun latestFinished(): Flow<ActivityEntity?>
 
+    /** Every finished, not-deleted activity, newest first. Updates itself on changes. */
+    @Query(
+        "SELECT * FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL " +
+            "ORDER BY startedAt DESC"
+    )
+    abstract fun allFinished(): Flow<List<ActivityEntity>>
+
     @Query("SELECT COUNT(*) FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL")
     abstract fun finishedCount(): Flow<Int>
 
