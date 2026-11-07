@@ -13,6 +13,10 @@ import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.navigation.RideDetailRoute
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
+import com.danielbrog.activitystats.stats.SpeedSample
+import com.danielbrog.activitystats.stats.SpeedSeries
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,9 +27,16 @@ import kotlinx.coroutines.launch
 sealed interface RideDetailState {
     data object Loading : RideDetailState
     data object NotFound : RideDetailState
-    /** [route] holds only the kept fixes, so the line skips GPS noise. */
-    data class Loaded(val ride: ActivityEntity, val route: List<RoutePoint>) : RideDetailState
+    /** [route] and [speedSamples] use only the kept fixes, so they skip GPS noise. */
+    data class Loaded(
+        val ride: ActivityEntity,
+        val route: List<RoutePoint>,
+        val speedSamples: List<SpeedSample>,
+    ) : RideDetailState
 }
+
+/** The parts of a ride built from its saved points; they never change once loaded. */
+private data class RideTrack(val route: List<RoutePoint>, val speedSamples: List<SpeedSample>)
 
 /**
  * One saved ride and its route, by the id in the navigation route. The ride is watched,
@@ -39,14 +50,14 @@ class RideDetailViewModel(
     private val repository = (application as ActivityStatsApp).activityRepository
     val rideId: String = savedStateHandle.toRoute<RideDetailRoute>().id
 
-    private val route = MutableStateFlow<List<RoutePoint>?>(null)
+    private val track = MutableStateFlow<RideTrack?>(null)
 
     val state: StateFlow<RideDetailState> =
-        combine(repository.observeActivity(rideId), route) { ride, points ->
+        combine(repository.observeActivity(rideId), track) { ride, loaded ->
             when {
                 ride == null || ride.deletedAt != null -> RideDetailState.NotFound
-                points == null -> RideDetailState.Loading
-                else -> RideDetailState.Loaded(ride, points)
+                loaded == null -> RideDetailState.Loading
+                else -> RideDetailState.Loaded(ride, loaded.route, loaded.speedSamples)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), RideDetailState.Loading)
 
@@ -55,9 +66,16 @@ class RideDetailViewModel(
 
     init {
         viewModelScope.launch {
-            route.value = repository.pointsFor(rideId)
-                .filter { it.status == FixStatus.Kept }
-                .map { RoutePoint(it.latitude, it.longitude) }
+            val points = repository.pointsFor(rideId)
+            // Building the chart data walks every point; keep it off the main thread.
+            track.value = withContext(Dispatchers.Default) {
+                RideTrack(
+                    route = points
+                        .filter { it.status == FixStatus.Kept }
+                        .map { RoutePoint(it.latitude, it.longitude) },
+                    speedSamples = SpeedSeries.downsample(SpeedSeries.fromFixes(points)),
+                )
+            }
         }
     }
 
