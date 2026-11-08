@@ -1,6 +1,16 @@
 package com.danielbrog.activitystats.history
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import com.danielbrog.activitystats.R
+import com.danielbrog.activitystats.stats.Splits
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +40,54 @@ import com.danielbrog.activitystats.stats.Split
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
+ * The Splits heading and table. Tapping the heading opens or closes the table; while closed
+ * it shows a one-line summary instead.
+ */
+@Composable
+fun SplitsSection(
+    splits: List<Split>,
+    unit: DistanceUnit,
+    display: SpeedDisplay,
+    expanded: Boolean,
+    onToggle: (show: Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val arrowTurn by animateFloatAsState(if (expanded) 0f else -90f, label = "splitsArrow")
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(
+                    onClickLabel = if (expanded) "Hide splits" else "Show splits",
+                    role = Role.Button,
+                ) { onToggle(!expanded) }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Splits", style = MaterialTheme.typography.titleMedium)
+                if (!expanded) {
+                    Text(
+                        Splits.summary(splits, unit, display),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Icon(
+                painterResource(R.drawable.ic_expand_more),
+                contentDescription = null, // the row's click label says what it does
+                modifier = Modifier.rotate(arrowTurn),
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            SplitsTable(splits, unit, display)
+        }
+    }
+}
+
+/**
  * One row per km or mile: moving time, average speed (or pace), height change, and a bar
  * comparing its speed with the fastest split, which is in bold.
  */
@@ -40,8 +98,9 @@ fun SplitsTable(
     display: SpeedDisplay,
     modifier: Modifier = Modifier,
 ) {
-    val fastest = splits.maxOfOrNull { it.avgSpeedMps } ?: 0.0
-    val fastestIndex = splits.indexOfFirst { it.avgSpeedMps == fastest }
+    val best = Splits.fastest(splits)
+    val fastest = best?.avgSpeedMps ?: 0.0
+    val fastestIndex = splits.indexOf(best)
     val hasHeight = splits.any { it.elevationChangeMeters != null }
     val numbers = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
 

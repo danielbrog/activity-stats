@@ -21,6 +21,8 @@ data class DisplaySettings(
     val speedDisplay: SpeedDisplay = SpeedDisplay.Speed,
     /** On: the Time shown stops while you're stopped. Off: it shows elapsed time. */
     val autoPause: Boolean = true,
+    /** Whether the Splits table on a ride is open. Starts closed; the last choice is kept. */
+    val showSplits: Boolean = false,
 )
 
 private val Context.displaySettingsStore: DataStore<Preferences> by preferencesDataStore(
@@ -39,8 +41,13 @@ class DisplaySettingsRepository(context: Context) {
                 unit = prefs[UNIT].toEnumOr(DistanceUnit.Km),
                 speedDisplay = prefs[SPEED_DISPLAY].toEnumOr(SpeedDisplay.Speed),
                 autoPause = prefs[AUTO_PAUSE] ?: true,
+                showSplits = prefs[SHOW_SPLITS] ?: false,
             )
         }
+
+    suspend fun setShowSplits(show: Boolean) {
+        store.edit { it[SHOW_SPLITS] = show }
+    }
 
     suspend fun setAutoPause(enabled: Boolean) {
         store.edit { it[AUTO_PAUSE] = enabled }
@@ -58,6 +65,7 @@ class DisplaySettingsRepository(context: Context) {
         val UNIT = stringPreferencesKey("unit")
         val SPEED_DISPLAY = stringPreferencesKey("speed_display")
         val AUTO_PAUSE = booleanPreferencesKey("auto_pause")
+        val SHOW_SPLITS = booleanPreferencesKey("show_splits")
 
         inline fun <reified E : Enum<E>> String?.toEnumOr(default: E): E =
             enumValues<E>().firstOrNull { it.name == this } ?: default

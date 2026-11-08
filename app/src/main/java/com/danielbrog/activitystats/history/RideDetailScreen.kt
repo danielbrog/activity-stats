@@ -90,6 +90,7 @@ fun RideDetailScreen(
         },
         onEdit = { showEdit = true },
         onDelete = { showDelete = true },
+        onToggleSplits = viewModel::setShowSplits,
         modifier = modifier,
     )
 
@@ -137,6 +138,7 @@ private fun RideDetailContent(
     onExport: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onToggleSplits: (show: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
@@ -165,7 +167,7 @@ private fun RideDetailContent(
             }
             is RideDetailState.Loaded -> LoadedRide(
                 state.ride, state.route, state.speedSamples, state.elevationSamples,
-                state.splits(settings.unit), settings, use24Hour,
+                state.splits(settings.unit), settings, use24Hour, onToggleSplits,
             )
         }
     }
@@ -181,6 +183,7 @@ private fun LoadedRide(
     splits: List<Split>,
     settings: DisplaySettings,
     use24Hour: Boolean,
+    onToggleSplits: (show: Boolean) -> Unit,
 ) = Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
     val unit = settings.unit
     val display = settings.speedDisplay
@@ -226,10 +229,8 @@ private fun LoadedRide(
     )
 
     if (splits.isNotEmpty()) {
-        Spacer(Modifier.height(16.dp))
-        Text("Splits", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        SplitsTable(splits, unit, display)
+        Spacer(Modifier.height(8.dp))
+        SplitsSection(splits, unit, display, expanded = settings.showSplits, onToggle = onToggleSplits)
     }
 
     Spacer(Modifier.height(16.dp))
@@ -396,6 +397,7 @@ private fun RideDetailPreview() {
             onExport = {},
             onEdit = {},
             onDelete = {},
+            onToggleSplits = {},
         )
     }
 }

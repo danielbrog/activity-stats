@@ -90,8 +90,15 @@ class RideDetailViewModel(
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), RideDetailState.Loading)
 
-    val settings: StateFlow<DisplaySettings> = DisplaySettingsRepository(application).settings
+    private val settingsRepository = DisplaySettingsRepository(application)
+
+    val settings: StateFlow<DisplaySettings> = settingsRepository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DisplaySettings())
+
+    /** Opens or closes the Splits table; remembered for every ride. */
+    fun setShowSplits(show: Boolean) {
+        viewModelScope.launch { settingsRepository.setShowSplits(show) }
+    }
 
     init {
         viewModelScope.launch {
