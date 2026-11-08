@@ -49,7 +49,8 @@ fun paceSecondsPerKm(speedMps: Double, minSpeedMps: Double = 0.5): Double? =
  * Distance and speeds use only the fixes the noise filter kept. Moving time comes from
  * auto-pause: you are paused once every fix for [pauseAfterMs] is slower than
  * [movingSpeedMps], and resume on the first fix at or above it. The pause counts from the
- * first slow fix, so the time spent deciding isn't counted as moving.
+ * first slow fix, so the time spent deciding isn't counted as moving. A gap of over
+ * [maxGapMs] between fixes is never moving time.
  */
 class StatsEngine(
     private val startedAtMillis: Long,
@@ -59,6 +60,11 @@ class StatsEngine(
     private val currentSpeedWindowMs: Long = 5_000L,
     /** How long you must stay slow before auto-pause kicks in. */
     private val pauseAfterMs: Long = 5_000L,
+    /**
+     * A gap longer than this between two fixes counts as stopped: another device's file
+     * left out its own auto-paused time, or GPS was lost. The distance across it still counts.
+     */
+    private val maxGapMs: Long = 60_000L,
 ) {
     private var lastKept: GpsData? = null
     private val recent = ArrayDeque<GpsData>()
@@ -105,7 +111,12 @@ class StatsEngine(
         val previous = lastPauseCheckMillis
         if (previous != null && timeMillis <= previous) return
         lastPauseCheckMillis = timeMillis
-        val sincePrevious = if (previous == null) 0L else timeMillis - previous
+        var sincePrevious = if (previous == null) 0L else timeMillis - previous
+        if (sincePrevious > maxGapMs) {
+            // A long gap with no fixes: none of it is moving time, nor any slow time before it.
+            sincePrevious = 0L
+            pendingMs = 0L
+        }
 
         when {
             paused && moving -> {

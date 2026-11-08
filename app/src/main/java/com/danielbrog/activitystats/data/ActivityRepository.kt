@@ -1,12 +1,21 @@
 package com.danielbrog.activitystats.data
 
 import androidx.room.withTransaction
+import com.danielbrog.activitystats.export.GpxTrack
+import java.util.UUID
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.BestEfforts
 import com.danielbrog.activitystats.stats.ElevationGain
 import com.danielbrog.activitystats.stats.summarize
 import kotlinx.coroutines.flow.Flow
+
+/** What happened to an imported track; both carry the id of the ride to open. */
+sealed interface ImportResult {
+    val id: String
+    data class Imported(override val id: String) : ImportResult
+    data class AlreadyImported(override val id: String) : ImportResult
+}
 
 /**
  * The only way into the activity database (build guide rule): screens and the tracking
@@ -67,6 +76,40 @@ class ActivityRepository(private val db: AppDatabase) {
             maxSpeedMps = stats.maxSpeedMps,
         )
         updateDerivedStats(id)
+    }
+
+    /**
+     * Saves a track read from a GPX file as a finished activity, with its stats worked out by
+     * the same engine used while recording, then its climbing and best efforts. A track that
+     * starts in the same second as an existing activity isn't saved again.
+     */
+    suspend fun importTrack(track: GpxTrack, nowMillis: Long = System.currentTimeMillis()): ImportResult {
+        val fixes = track.toFixes()
+        val startedAt = fixes.first().timeMillis
+        activities.idStartedInSameSecond(startedAt)?.let { return ImportResult.AlreadyImported(it) }
+
+        val stats = summarize(startedAt, fixes)
+        val id = UUID.randomUUID().toString()
+        db.withTransaction {
+            activities.insertActivity(
+                ActivityEntity(
+                    id = id,
+                    type = track.type,
+                    startedAt = startedAt,
+                    endedAt = fixes.last().timeMillis,
+                    distanceMeters = stats.distanceMeters,
+                    movingTimeMs = stats.movingMs,
+                    elapsedTimeMs = stats.elapsedMs,
+                    avgSpeedMps = stats.avgSpeedMps,
+                    maxSpeedMps = stats.maxSpeedMps,
+                    title = track.name?.let { RideTitle.clean(it) } ?: rideTitle(startedAt),
+                    updatedAt = nowMillis,
+                )
+            )
+            fixes.chunked(500).forEach { batch -> points.insertPoints(batch.map { it.toTrackPoint(id) }) }
+        }
+        updateDerivedStats(id)
+        return ImportResult.Imported(id)
     }
 
     /** Every best effort a ride reached, deleted rides included; screens filter those out. */

@@ -43,6 +43,30 @@ class StatsEngineTest {
         for (s in fromSecond..toSecond) add(fix(s, atMeters, speed = speed))
     }
 
+    // --- Gaps ---
+
+    @Test
+    fun aLongGapBetweenFixesIsNotMovingTimeButItsDistanceCounts() {
+        // As in a bike computer's file: it stopped recording for 10 minutes, then went on.
+        val engine = StatsEngine(start)
+        engine.ride(0, 60, 0.0, 6f)            // 60 s, 360 m
+        engine.ride(660, 720, 400.0, 6f)       // 10 min later, 40 m on; another 60 s
+        val stats = engine.snapshot(ms(720))
+
+        assertEquals(120_000L, stats.movingMs)
+        assertEquals(760.0, stats.distanceMeters, 0.5)
+        assertEquals(720_000L, stats.elapsedMs)
+    }
+
+    @Test
+    fun aShortGapStillCountsAsMoving() {
+        // A 30 s gap while riding, under the 60 s limit, as when GPS drops briefly.
+        val engine = StatsEngine(start)
+        engine.ride(0, 60, 0.0, 6f)
+        engine.ride(90, 150, 540.0, 6f)
+        assertEquals(150_000L, engine.snapshot(ms(150)).movingMs)
+    }
+
     // --- Auto-pause ---
 
     @Test

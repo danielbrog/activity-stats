@@ -1,12 +1,23 @@
 package com.danielbrog.activitystats.history
 
 import android.text.format.DateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.res.painterResource
+import com.danielbrog.activitystats.R
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,7 +54,7 @@ import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
- * The History tab: every saved ride, newest first. When [deletedRideId] is set (a ride was
+ * The History tab: every saved ride, newest first, and Import GPX, which opens the new ride. When [deletedRideId] is set (a ride was
  * just deleted from its detail screen), shows a "Ride deleted" bar with Undo, then calls
  * [onDeletedRideHandled] so it isn't shown again.
  */
@@ -80,8 +91,33 @@ fun HistoryScreen(
         undoRideId = null
     }
 
+    // Import: pick a file, read it, then open the ride or explain what went wrong.
+    val importing by viewModel.importing.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val pickGpx = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult // picker closed
+        viewModel.importGpx(uri) { outcome ->
+            when (outcome) {
+                is ImportOutcome.Imported -> onOpenRide(outcome.id)
+                is ImportOutcome.AlreadyImported -> scope.launch {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "This ride is already in your history.",
+                        actionLabel = "Open",
+                    )
+                    if (result == SnackbarResult.ActionPerformed) onOpenRide(outcome.id)
+                }
+                is ImportOutcome.Failed -> scope.launch { snackbarHostState.showSnackbar(outcome.message) }
+            }
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        HistoryContent(rides, settings, use24Hour, onOpenRide)
+        HistoryContent(
+            rides, settings, use24Hour, onOpenRide,
+            importing = importing,
+            // GPX files often have no proper type set, so show every file; reading checks it.
+            onImport = { pickGpx.launch(arrayOf("*/*")) },
+        )
         SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
@@ -92,14 +128,30 @@ private fun HistoryContent(
     settings: DisplaySettings,
     use24Hour: Boolean,
     onOpenRide: (id: String) -> Unit,
+    importing: Boolean,
+    onImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        Text(
-            "History",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, end = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "History",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onImport, enabled = !importing) {
+                if (importing) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(painterResource(R.drawable.ic_import), contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(if (importing) "Importing…" else "Import GPX")
+            }
+        }
         when {
             rides == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -109,7 +161,7 @@ private fun HistoryContent(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "No rides yet. Record one from the Record tab.",
+                    "No rides yet. Record one from the Record tab, or import a GPX file.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -178,6 +230,8 @@ private fun HistoryPreview() {
             settings = DisplaySettings(),
             use24Hour = false,
             onOpenRide = {},
+            importing = false,
+            onImport = {},
         )
     }
 }
@@ -186,6 +240,9 @@ private fun HistoryPreview() {
 @Composable
 private fun HistoryEmptyPreview() {
     ActivityStatsTheme {
-        HistoryContent(emptyList(), DisplaySettings(), use24Hour = false, onOpenRide = {})
+        HistoryContent(
+            emptyList(), DisplaySettings(), use24Hour = false, onOpenRide = {},
+            importing = false, onImport = {},
+        )
     }
 }
