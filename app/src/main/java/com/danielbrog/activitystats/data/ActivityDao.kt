@@ -46,6 +46,12 @@ abstract class ActivityDao {
     )
     abstract suspend fun restore(id: String, now: Long)
 
+    /** A not-deleted activity that started in the same second, or null: used to spot re-imports. */
+    @Query(
+        "SELECT id FROM activities WHERE deletedAt IS NULL AND startedAt / 1000 = :startedAtMillis / 1000 LIMIT 1"
+    )
+    abstract suspend fun idStartedInSameSecond(startedAtMillis: Long): String?
+
     /** Activities that never got an end time and started before [startedBefore]. */
     @Query(
         "SELECT * FROM activities WHERE endedAt IS NULL AND deletedAt IS NULL " +
