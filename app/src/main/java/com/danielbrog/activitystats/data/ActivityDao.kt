@@ -84,6 +84,17 @@ abstract class ActivityDao {
         updatedAt: Long,
     )
 
+    /**
+     * Stores a ride's climbing, worked out from its points. Leaves updatedAt and syncState
+     * alone: it is filled in from data the ride already had, not an edit.
+     */
+    @Query("UPDATE activities SET elevationGainMeters = :meters WHERE id = :id")
+    abstract suspend fun setElevationGain(id: String, meters: Double)
+
+    /** Finished rides whose climbing hasn't been worked out yet, like those saved before it existed. */
+    @Query("SELECT id FROM activities WHERE endedAt IS NOT NULL AND elevationGainMeters IS NULL")
+    abstract suspend fun finishedWithoutElevationGain(): List<String>
+
     @Query("UPDATE activities SET endedAt = :endedAt, updatedAt = :updatedAt WHERE id = :id")
     abstract suspend fun setEndedAt(id: String, endedAt: Long, updatedAt: Long)
 

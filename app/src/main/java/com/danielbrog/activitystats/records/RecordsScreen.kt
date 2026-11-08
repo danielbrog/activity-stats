@@ -148,6 +148,14 @@ private fun RecordList(
         missing = "",
         onOpenRide = onOpenRide,
     )
+    RecordCard(
+        label = "Biggest climb",
+        holder = records.biggestClimb?.holder,
+        value = records.biggestClimb?.let { Format.elevation(it.meters, unit) },
+        detail = null,
+        missing = "Ride some hills to set this",
+        onOpenRide = onOpenRide,
+    )
 
     Spacer(Modifier.height(8.dp))
     SectionTitle("Best efforts")
@@ -226,6 +234,7 @@ private fun RecordsPreview() {
             records = PersonalRecords(
                 longestRide = DistanceRecord(a, 52_300.0),
                 longestMovingTime = TimeRecord(a, 7_420_000),
+                biggestClimb = DistanceRecord(b, 640.0),
                 bestEfforts = mapOf(
                     Effort.Km5 to TimeRecord(b, 512_000),
                     Effort.Km10 to TimeRecord(b, 1_071_000),

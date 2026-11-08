@@ -14,6 +14,8 @@ data class TimeRecord(val holder: RecordHolder, val ms: Long)
 data class PersonalRecords(
     val longestRide: DistanceRecord?,
     val longestMovingTime: TimeRecord?,
+    /** The ride with the most total climbing, as Strava defines it. */
+    val biggestClimb: DistanceRecord?,
     val bestEfforts: Map<Effort, TimeRecord?>,
 ) {
     companion object {
@@ -30,6 +32,9 @@ data class PersonalRecords(
             // maxByOrNull keeps the first of equal values, so oldest-first breaks ties.
             val longest = oldestFirst.filter { it.distanceMeters > 0.0 }.maxByOrNull { it.distanceMeters }
             val longestMoving = oldestFirst.filter { it.movingTimeMs > 0L }.maxByOrNull { it.movingTimeMs }
+            val mostClimbing = oldestFirst
+                .filter { (it.elevationGainMeters ?: 0.0) > 0.0 }
+                .maxByOrNull { it.elevationGainMeters ?: 0.0 }
 
             val fastest = efforts
                 .mapNotNull { e ->
@@ -47,6 +52,7 @@ data class PersonalRecords(
             return PersonalRecords(
                 longestRide = longest?.let { DistanceRecord(it.holder(), it.distanceMeters) },
                 longestMovingTime = longestMoving?.let { TimeRecord(it.holder(), it.movingTimeMs) },
+                biggestClimb = mostClimbing?.let { DistanceRecord(it.holder(), it.elevationGainMeters ?: 0.0) },
                 bestEfforts = Effort.entries.associateWith { fastest[it] },
             )
         }

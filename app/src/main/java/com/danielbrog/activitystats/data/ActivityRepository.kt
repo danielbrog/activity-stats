@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.BestEfforts
+import com.danielbrog.activitystats.stats.ElevationGain
 import com.danielbrog.activitystats.stats.summarize
 import kotlinx.coroutines.flow.Flow
 
@@ -54,7 +55,7 @@ class ActivityRepository(private val db: AppDatabase) {
         }
     }
 
-    /** Writes the final stats and end time, then works out the ride's best efforts. */
+    /** Writes the final stats and end time, then works out the ride's climbing and best efforts. */
     suspend fun finishActivity(id: String, endedAtMillis: Long, stats: ActivityStats) {
         activities.finish(
             id = id,
@@ -65,22 +66,30 @@ class ActivityRepository(private val db: AppDatabase) {
             avgSpeedMps = stats.avgSpeedMps,
             maxSpeedMps = stats.maxSpeedMps,
         )
-        updateBestEfforts(id)
+        updateDerivedStats(id)
     }
 
     /** Every best effort a ride reached, deleted rides included; screens filter those out. */
     val bestEfforts: Flow<List<BestEffortEntity>> = efforts.observeReached()
 
-    /** Works out and saves one ride's best efforts from its saved points. */
-    suspend fun updateBestEfforts(id: String) {
-        val found = BestEfforts.find(pointsFor(id))
+    /**
+     * Works out and saves the stats that need a ride's whole track: its climbing and its best
+     * efforts. Loads the points once for both.
+     */
+    suspend fun updateDerivedStats(id: String) {
+        val saved = pointsFor(id)
+        activities.setElevationGain(id, ElevationGain.of(saved))
+        val found = BestEfforts.find(saved)
         efforts.replaceFor(id, found.map { (effort, ms) -> BestEffortEntity(id, effort.key, ms) })
     }
 
-    /** Works out best efforts for finished rides that don't have them yet. Returns how many. */
-    suspend fun fillMissingBestEfforts(): Int {
-        val missing = efforts.finishedWithoutEfforts()
-        missing.forEach { updateBestEfforts(it) }
+    /**
+     * Fills in climbing and best efforts for finished rides missing either, such as rides
+     * saved before they existed. Returns how many rides were updated.
+     */
+    suspend fun fillMissingDerivedStats(): Int {
+        val missing = (activities.finishedWithoutElevationGain() + efforts.finishedWithoutEfforts()).distinct()
+        missing.forEach { updateDerivedStats(it) }
         return missing.size
     }
 

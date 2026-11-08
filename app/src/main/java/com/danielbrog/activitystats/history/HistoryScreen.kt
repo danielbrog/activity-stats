@@ -144,10 +144,11 @@ private fun RideCard(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                listOf(
+                listOfNotNull(
                     Format.distance(ride.distanceMeters, settings.unit),
                     Format.clock(ride.movingTimeMs),
                     Format.speedOrPace(ride.avgSpeedMps, settings.unit, settings.speedDisplay),
+                    ride.elevationGainMeters?.let { "↑" + Format.elevation(it, settings.unit) },
                 ).joinToString("  ·  "),
                 style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),
             )
@@ -166,7 +167,7 @@ private fun HistoryPreview() {
                 ActivityEntity(
                     id = "a", startedAt = now, endedAt = now + 3_000_000, title = "Morning ride",
                     distanceMeters = 21_430.0, movingTimeMs = 2_820_000, avgSpeedMps = 7.6,
-                    updatedAt = now,
+                    elevationGainMeters = 312.0, updatedAt = now,
                 ),
                 ActivityEntity(
                     id = "b", startedAt = now - day, endedAt = now - day + 1_800_000,
