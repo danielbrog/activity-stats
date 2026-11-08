@@ -218,7 +218,8 @@ private fun LoadedRide(
     StatRow(
         (if (display == SpeedDisplay.Speed) "Max speed" else "Best pace") to
             Format.speedOrPace(ride.maxSpeedMps, unit, display),
-        null,
+        // Null only for a moment after the app is updated, until it is worked out.
+        "Elevation gain" to (ride.elevationGainMeters?.let { Format.elevation(it, unit) } ?: "–"),
     )
 
     Spacer(Modifier.height(16.dp))

@@ -9,12 +9,35 @@ import org.junit.Test
 
 class PersonalRecordsTest {
 
-    private fun ride(id: String, startedAt: Long, meters: Double = 0.0, movingMs: Long = 0L) = ActivityEntity(
+    private fun ride(
+        id: String,
+        startedAt: Long,
+        meters: Double = 0.0,
+        movingMs: Long = 0L,
+        gain: Double? = null,
+    ) = ActivityEntity(
         id = id, startedAt = startedAt, endedAt = startedAt + 1, title = "Ride $id",
-        distanceMeters = meters, movingTimeMs = movingMs, updatedAt = startedAt,
+        distanceMeters = meters, movingTimeMs = movingMs, elevationGainMeters = gain, updatedAt = startedAt,
     )
 
     private fun effort(id: String, effort: Effort, ms: Long?) = BestEffortEntity(id, effort.key, ms)
+
+    @Test
+    fun biggestClimbIsTheMostTotalClimbingWithTheEarlierRideWinningATie() {
+        val records = PersonalRecords.from(
+            // Newest first, as the history query returns them; "c" isn't worked out yet.
+            listOf(ride("c", 4, gain = null), ride("new", 3, gain = 640.0), ride("old", 2, gain = 640.0), ride("flat", 1, gain = 12.0)),
+            emptyList(),
+        )
+        assertEquals("old", records.biggestClimb?.holder?.rideId)
+        assertEquals(640.0, records.biggestClimb!!.meters, 0.0)
+    }
+
+    @Test
+    fun noClimbingMeansNoBiggestClimb() {
+        val records = PersonalRecords.from(listOf(ride("a", 1, meters = 5_000.0, gain = 0.0)), emptyList())
+        assertNull(records.biggestClimb)
+    }
 
     @Test
     fun picksLongestRideAndMovingTimeSeparately() {
@@ -72,6 +95,7 @@ class PersonalRecordsTest {
         val records = PersonalRecords.from(emptyList(), emptyList())
         assertNull(records.longestRide)
         assertNull(records.longestMovingTime)
+        assertNull(records.biggestClimb)
         assertEquals(true, records.bestEfforts.values.all { it == null })
     }
 }

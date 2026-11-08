@@ -37,6 +37,8 @@ data class ActivityEntity(
     val elapsedTimeMs: Long = 0L,
     val avgSpeedMps: Double = 0.0,
     val maxSpeedMps: Double = 0.0,
+    /** Total climbing, worked out from the points when the ride is saved; null until then. */
+    val elevationGainMeters: Double? = null,
     val title: String,
     /** Lets sync tell which copy is newer. */
     val updatedAt: Long,
