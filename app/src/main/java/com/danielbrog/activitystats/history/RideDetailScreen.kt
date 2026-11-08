@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.danielbrog.activitystats.data.RideTitle
 import com.danielbrog.activitystats.stats.ElevationSample
 import com.danielbrog.activitystats.stats.SpeedSample
+import com.danielbrog.activitystats.stats.Split
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
@@ -163,19 +164,21 @@ private fun RideDetailContent(
                 Text("This ride is no longer on this phone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             is RideDetailState.Loaded -> LoadedRide(
-                state.ride, state.route, state.speedSamples, state.elevationSamples, settings, use24Hour,
+                state.ride, state.route, state.speedSamples, state.elevationSamples,
+                state.splits(settings.unit), settings, use24Hour,
             )
         }
     }
 }
 
-/** Scrolls: date, map, stats, then the speed chart. */
+/** Scrolls: date, map, stats, splits, then the speed and elevation charts. */
 @Composable
 private fun LoadedRide(
     ride: ActivityEntity,
     route: List<RoutePoint>,
     speedSamples: List<SpeedSample>,
     elevationSamples: List<ElevationSample>,
+    splits: List<Split>,
     settings: DisplaySettings,
     use24Hour: Boolean,
 ) = Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -221,6 +224,13 @@ private fun LoadedRide(
         // Null only for a moment after the app is updated, until it is worked out.
         "Elevation gain" to (ride.elevationGainMeters?.let { Format.elevation(it, unit) } ?: "–"),
     )
+
+    if (splits.isNotEmpty()) {
+        Spacer(Modifier.height(16.dp))
+        Text("Splits", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        SplitsTable(splits, unit, display)
+    }
 
     Spacer(Modifier.height(16.dp))
     Text("Speed", style = MaterialTheme.typography.titleMedium)
