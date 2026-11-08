@@ -106,6 +106,24 @@ class SplitsTest {
     }
 
     @Test
+    fun summaryNamesTheTotalAndTheFastestSplit() {
+        val splits = listOf(
+            Split(1, 1_000.0, 125_000, null, isPartial = false),
+            Split(2, 1_000.0, 112_000, null, isPartial = false), // 32.1 km/h, the fastest
+            Split(3, 430.0, 51_000, null, isPartial = true),
+        )
+        assertEquals("2.43 km · fastest: km 2, 32.1 km/h", Splits.summary(splits, DistanceUnit.Km, SpeedDisplay.Speed))
+        assertEquals("2.43 km · fastest: km 2, 1:52 /km", Splits.summary(splits, DistanceUnit.Km, SpeedDisplay.Pace))
+
+        val miles = listOf(
+            Split(1, Format.METERS_PER_MILE, 200_000, null, isPartial = false),
+            Split(2, 800.0, 80_000, null, isPartial = true), // 10 m/s beats 8.05 m/s
+        )
+        assertEquals("1.50 mi · fastest: last 0.50 mi, 22.4 mph", Splits.summary(miles, DistanceUnit.Mi, SpeedDisplay.Speed))
+        assertEquals("", Splits.summary(emptyList(), DistanceUnit.Km, SpeedDisplay.Speed))
+    }
+
+    @Test
     fun heightChangeAndSplitLabelsFormat() {
         assertEquals("+12 m", Format.elevationChange(12.3, DistanceUnit.Km))
         assertEquals("−4 m", Format.elevationChange(-4.4, DistanceUnit.Km))

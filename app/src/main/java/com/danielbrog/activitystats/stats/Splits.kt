@@ -86,6 +86,28 @@ object Splits {
         return splits
     }
 
+    /**
+     * The fastest split, as the table shows it in bold (the first one if speeds tie), or
+     * null with no splits.
+     */
+    fun fastest(splits: List<Split>): Split? = splits.maxByOrNull { it.avgSpeedMps }
+
+    /**
+     * The line shown while the table is closed: "12.43 km · fastest: km 4, 32.1 km/h".
+     * The last, shorter split is named by its length: "fastest: last 0.43 km, …".
+     */
+    fun summary(splits: List<Split>, unit: DistanceUnit, display: SpeedDisplay): String {
+        val best = fastest(splits) ?: return ""
+        val unitWord = if (unit == DistanceUnit.Km) "km" else "mi"
+        val which = if (best.isPartial) {
+            "last ${Format.distanceNumber(best.distanceMeters, unit)} $unitWord"
+        } else {
+            "$unitWord ${best.number}"
+        }
+        val total = Format.distance(splits.sumOf { it.distanceMeters }, unit)
+        return "$total · fastest: $which, ${Format.speedOrPace(best.avgSpeedMps, unit, display)}"
+    }
+
     /** Smoothed height at any distance along the ride, or null with no altitude data. */
     private fun heightAlongRide(fixes: List<GpsData>): ((Double) -> Double)? {
         val samples = ElevationSeries.fromFixes(fixes)
