@@ -16,7 +16,10 @@ import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.navigation.RideDetailRoute
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
+import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.ElevationSample
+import com.danielbrog.activitystats.stats.Split
+import com.danielbrog.activitystats.stats.Splits
 import com.danielbrog.activitystats.stats.ElevationSeries
 import com.danielbrog.activitystats.stats.SpeedSample
 import com.danielbrog.activitystats.stats.SpeedSeries
@@ -42,7 +45,11 @@ sealed interface RideDetailState {
         val route: List<RoutePoint>,
         val speedSamples: List<SpeedSample>,
         val elevationSamples: List<ElevationSample>,
-    ) : RideDetailState
+        val kmSplits: List<Split> = emptyList(),
+        val miSplits: List<Split> = emptyList(),
+    ) : RideDetailState {
+        fun splits(unit: DistanceUnit): List<Split> = if (unit == DistanceUnit.Km) kmSplits else miSplits
+    }
 }
 
 /** A written GPX file, ready to share. */
@@ -53,6 +60,8 @@ private data class RideTrack(
     val route: List<RoutePoint>,
     val speedSamples: List<SpeedSample>,
     val elevationSamples: List<ElevationSample>,
+    val kmSplits: List<Split>,
+    val miSplits: List<Split>,
 )
 
 /**
@@ -74,7 +83,10 @@ class RideDetailViewModel(
             when {
                 ride == null || ride.deletedAt != null -> RideDetailState.NotFound
                 loaded == null -> RideDetailState.Loading
-                else -> RideDetailState.Loaded(ride, loaded.route, loaded.speedSamples, loaded.elevationSamples)
+                else -> RideDetailState.Loaded(
+                    ride, loaded.route, loaded.speedSamples, loaded.elevationSamples,
+                    loaded.kmSplits, loaded.miSplits,
+                )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), RideDetailState.Loading)
 
@@ -92,6 +104,9 @@ class RideDetailViewModel(
                         .map { RoutePoint(it.latitude, it.longitude) },
                     speedSamples = SpeedSeries.downsample(SpeedSeries.fromFixes(points)),
                     elevationSamples = ElevationSeries.downsample(ElevationSeries.fromFixes(points)),
+                    // Both units up front, so switching km/mi is instant.
+                    kmSplits = Splits.of(points, DistanceUnit.Km),
+                    miSplits = Splits.of(points, DistanceUnit.Mi),
                 )
             }
         }

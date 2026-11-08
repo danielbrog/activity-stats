@@ -21,6 +21,24 @@ object Format {
         DistanceUnit.Mi -> "%.0f ft".format(Locale.US, meters * FEET_PER_METER)
     }
 
+    /** A height change with its sign: "+12 m", "−4 m", "0 m"; feet alongside miles. */
+    fun elevationChange(meters: Double, unit: DistanceUnit): String {
+        val value = if (unit == DistanceUnit.Km) meters else meters * FEET_PER_METER
+        val rounded = Math.round(value)
+        val sign = when {
+            rounded > 0 -> "+"
+            rounded < 0 -> "−"
+            else -> ""
+        }
+        return "$sign${kotlin.math.abs(rounded)} ${if (unit == DistanceUnit.Km) "m" else "ft"}"
+    }
+
+    /** Just the number of a distance, for split labels: "0.43" (km or mi). */
+    fun distanceNumber(meters: Double, unit: DistanceUnit): String = when (unit) {
+        DistanceUnit.Km -> "%.2f".format(Locale.US, meters / 1_000.0)
+        DistanceUnit.Mi -> "%.2f".format(Locale.US, meters / METERS_PER_MILE)
+    }
+
     fun distance(meters: Double, unit: DistanceUnit): String = when (unit) {
         DistanceUnit.Km -> "%.2f km".format(Locale.US, meters / 1_000.0)
         DistanceUnit.Mi -> "%.2f mi".format(Locale.US, meters / METERS_PER_MILE)

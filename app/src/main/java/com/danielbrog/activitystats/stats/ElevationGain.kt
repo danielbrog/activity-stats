@@ -36,8 +36,11 @@ object ElevationGain {
         return climbing(smooth(samples, windowMeters / 2), thresholdMeters)
     }
 
-    /** Centred moving average over distance, ±[halfWindow] metres, using a running sum. */
-    private fun smooth(samples: List<ElevationSample>, halfWindow: Double): DoubleArray {
+    /**
+     * Centred moving average over distance, ±[halfWindow] metres, using a running sum. One
+     * height per sample, in the same order. Also used by splits for their height change.
+     */
+    internal fun smooth(samples: List<ElevationSample>, halfWindow: Double = WINDOW_METERS / 2): DoubleArray {
         val n = samples.size
         val out = DoubleArray(n)
         var lo = 0
