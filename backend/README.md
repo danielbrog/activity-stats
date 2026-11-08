@@ -51,9 +51,12 @@ npm run synth        # build the CloudFormation template and bundle the code int
 
 ## Deploying
 
-1. Sign the AWS CLI in with an access key for your account: `aws configure`
-   (region `us-east-1`, or whichever you prefer). Check it with `aws sts get-caller-identity`.
-2. Once per account and region, prepare it for the CDK: `npx cdk bootstrap`
+The backend lives in **us-east-2** (Ohio). The region is fixed in `bin/app.ts`, so it doesn't
+matter which region the CLI defaults to.
+
+1. Sign the AWS CLI in with your console login: `aws login` (needs AWS CLI 2.32 or newer).
+   Check it with `aws sts get-caller-identity`. The session lasts up to 12 hours.
+2. Once per account and region, prepare it for the CDK: `npx cdk bootstrap aws://<account>/us-east-2`
 3. Deploy: `npx cdk deploy`. Review the security changes it lists, then confirm.
 
 After a deploy, the outputs are what the app needs: `ApiUrl`, `UserPoolId`, `AppClientId`,
