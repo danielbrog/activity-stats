@@ -4,7 +4,11 @@ import { ActivityStatsStack, SIGN_IN_CALLBACK } from '../lib/activity-stats-stac
 
 // Skip bundling the Lambda code: these tests check the stack's settings, not the code.
 const app = new App({ context: { 'aws:cdk:bundling-stacks': [] } });
-const stack = new ActivityStatsStack(app, 'Test', { env: { account: '123456789012', region: 'us-east-1' } });
+const ALARM_EMAIL = 'alerts@example.com';
+const stack = new ActivityStatsStack(app, 'Test', {
+  alarmEmail: ALARM_EMAIL,
+  env: { account: '123456789012', region: 'us-east-2' },
+});
 const template = Template.fromStack(stack);
 
 describe('ActivityStatsStack', () => {
@@ -100,6 +104,56 @@ describe('ActivityStatsStack', () => {
       expect(f.Properties.Architectures).toEqual(['arm64']);
       expect(f.Properties.Timeout).toBe(10);
     }
+  });
+
+  test('alerts go by email through one topic that Budgets may publish to', () => {
+    template.resourceCountIs('AWS::SNS::Topic', 1);
+    template.hasResourceProperties('AWS::SNS::Subscription', { Protocol: 'email', Endpoint: ALARM_EMAIL });
+    template.hasResourceProperties('AWS::SNS::TopicPolicy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Effect: 'Allow',
+            Principal: { Service: 'budgets.amazonaws.com' },
+            Action: 'sns:Publish',
+            Condition: { StringEquals: { 'aws:SourceAccount': '123456789012' } },
+          }),
+        ]),
+      },
+    });
+  });
+
+  test('each function has an error alarm and the API a server-error alarm, all emailing', () => {
+    const alarms = Object.values(template.findResources('AWS::CloudWatch::Alarm'));
+    expect(alarms.map((a) => a.Properties.AlarmName).sort()).toEqual([
+      'ActivityStats-ApiServerErrors',
+      'ActivityStats-ListActivitiesErrors',
+      'ActivityStats-PutActivityErrors',
+      'ActivityStats-TrackDownloadUrlErrors',
+      'ActivityStats-TrackUploadUrlErrors',
+    ]);
+    for (const a of alarms) {
+      const p = a.Properties;
+      expect(p.Period).toBe(300);
+      expect(p.Statistic).toBe('Sum');
+      expect(p.TreatMissingData).toBe('notBreaching');
+      expect(p.ComparisonOperator).toBe('GreaterThanOrEqualToThreshold');
+      expect(p.AlarmActions).toHaveLength(1);
+      expect(p.OKActions).toEqual(p.AlarmActions);
+    }
+    const byName = (name: string) => alarms.find((a) => a.Properties.AlarmName === name)!.Properties;
+    expect(byName('ActivityStats-PutActivityErrors')).toMatchObject({ Namespace: 'AWS/Lambda', MetricName: 'Errors', Threshold: 1 });
+    expect(byName('ActivityStats-ApiServerErrors')).toMatchObject({ Namespace: 'AWS/ApiGateway', MetricName: '5xx', Threshold: 5 });
+  });
+
+  test('a $5 monthly budget emails on actual and forecast spend', () => {
+    template.hasResourceProperties('AWS::Budgets::Budget', {
+      Budget: Match.objectLike({ BudgetType: 'COST', TimeUnit: 'MONTHLY', BudgetLimit: { Amount: 5, Unit: 'USD' } }),
+      NotificationsWithSubscribers: [
+        Match.objectLike({ Notification: Match.objectLike({ NotificationType: 'ACTUAL', Threshold: 100 }) }),
+        Match.objectLike({ Notification: Match.objectLike({ NotificationType: 'FORECASTED', Threshold: 100 }) }),
+      ],
+    });
   });
 
   test('the upload function can only write track files, and cannot read them or the table', () => {

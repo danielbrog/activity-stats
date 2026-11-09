@@ -3,12 +3,18 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-l
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import * as budgets from 'aws-cdk-lib/aws-budgets';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { Architecture, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Construct } from 'constructs';
 
 /** Where Cognito's sign-in page sends the user back to: the Android app's own link scheme. */
@@ -18,6 +24,17 @@ export const SIGN_OUT_CALLBACK = 'com.danielbrog.activitystats://auth/signout';
 /** The index the sync pull reads: a user's rides ordered by when the server last saved them. */
 export const SYNCED_AT_INDEX = 'bySyncedAt';
 
+/** Monthly spend, in US dollars, above which the budget alert emails. */
+export const MONTHLY_BUDGET_USD = 5;
+
+export interface ActivityStatsStackProps extends StackProps {
+  /**
+   * Where alarm and budget emails go. Passed in at deploy time (see bin/app.ts) rather than
+   * written in the code, so the address never lands in git.
+   */
+  readonly alarmEmail: string;
+}
+
 /**
  * The whole Activity Stats backend:
  * - Cognito: accounts, with email and password on Cognito's hosted sign-in page.
@@ -25,11 +42,13 @@ export const SYNCED_AT_INDEX = 'bySyncedAt';
  * - S3: one private, gzipped track file per ride, reached only through short-lived links.
  * - An HTTP API whose every route needs a valid Cognito token, in front of four Lambdas.
  *
+ * - Alarms and a monthly budget that email when something breaks or costs climb.
+ *
  * Everything bills per request. Accounts, rides and track files are kept if the stack is
  * ever deleted (RemovalPolicy.RETAIN), so a mistaken `cdk destroy` can't lose them.
  */
 export class ActivityStatsStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: ActivityStatsStackProps) {
     super(scope, id, props);
 
     // --- Accounts ---
@@ -157,6 +176,69 @@ export class ActivityStatsStack extends Stack {
     // A ceiling on requests, so a bug in the app can't run up a bill.
     const stage = api.defaultStage!.node.defaultChild as apigw.CfnStage;
     stage.defaultRouteSettings = { throttlingRateLimit: 20, throttlingBurstLimit: 40 };
+
+    // --- Alerts ---
+    // One email channel for both alarms and the budget. AWS emails a confirmation link first.
+    const alerts = new sns.Topic(this, 'Alarms', {
+      topicName: 'ActivityStatsAlarms',
+      displayName: 'Activity Stats alerts',
+    });
+    alerts.addSubscription(new EmailSubscription(props.alarmEmail));
+    // AWS Budgets publishes to the topic as a service, so it needs explicit permission.
+    alerts.addToResourcePolicy(
+      new iam.PolicyStatement({
+        principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
+        actions: ['sns:Publish'],
+        resources: [alerts.topicArn],
+        conditions: { StringEquals: { 'aws:SourceAccount': this.account } },
+      }),
+    );
+    const notify = new SnsAction(alerts);
+
+    // Built-in metrics only, so these stay within CloudWatch's free alarms. No traffic counts
+    // as fine, and an email also goes out when an alarm clears.
+    const alarm = (name: string, metric: cloudwatch.IMetric, threshold: number, description: string) => {
+      const a = new cloudwatch.Alarm(this, name, {
+        alarmName: `ActivityStats-${name}`,
+        alarmDescription: description,
+        metric,
+        threshold,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      a.addAlarmAction(notify);
+      a.addOkAction(notify);
+    };
+    const fiveMinutes = { period: Duration.minutes(5), statistic: cloudwatch.Stats.SUM };
+    const functions: [NodejsFunction, string][] = [
+      [putActivity, 'Saving a ride summary failed'],
+      [listActivities, 'Listing changed rides failed'],
+      [trackUpload, 'Making a track upload link failed'],
+      [trackDownload, 'Making a track download link failed'],
+    ];
+    for (const [handler, description] of functions) {
+      alarm(`${handler.node.id}Errors`, handler.metricErrors(fiveMinutes), 1, `${description} at least once in 5 minutes`);
+    }
+    alarm('ApiServerErrors', api.metricServerError(fiveMinutes), 5, 'The API returned 5 or more server errors in 5 minutes');
+
+    // A whole-account monthly budget: one email when actual spend passes the limit, one when
+    // AWS forecasts the month will.
+    const overBudget = (notificationType: 'ACTUAL' | 'FORECASTED') => ({
+      notification: { notificationType, comparisonOperator: 'GREATER_THAN', threshold: 100, thresholdType: 'PERCENTAGE' },
+      subscribers: [{ subscriptionType: 'SNS', address: alerts.topicArn }],
+    });
+    const budget = new budgets.CfnBudget(this, 'MonthlyBudget', {
+      budget: {
+        budgetName: 'ActivityStats-monthly',
+        budgetType: 'COST',
+        timeUnit: 'MONTHLY',
+        budgetLimit: { amount: MONTHLY_BUDGET_USD, unit: 'USD' },
+      },
+      notificationsWithSubscribers: [overBudget('ACTUAL'), overBudget('FORECASTED')],
+    });
+    // The topic must allow Budgets to publish before the budget is created.
+    budget.node.addDependency(alerts);
 
     // --- What the app needs to know (none of it is secret) ---
     new CfnOutput(this, 'ApiUrl', { value: api.apiEndpoint });

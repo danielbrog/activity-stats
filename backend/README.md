@@ -33,6 +33,20 @@ into the APK. The app only needs the five values printed after a deploy (see bel
 - The user pool, table and bucket are **kept if the stack is deleted**, and the pool and
   table have deletion protection, so `cdk destroy` can't lose accounts or rides.
 
+### Alerts
+
+Everything below emails the alarm address through the `ActivityStatsAlarms` SNS topic. AWS
+first sends a confirmation email; nothing arrives until its link is clicked.
+
+| Alarm | Fires when |
+|---|---|
+| `ActivityStats-PutActivityErrors`, `-ListActivitiesErrors`, `-TrackUploadUrlErrors`, `-TrackDownloadUrlErrors` | That function fails at least once in 5 minutes |
+| `ActivityStats-ApiServerErrors` | The API returns 5 or more server errors (5xx) in 5 minutes |
+| Budget `ActivityStats-monthly` | The whole account's spend this month passes $5, or is forecast to |
+
+Alarms also email when they clear. They use only built-in metrics, so they stay within
+CloudWatch's free alarms, and AWS Budgets without actions are free.
+
 ### Two clocks
 
 `updatedAt` is set by the phone and decides which copy of a ride is newer. `syncedAt` is set
@@ -57,7 +71,13 @@ matter which region the CLI defaults to.
 1. Sign the AWS CLI in with your console login: `aws login` (needs AWS CLI 2.32 or newer).
    Check it with `aws sts get-caller-identity`. The session lasts up to 12 hours.
 2. Once per account and region, prepare it for the CDK: `npx cdk bootstrap aws://<account>/us-east-2`
-3. Deploy: `npx cdk deploy`. Review the security changes it lists, then confirm.
+3. Say where alerts go, in `cdk.context.json` next to this file. It is git-ignored, so the
+   address stays on your PC:
+   ```json
+   { "alarmEmail": "you@example.com" }
+   ```
+   Or pass it each time: `npx cdk deploy -c alarmEmail=you@example.com`.
+4. Deploy: `npx cdk deploy`. Review the security changes it lists, then confirm.
 
 After a deploy, the outputs are what the app needs: `ApiUrl`, `UserPoolId`, `AppClientId`,
 `SignInUrl` and `Region`. None of them is a secret.
