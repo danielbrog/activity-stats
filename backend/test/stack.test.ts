@@ -106,12 +106,19 @@ describe('ActivityStatsStack', () => {
     }
   });
 
-  test('alerts go by email through one topic that Budgets may publish to', () => {
+  test('alerts go by email through one topic that both CloudWatch and Budgets may publish to', () => {
     template.resourceCountIs('AWS::SNS::Topic', 1);
     template.hasResourceProperties('AWS::SNS::Subscription', { Protocol: 'email', Endpoint: ALARM_EMAIL });
+    // The topic policy replaces SNS's default, so a missing statement silently drops alarms.
     template.hasResourceProperties('AWS::SNS::TopicPolicy', {
       PolicyDocument: {
         Statement: Match.arrayWith([
+          Match.objectLike({
+            Effect: 'Allow',
+            Principal: { Service: 'cloudwatch.amazonaws.com' },
+            Action: 'sns:Publish',
+            Condition: Match.objectLike({ StringEquals: { 'aws:SourceAccount': '123456789012' } }),
+          }),
           Match.objectLike({
             Effect: 'Allow',
             Principal: { Service: 'budgets.amazonaws.com' },
