@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.painterResource
@@ -61,6 +62,7 @@ import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 @Composable
 fun HistoryScreen(
     onOpenRide: (id: String) -> Unit,
+    onOpenAccount: () -> Unit,
     deletedRideId: String?,
     onDeletedRideHandled: () -> Unit,
     modifier: Modifier = Modifier,
@@ -117,6 +119,7 @@ fun HistoryScreen(
             importing = importing,
             // GPX files often have no proper type set, so show every file; reading checks it.
             onImport = { pickGpx.launch(arrayOf("*/*")) },
+            onOpenAccount = onOpenAccount,
         )
         SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
@@ -130,6 +133,7 @@ private fun HistoryContent(
     onOpenRide: (id: String) -> Unit,
     importing: Boolean,
     onImport: () -> Unit,
+    onOpenAccount: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -150,6 +154,9 @@ private fun HistoryContent(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(if (importing) "Importing…" else "Import GPX")
+            }
+            IconButton(onClick = onOpenAccount) {
+                Icon(painterResource(R.drawable.ic_account), contentDescription = "Account")
             }
         }
         when {
@@ -232,6 +239,7 @@ private fun HistoryPreview() {
             onOpenRide = {},
             importing = false,
             onImport = {},
+            onOpenAccount = {},
         )
     }
 }
@@ -242,7 +250,7 @@ private fun HistoryEmptyPreview() {
     ActivityStatsTheme {
         HistoryContent(
             emptyList(), DisplaySettings(), use24Hour = false, onOpenRide = {},
-            importing = false, onImport = {},
+            importing = false, onImport = {}, onOpenAccount = {},
         )
     }
 }

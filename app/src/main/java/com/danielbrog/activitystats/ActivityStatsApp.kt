@@ -2,6 +2,9 @@ package com.danielbrog.activitystats
 
 import android.app.Application
 import android.util.Log
+import com.danielbrog.activitystats.account.AuthConfig
+import com.danielbrog.activitystats.account.AuthRepository
+import com.danielbrog.activitystats.account.AuthStateStore
 import com.danielbrog.activitystats.data.ActivityRepository
 import com.danielbrog.activitystats.data.AppDatabase
 import com.danielbrog.activitystats.data.RecordingWriter
@@ -17,11 +20,18 @@ class ActivityStatsApp : Application() {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val database: AppDatabase by lazy { AppDatabase.create(this) }
-    val activityRepository: ActivityRepository by lazy { ActivityRepository(database) }
+    val activityRepository: ActivityRepository by lazy {
+        ActivityRepository(database, ownerId = { authRepository.signedInUserId })
+    }
     val recordingWriter: RecordingWriter by lazy { RecordingWriter(activityRepository, appScope) }
+    val authRepository: AuthRepository by lazy {
+        AuthRepository(this, AuthConfig.current, AuthStateStore(this), { activityRepository }, appScope)
+    }
 
     override fun onCreate() {
         super.onCreate()
+        // Start reading the saved sign-in now, so rides recorded from here on get their owner.
+        authRepository
         // A fresh process means no recording is running yet, so any open activity from
         // before now was cut off by a crash, force-stop or dead battery. Finish it.
         val processStartedAt = System.currentTimeMillis()

@@ -46,6 +46,13 @@ abstract class ActivityDao {
     )
     abstract suspend fun restore(id: String, now: Long)
 
+    /**
+     * Gives every activity with no owner to [userId] and marks it waiting to upload. Leaves
+     * updatedAt alone: the ride itself hasn't changed. Returns how many were claimed.
+     */
+    @Query("UPDATE activities SET userId = :userId, syncState = '${SyncState.PENDING}' WHERE userId IS NULL")
+    abstract suspend fun claimUnowned(userId: String): Int
+
     /** A not-deleted activity that started in the same second, or null: used to spot re-imports. */
     @Query(
         "SELECT id FROM activities WHERE deletedAt IS NULL AND startedAt / 1000 = :startedAtMillis / 1000 LIMIT 1"

@@ -4,11 +4,17 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** Sync states from the build guide's data model. Only LOCAL_ONLY is used until Phase 4. */
+/**
+ * Sync states from the build guide's data model. LOCAL_ONLY: no account, stays on this phone.
+ * PENDING: belongs to an account and is waiting to upload. SYNCED: the cloud has this copy.
+ */
 object SyncState {
     const val LOCAL_ONLY = "LOCAL_ONLY"
     const val PENDING = "PENDING"
     const val SYNCED = "SYNCED"
+
+    /** A new ride waits to upload if it has an owner, and stays on the phone if not. */
+    fun forNewRide(userId: String?): String = if (userId == null) LOCAL_ONLY else PENDING
 }
 
 /** Activity types from the build guide. Rides are the default; the others come with editing. */
@@ -26,7 +32,10 @@ object ActivityType {
 data class ActivityEntity(
     /** UUID made on the phone, so two devices never create the same ID. */
     @PrimaryKey val id: String,
-    /** Empty until accounts exist; filled in on first sync. */
+    /**
+     * The account the ride belongs to (its Cognito id), or null if it was recorded while
+     * signed out. Signing in claims every ride with no owner.
+     */
     val userId: String? = null,
     val type: String = ActivityType.RIDE,
     /** Epoch milliseconds, UTC. Time zones are handled in the UI only. */

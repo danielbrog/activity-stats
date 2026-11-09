@@ -22,6 +22,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.danielbrog.activitystats.R
+import com.danielbrog.activitystats.account.AccountScreen
 import com.danielbrog.activitystats.history.HistoryScreen
 import com.danielbrog.activitystats.history.RideDetailScreen
 import com.danielbrog.activitystats.live.LiveScreen
@@ -49,7 +50,7 @@ private val tabs = listOf(
 
 /**
  * The app's screens and how to move between them. Record, History and Records are tabs in a
- * bottom bar; ride detail and GPS details open on top of them, without the bar, and Back
+ * bottom bar; ride detail, Account and GPS details open on top of them, without the bar, and Back
  * closes them.
  */
 @Composable
@@ -90,6 +91,7 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                     .collectAsStateWithLifecycle()
                 HistoryScreen(
                     onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                    onOpenAccount = { navController.navigate(AccountRoute) },
                     deletedRideId = deletedRideId,
                     onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
                 )
@@ -112,6 +114,9 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                         navController.popBackStack()
                     },
                 )
+            }
+            composable<AccountRoute> {
+                AccountScreen(onBack = { navController.popBackStack() })
             }
             composable<GpsDetailsRoute> {
                 GPSDisplayScreen(onBack = { navController.popBackStack() })
