@@ -20,8 +20,14 @@ sealed interface ImportResult {
 /**
  * The only way into the activity database (build guide rule): screens and the tracking
  * service go through here, so cloud sync can slot in behind it later.
+ *
+ * [ownerId] gives the signed-in account's id, or null when signed out: new rides are filed
+ * under it, so they belong to the account they were recorded in.
  */
-class ActivityRepository(private val db: AppDatabase) {
+class ActivityRepository(
+    private val db: AppDatabase,
+    private val ownerId: () -> String? = { null },
+) {
 
     private val activities = db.activityDao()
     private val points = db.trackPointDao()
@@ -37,9 +43,12 @@ class ActivityRepository(private val db: AppDatabase) {
     val savedCount: Flow<Int> = activities.finishedCount()
 
     suspend fun startActivity(id: String, startedAtMillis: Long) {
+        val owner = ownerId()
         activities.insertActivity(
             ActivityEntity(
                 id = id,
+                userId = owner,
+                syncState = SyncState.forNewRide(owner),
                 type = ActivityType.RIDE,
                 startedAt = startedAtMillis,
                 title = rideTitle(startedAtMillis),
@@ -90,10 +99,13 @@ class ActivityRepository(private val db: AppDatabase) {
 
         val stats = summarize(startedAt, fixes)
         val id = UUID.randomUUID().toString()
+        val owner = ownerId()
         db.withTransaction {
             activities.insertActivity(
                 ActivityEntity(
                     id = id,
+                    userId = owner,
+                    syncState = SyncState.forNewRide(owner),
                     type = track.type,
                     startedAt = startedAt,
                     endedAt = fixes.last().timeMillis,
@@ -151,6 +163,9 @@ class ActivityRepository(private val db: AppDatabase) {
         }
         return open.size
     }
+
+    /** Files every ride with no owner under [userId], on sign-in. Returns how many. */
+    suspend fun claimUnowned(userId: String): Int = activities.claimUnowned(userId)
 
     suspend fun getActivity(id: String): ActivityEntity? = activities.getActivity(id)
 

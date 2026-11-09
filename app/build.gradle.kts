@@ -33,6 +33,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Cognito's sign-in page sends the user back to this scheme; AppAuth listens for it.
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.danielbrog.activitystats"
     }
 
     buildTypes {
@@ -51,6 +54,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // The sign-in settings from local.properties reach the code as BuildConfig fields.
+        buildConfig = true
     }
 }
 
@@ -72,6 +77,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.appauth)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

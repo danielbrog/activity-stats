@@ -20,6 +20,10 @@ object RecordsRoute
 @Serializable
 data class RideDetailRoute(val id: String)
 
+/** Sign in, sign out and see the account; opened from History. */
+@Serializable
+object AccountRoute
+
 /** The raw GPS fix list for the current recording. */
 @Serializable
 object GpsDetailsRoute
