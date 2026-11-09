@@ -184,7 +184,19 @@ export class ActivityStatsStack extends Stack {
       displayName: 'Activity Stats alerts',
     });
     alerts.addSubscription(new EmailSubscription(props.alarmEmail));
-    // AWS Budgets publishes to the topic as a service, so it needs explicit permission.
+    // A topic policy replaces SNS's default one, so every service that publishes here needs
+    // its own statement: CloudWatch for this stack's alarms, and Budgets for the budget.
+    alerts.addToResourcePolicy(
+      new iam.PolicyStatement({
+        principals: [new iam.ServicePrincipal('cloudwatch.amazonaws.com')],
+        actions: ['sns:Publish'],
+        resources: [alerts.topicArn],
+        conditions: {
+          StringEquals: { 'aws:SourceAccount': this.account },
+          ArnLike: { 'aws:SourceArn': `arn:${this.partition}:cloudwatch:${this.region}:${this.account}:alarm:ActivityStats-*` },
+        },
+      }),
+    );
     alerts.addToResourcePolicy(
       new iam.PolicyStatement({
         principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
