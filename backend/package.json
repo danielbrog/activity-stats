@@ -5,7 +5,7 @@
   "description": "AWS backend for Activity Stats: Cognito sign-in, a DynamoDB table of ride summaries, an S3 bucket of track files, and an HTTP API.",
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "jest",
+    "test": "jest --runInBand",
     "synth": "cdk synth",
     "diff": "cdk diff",
     "deploy": "cdk deploy",
