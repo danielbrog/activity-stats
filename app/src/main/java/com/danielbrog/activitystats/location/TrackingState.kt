@@ -1,6 +1,7 @@
 package com.danielbrog.activitystats.location
 
 import com.danielbrog.activitystats.stats.ActivityStats
+import com.danielbrog.activitystats.stats.Geo
 import com.danielbrog.activitystats.stats.StatsEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,14 +23,30 @@ data class GpsData(
     val status: FixStatus = FixStatus.Kept,
     /** Metres above the WGS84 ellipsoid, or null if the provider gave none. */
     val altitudeMeters: Double? = null,
+    /**
+     * Which stretch between pauses this fix belongs to: 0 until the first manual pause, then
+     * one more after each Resume. Distance and time are never counted between two fixes with
+     * different numbers, since whatever happened in between wasn't ridden.
+     */
+    val segment: Int = 0,
 )
+
+/**
+ * Distance from [a] to [b] along the ride: straight-line between them, or 0 when a pause
+ * lies between them, since the gap wasn't ridden.
+ */
+fun legMeters(a: GpsData, b: GpsData): Double =
+    if (a.segment != b.segment) 0.0 else Geo.distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
 
 data class TrackingUiState(
     val isTracking: Boolean = false,
     /** Newest first, capped to the most recent fixes. */
     val fixes: List<GpsData> = emptyList(),
-    /** Every kept position of this recording, oldest first, for drawing on the map. */
-    val route: List<RoutePoint> = emptyList(),
+    /**
+     * Every kept position of this recording, oldest first, for drawing on the map. One list
+     * per stretch between pauses, so the line breaks where you paused.
+     */
+    val route: List<List<RoutePoint>> = emptyList(),
     /** All fixes received this recording, including ones no longer in [fixes]. */
     val totalCount: Int = 0,
     /** Fixes the noise filter kept this recording. */
@@ -39,7 +56,18 @@ data class TrackingUiState(
     /** Latest stats from the [StatsEngine]. */
     val stats: ActivityStats = ActivityStats(),
     val locationServicesOff: Boolean = false,
-)
+    /** When the current manual pause began, or null while not paused by hand. */
+    val pausedAtMillis: Long? = null,
+    /** Time spent in manual pauses that have ended, this recording. */
+    val pausedMs: Long = 0L,
+) {
+    /** True while the rider has pressed Pause and not yet Resume. */
+    val isManuallyPaused: Boolean get() = pausedAtMillis != null
+
+    /** All manually paused time up to [nowMillis], the current pause included. */
+    fun pausedMsAt(nowMillis: Long): Long =
+        pausedMs + (pausedAtMillis?.let { (nowMillis - it).coerceAtLeast(0L) } ?: 0L)
+}
 
 /**
  * App-wide live tracking state. [LocationTrackingService] writes it; screens read it,

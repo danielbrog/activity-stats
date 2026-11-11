@@ -1,5 +1,6 @@
 package com.danielbrog.activitystats.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -87,4 +88,7 @@ data class TrackPointEntity(
     val speedMps: Float?,
     /** A [com.danielbrog.activitystats.location.FixStatus] name. */
     val status: String,
+    /** The stretch between manual pauses; see [com.danielbrog.activitystats.location.GpsData.segment]. */
+    @ColumnInfo(defaultValue = "0")
+    val segment: Int = 0,
 )

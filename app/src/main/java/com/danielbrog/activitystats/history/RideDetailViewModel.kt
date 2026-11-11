@@ -11,7 +11,7 @@ import androidx.navigation.toRoute
 import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.data.ActivityEntity
 import com.danielbrog.activitystats.data.RideTitle
-import com.danielbrog.activitystats.location.FixStatus
+import com.danielbrog.activitystats.location.Route
 import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.navigation.RideDetailRoute
 import com.danielbrog.activitystats.settings.DisplaySettings
@@ -42,7 +42,8 @@ sealed interface RideDetailState {
     /** [route] and [speedSamples] use only the kept fixes, so they skip GPS noise. */
     data class Loaded(
         val ride: ActivityEntity,
-        val route: List<RoutePoint>,
+        /** One line per stretch between manual pauses. */
+        val route: List<List<RoutePoint>>,
         val speedSamples: List<SpeedSample>,
         val elevationSamples: List<ElevationSample>,
         val kmSplits: List<Split> = emptyList(),
@@ -57,7 +58,7 @@ data class GpxExport(val uri: Uri, val fileName: String)
 
 /** The parts of a ride built from its saved points; they never change once loaded. */
 private data class RideTrack(
-    val route: List<RoutePoint>,
+    val route: List<List<RoutePoint>>,
     val speedSamples: List<SpeedSample>,
     val elevationSamples: List<ElevationSample>,
     val kmSplits: List<Split>,
@@ -106,9 +107,7 @@ class RideDetailViewModel(
             // Building the chart data walks every point; keep it off the main thread.
             track.value = withContext(Dispatchers.Default) {
                 RideTrack(
-                    route = points
-                        .filter { it.status == FixStatus.Kept }
-                        .map { RoutePoint(it.latitude, it.longitude) },
+                    route = Route.of(points),
                     speedSamples = SpeedSeries.downsample(SpeedSeries.fromFixes(points)),
                     elevationSamples = ElevationSeries.downsample(ElevationSeries.fromFixes(points)),
                     // Both units up front, so switching km/mi is instant.

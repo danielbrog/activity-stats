@@ -2,6 +2,7 @@ package com.danielbrog.activitystats.stats
 
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
+import com.danielbrog.activitystats.location.legMeters
 import kotlin.math.max
 
 /**
@@ -51,6 +52,10 @@ fun paceSecondsPerKm(speedMps: Double, minSpeedMps: Double = 0.5): Double? =
  * [movingSpeedMps], and resume on the first fix at or above it. The pause counts from the
  * first slow fix, so the time spent deciding isn't counted as moving. A gap of over
  * [maxGapMs] between fixes is never moving time.
+ *
+ * A manual pause starts a new [GpsData.segment]. Nothing between the last fix before the
+ * pause and the first after it counts, neither distance nor time, and the first fix after
+ * it starts afresh, as at Start.
  */
 class StatsEngine(
     private val startedAtMillis: Long,
@@ -79,9 +84,14 @@ class StatsEngine(
     private var slowSinceMillis: Long? = null
     /** Slow time not yet counted: kept if you speed up again, dropped if you pause. */
     private var pendingMs = 0L
+    /** The segment of the fixes seen so far; a fix from another one means a manual pause ended. */
+    private var segment: Int? = null
 
     fun add(fix: GpsData) {
         if (fix.status == FixStatus.DroppedAccuracy) return // untrustworthy: no say in anything
+
+        if (segment != null && fix.segment != segment) startNewSegment()
+        segment = fix.segment
 
         var derivedSpeedMps = 0.0
         if (fix.status == FixStatus.Kept) {
@@ -89,7 +99,7 @@ class StatsEngine(
             if (prev != null) {
                 val dtMs = fix.timeMillis - prev.timeMillis
                 if (dtMs <= 0) return // out of order or duplicate; ignore
-                val d = distanceBetween(prev, fix)
+                val d = legMeters(prev, fix)
                 distanceMeters += d
                 derivedSpeedMps = d / (dtMs / 1_000.0)
             }
@@ -105,6 +115,19 @@ class StatsEngine(
             else -> fix.speedMps?.toDouble() ?: derivedSpeedMps
         }
         updatePause(fix.timeMillis, moving = speedMps >= movingSpeedMps)
+    }
+
+    /**
+     * After a manual pause: forget the last position and the auto-pause state, so neither
+     * the distance nor the time across the pause is counted. Totals so far are kept.
+     */
+    private fun startNewSegment() {
+        lastKept = null
+        recent.clear()
+        lastPauseCheckMillis = null
+        paused = false
+        slowSinceMillis = null
+        pendingMs = 0L
     }
 
     private fun updatePause(timeMillis: Long, moving: Boolean) {
@@ -178,7 +201,8 @@ class StatsEngine(
 
 /**
  * The big Time on the Record screen. With auto-pause on it is moving time, which stops
- * while paused; with it off it is elapsed time. While moving it keeps ticking between fixes.
+ * while paused; with it off it is elapsed time less [pausedMs], the time paused by hand.
+ * While moving it keeps ticking between fixes; while [manuallyPaused] it stands still.
  */
 fun displayTimeMs(
     autoPause: Boolean,
@@ -186,10 +210,12 @@ fun displayTimeMs(
     stats: ActivityStats,
     startedAtMillis: Long,
     nowMillis: Long,
+    pausedMs: Long = 0L,
+    manuallyPaused: Boolean = false,
 ): Long = when {
-    !autoPause && isTracking -> max(0L, nowMillis - startedAtMillis)
-    !autoPause -> stats.elapsedMs
-    isTracking && !stats.isPaused && stats.asOfMillis > 0L ->
+    !autoPause && isTracking -> max(0L, nowMillis - startedAtMillis - pausedMs)
+    !autoPause -> max(0L, stats.elapsedMs - pausedMs)
+    isTracking && !manuallyPaused && !stats.isPaused && stats.asOfMillis > 0L ->
         stats.movingMs + max(0L, nowMillis - stats.asOfMillis)
     else -> stats.movingMs
 }

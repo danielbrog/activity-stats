@@ -14,6 +14,7 @@ import java.util.Locale
  * RideWithGPS all import. Plain Kotlin, unit-tested.
  *
  * Only the fixes the noise filter kept are written, the same ones the map and stats use.
+ * Each stretch between manual pauses is its own `<trkseg>`, the GPX way of marking a pause.
  * Elevation is the phone's raw GPS altitude; most apps replace it with their own.
  */
 object GpxWriter {
@@ -46,8 +47,10 @@ object GpxWriter {
         out.append("  <trk>\n")
         out.append("    <name>").append(name).append("</name>\n")
         out.append("    <type>").append(gpxType(type)).append("</type>\n")
+        val kept = fixes.filter { it.status == FixStatus.Kept }.sortedBy { it.seq }
         out.append("    <trkseg>\n")
-        for (fix in fixes.filter { it.status == FixStatus.Kept }.sortedBy { it.seq }) {
+        kept.forEachIndexed { i, fix ->
+            if (i > 0 && fix.segment != kept[i - 1].segment) out.append("    </trkseg>\n    <trkseg>\n")
             out.append("      <trkpt lat=\"").append("%.7f".format(Locale.US, fix.latitude))
                 .append("\" lon=\"").append("%.7f".format(Locale.US, fix.longitude)).append("\">")
             fix.altitudeMeters?.let { out.append("<ele>").append("%.1f".format(Locale.US, it)).append("</ele>") }

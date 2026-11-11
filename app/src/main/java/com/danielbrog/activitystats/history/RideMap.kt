@@ -32,11 +32,12 @@ import com.google.maps.android.compose.rememberUpdatedMarkerState
 private const val SINGLE_POINT_ZOOM = 16f
 
 /**
- * A saved ride's whole route, zoomed to fit, with start and finish markers.
+ * A saved ride's whole route, zoomed to fit, with start and finish markers. [route] has one
+ * line per stretch between manual pauses, drawn separately so a pause shows as a break.
  * Pan and zoom freely; it doesn't follow anything.
  */
 @Composable
-fun RideMap(route: List<RoutePoint>, modifier: Modifier = Modifier) {
+fun RideMap(route: List<List<RoutePoint>>, modifier: Modifier = Modifier) {
     if (LocalInspectionMode.current) {
         Box(
             modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
@@ -45,8 +46,9 @@ fun RideMap(route: List<RoutePoint>, modifier: Modifier = Modifier) {
         return
     }
 
-    val points = remember(route) { route.map { LatLng(it.latitude, it.longitude) } }
-    val bounds = remember(route) { RouteBounds.of(route) }
+    val lines = remember(route) { route.map { line -> line.map { LatLng(it.latitude, it.longitude) } } }
+    val points = remember(lines) { lines.flatten() }
+    val bounds = remember(route) { RouteBounds.of(route.flatten()) }
     val cameraPositionState = rememberCameraPositionState()
     var mapLoaded by remember { mutableStateOf(false) }
     val paddingPx = with(LocalDensity.current) { 48.dp.roundToPx() }
@@ -71,8 +73,8 @@ fun RideMap(route: List<RoutePoint>, modifier: Modifier = Modifier) {
         uiSettings = MapUiSettings(zoomControlsEnabled = false, mapToolbarEnabled = false),
         onMapLoaded = { mapLoaded = true },
     ) {
-        if (points.size >= 2) {
-            Polyline(points = points, color = MaterialTheme.colorScheme.primary, width = 14f)
+        lines.filter { it.size >= 2 }.forEach { line ->
+            Polyline(points = line, color = MaterialTheme.colorScheme.primary, width = 14f)
         }
         points.firstOrNull()?.let { start ->
             Marker(
