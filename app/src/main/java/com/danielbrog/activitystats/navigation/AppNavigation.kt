@@ -1,9 +1,22 @@
 package com.danielbrog.activitystats.navigation
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -13,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -48,10 +62,68 @@ private val tabs = listOf(
     Tab(RecordsRoute, "Records", R.drawable.ic_nav_records),
 )
 
+// --- Transitions ---
+// Back is a predictive gesture (Android 16+), so the pop transitions below follow your finger.
+
+/** How long a screen takes to slide over another, or the bottom bar to grow or shrink. */
+private const val SLIDE_MS = 300
+/** Fade-through between tabs: the old one fades out quickly, then the new one fades in. */
+private const val FADE_OUT_MS = 90
+private const val FADE_IN_MS = 210
+
+/** Screens that open on top of a tab, without the bottom bar, and slide in from the side. */
+private fun NavDestination.opensOnTop(): Boolean =
+    hasRoute<RideDetailRoute>() || hasRoute<AccountRoute>() || hasRoute<GpsDetailsRoute>()
+
+private fun fadeThroughIn(): EnterTransition = fadeIn(tween(FADE_IN_MS, delayMillis = FADE_OUT_MS))
+
+private fun fadeThroughOut(): ExitTransition = fadeOut(tween(FADE_OUT_MS))
+
+/** Opening: a screen on top slides in from the right; a tab fades in. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(): EnterTransition =
+    if (targetState.destination.opensOnTop()) {
+        slideIntoContainer(SlideDirection.Start, tween(SLIDE_MS))
+    } else {
+        fadeThroughIn()
+    }
+
+/** Under a screen opening on top, the old one shifts a quarter left; between tabs it fades out. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(): ExitTransition =
+    if (targetState.destination.opensOnTop()) {
+        slideOutOfContainer(SlideDirection.Start, tween(SLIDE_MS)) { it / 4 }
+    } else {
+        fadeThroughOut()
+    }
+
+/** Back to the screen underneath: it shifts back from the left; a tab fades in. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(): EnterTransition =
+    if (initialState.destination.opensOnTop()) {
+        slideIntoContainer(SlideDirection.End, tween(SLIDE_MS)) { it / 4 }
+    } else {
+        fadeThroughIn()
+    }
+
+/** Back from a screen on top: it slides out to the right; a tab fades out. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(): ExitTransition =
+    if (initialState.destination.opensOnTop()) {
+        slideOutOfContainer(SlideDirection.End, tween(SLIDE_MS))
+    } else {
+        fadeThroughOut()
+    }
+
+/**
+ * Gives a screen a solid background. Without it the screens are see-through, so during a
+ * transition the one underneath shows through the one on top.
+ */
+@Composable
+private fun Opaque(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { content() }
+}
+
 /**
  * The app's screens and how to move between them. Record, History and Records are tabs in a
- * bottom bar; ride detail, Account and GPS details open on top of them, without the bar, and Back
- * closes them.
+ * bottom bar, switched with a quick fade. Ride detail, Account and GPS details slide in on top
+ * of them, without the bar, and Back slides them away again.
  */
 @Composable
 fun AppNavigation(navController: NavHostController = rememberNavController()) {
@@ -62,7 +134,12 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            if (showBottomBar) {
+            // Grows and shrinks rather than popping, so the content above moves smoothly.
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = expandVertically(tween(SLIDE_MS)),
+                exit = shrinkVertically(tween(SLIDE_MS)),
+            ) {
                 NavigationBar {
                     tabs.forEach { tab ->
                         NavigationBarItem(
@@ -80,46 +157,56 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
             navController = navController,
             startDestination = RecordRoute,
             modifier = Modifier.padding(innerPadding),
+            enterTransition = { enter() },
+            exitTransition = { exit() },
+            popEnterTransition = { popEnter() },
+            popExitTransition = { popExit() },
         ) {
             composable<RecordRoute> {
-                LiveScreen(onOpenGpsDetails = { navController.navigate(GpsDetailsRoute) })
+                Opaque { LiveScreen(onOpenGpsDetails = { navController.navigate(GpsDetailsRoute) }) }
             }
             composable<HistoryRoute> { entry ->
                 // Set by the detail screen when it deletes a ride, so History can offer Undo.
                 val deletedRideId by entry.savedStateHandle
                     .getStateFlow<String?>(DELETED_RIDE_ID, null)
                     .collectAsStateWithLifecycle()
-                HistoryScreen(
-                    onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
-                    onOpenAccount = { navController.navigate(AccountRoute) },
-                    deletedRideId = deletedRideId,
-                    onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
-                )
+                Opaque {
+                    HistoryScreen(
+                        onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                        onOpenAccount = { navController.navigate(AccountRoute) },
+                        deletedRideId = deletedRideId,
+                        onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                    )
+                }
             }
             composable<RecordsRoute> { entry ->
                 val deletedRideId by entry.savedStateHandle
                     .getStateFlow<String?>(DELETED_RIDE_ID, null)
                     .collectAsStateWithLifecycle()
-                RecordsScreen(
-                    onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
-                    deletedRideId = deletedRideId,
-                    onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
-                )
+                Opaque {
+                    RecordsScreen(
+                        onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                        deletedRideId = deletedRideId,
+                        onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                    )
+                }
             }
             composable<RideDetailRoute> {
-                RideDetailScreen(
-                    onBack = { navController.popBackStack() },
-                    onDeleted = { id ->
-                        navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_RIDE_ID, id)
-                        navController.popBackStack()
-                    },
-                )
+                Opaque {
+                    RideDetailScreen(
+                        onBack = { navController.popBackStack() },
+                        onDeleted = { id ->
+                            navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_RIDE_ID, id)
+                            navController.popBackStack()
+                        },
+                    )
+                }
             }
             composable<AccountRoute> {
-                AccountScreen(onBack = { navController.popBackStack() })
+                Opaque { AccountScreen(onBack = { navController.popBackStack() }) }
             }
             composable<GpsDetailsRoute> {
-                GPSDisplayScreen(onBack = { navController.popBackStack() })
+                Opaque { GPSDisplayScreen(onBack = { navController.popBackStack() }) }
             }
         }
     }
