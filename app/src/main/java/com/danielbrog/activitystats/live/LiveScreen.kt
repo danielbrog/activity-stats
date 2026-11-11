@@ -60,8 +60,22 @@ import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.stats.displayTimeMs
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilterChip
+import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import com.danielbrog.activitystats.location.GpsPreview
+import com.danielbrog.activitystats.location.GpsStatus
+import com.danielbrog.activitystats.location.LocationPreview
+import com.danielbrog.activitystats.location.PreviewFix
+import com.danielbrog.activitystats.location.RoutePoint
 import androidx.compose.material3.Surface
 import com.danielbrog.activitystats.stats.SpeedDisplay
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
@@ -84,6 +98,21 @@ fun LiveScreen(
     var problem by remember { mutableStateOf(PermissionProblem.None) }
     // Ask for notification permission once per screen visit, not on every Start.
     var askedForNotifications by rememberSaveable { mutableStateOf(false) }
+    // Re-checked whenever the screen comes back, since it can be allowed in system settings.
+    var hasLocation by remember { mutableStateOf(context.hasFineLocation()) }
+    LifecycleResumeEffect(Unit) {
+        hasLocation = context.hasFineLocation()
+        onPauseOrDispose { }
+    }
+
+    /** Why location isn't allowed, after the user answered the permission request. */
+    fun problemAfterAsking(granted: Map<String, Boolean>): PermissionProblem = when {
+        context.hasFineLocation() -> PermissionProblem.None
+        granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true -> PermissionProblem.OnlyApproximate
+        activity?.shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) == false ->
+            PermissionProblem.DeniedPermanently
+        else -> PermissionProblem.Denied
+    }
 
     @SuppressLint("MissingPermission") // only called after checking ACCESS_FINE_LOCATION
     fun startIfAllowed(): Boolean {
@@ -96,14 +125,45 @@ fun LiveScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { granted ->
+        hasLocation = context.hasFineLocation()
         if (startIfAllowed()) return@rememberLauncherForActivityResult
-        problem = when {
-            granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true ->
-                PermissionProblem.OnlyApproximate
-            activity?.shouldShowRequestPermissionRationale(
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == false -> PermissionProblem.DeniedPermanently
-            else -> PermissionProblem.Denied
+        problem = problemAfterAsking(granted)
+    }
+
+    // Opening Record asks for location once, so the GPS can warm up before Start. Declining
+    // isn't asked again until Start is pressed or the app is next opened.
+    val openPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        hasLocation = context.hasFineLocation()
+        problem = problemAfterAsking(granted)
+    }
+    LaunchedEffect(Unit) {
+        if (!hasLocation && !state.isTracking && !viewModel.askedForLocationOnOpen) {
+            viewModel.askedForLocationOnOpen = true
+            openPermissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
+    // Warm the GPS up while the screen is visible and nothing is recording, so the first
+    // fixes of a ride are already accurate. Stops on leaving the tab or the app.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var gps by remember { mutableStateOf<GpsPreview?>(null) }
+    val warmUp = hasLocation && !state.isTracking
+    LaunchedEffect(warmUp, lifecycleOwner) {
+        gps = null
+        if (!warmUp) return@LaunchedEffect
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            try {
+                @SuppressLint("MissingPermission") // warmUp is only true with ACCESS_FINE_LOCATION
+                val updates = LocationPreview.updates(context)
+                updates.collect { gps = it }
+            } catch (e: SecurityException) {
+                // Permission was taken away while the screen was open.
+                hasLocation = false
+            }
         }
     }
 
@@ -113,8 +173,8 @@ fun LiveScreen(
         saved = saved,
         problem = problem,
         notificationsOff = state.isTracking && !context.canPostNotifications(),
-        // Re-checked on every recomposition, so the map's blue dot appears once allowed.
-        hasLocationPermission = context.hasFineLocation(),
+        hasLocationPermission = hasLocation,
+        gps = gps,
         onStart = {
             val missing = buildList {
                 if (!context.hasFineLocation()) {
@@ -152,6 +212,8 @@ private fun LiveContent(
     problem: PermissionProblem,
     notificationsOff: Boolean,
     hasLocationPermission: Boolean,
+    /** The GPS warm-up before recording, or null while recording or without permission. */
+    gps: GpsPreview?,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onUnitChange: (DistanceUnit) -> Unit,
@@ -195,6 +257,9 @@ private fun LiveContent(
             AutoPauseChip(settings.autoPause, onAutoPauseChange)
             TextButton(onClick = onOpenGpsDetails) { Text("GPS details") }
         }
+        if (!state.isTracking && gps != null) {
+            GpsStatusLine(gps.status, unit)
+        }
 
         SettingsRow(settings, onUnitChange, onSpeedDisplayChange)
 
@@ -212,6 +277,7 @@ private fun LiveContent(
         LiveMap(
             route = state.route,
             hasLocationPermission = hasLocationPermission,
+            currentPosition = gps?.fix?.let { RoutePoint(it.latitude, it.longitude) },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -401,6 +467,28 @@ private fun PermissionMessage(problem: PermissionProblem, onOpenSettings: () -> 
     }
 }
 
+/** Before Start: a coloured dot and how the GPS is doing, so you know when to press Start. */
+@Composable
+private fun GpsStatusLine(status: GpsStatus, unit: DistanceUnit) {
+    val dark = isSystemInDarkTheme()
+    val color = when (status) {
+        is GpsStatus.Ready -> if (dark) Color(0xFF81C784) else Color(0xFF2E7D32)
+        is GpsStatus.Weak -> if (dark) Color(0xFFFFB74D) else Color(0xFFB26A00)
+        GpsStatus.Finding -> MaterialTheme.colorScheme.onSurfaceVariant
+        GpsStatus.Off -> MaterialTheme.colorScheme.error
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+        Box(Modifier.size(10.dp).background(color, CircleShape))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            status.text(unit),
+            style = MaterialTheme.typography.bodyMedium.withTabularDigits(),
+            color = color,
+            fontWeight = if (status is GpsStatus.Ready) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
+
 @Composable
 private fun Notice(text: String) {
     Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -444,6 +532,7 @@ private fun LivePreview() {
             problem = PermissionProblem.None,
             notificationsOff = false,
             hasLocationPermission = true,
+            gps = GpsPreview(fix = PreviewFix(0.0, 0.0, accuracyMeters = 4f)),
             onStart = {},
             onStop = {},
             onUnitChange = {},

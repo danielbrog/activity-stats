@@ -41,6 +41,12 @@ class LocationViewModel(application: Application) : AndroidViewModel(application
             latest?.let { SavedSummary(title = it.title, count = count) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
+    /**
+     * Whether the Record screen already asked for location permission on opening. Kept here
+     * rather than in the screen, so switching tabs and back doesn't ask again.
+     */
+    var askedForLocationOnOpen = false
+
     @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
     fun start() {
         if (state.value.isTracking) return
