@@ -53,9 +53,21 @@ class LocationViewModel(application: Application) : AndroidViewModel(application
         LocationTrackingService.start(getApplication())
     }
 
+    /** Finishes the recording and saves the ride. */
     fun stop() {
         if (!state.value.isTracking) return
         LocationTrackingService.stop(getApplication())
+    }
+
+    /** Pauses by hand: the GPS goes off and the timers stand still until [resume]. */
+    fun pause() {
+        if (!state.value.isTracking || state.value.isManuallyPaused) return
+        LocationTrackingService.pause(getApplication())
+    }
+
+    fun resume() {
+        if (!state.value.isTracking || !state.value.isManuallyPaused) return
+        LocationTrackingService.resume(getApplication())
     }
 
     fun setUnit(unit: DistanceUnit) {

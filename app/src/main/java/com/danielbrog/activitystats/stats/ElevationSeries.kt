@@ -2,6 +2,7 @@ package com.danielbrog.activitystats.stats
 
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
+import com.danielbrog.activitystats.location.legMeters
 
 /** One point on the elevation chart: how far into the ride, and how high. Raw units. */
 data class ElevationSample(val distanceMeters: Double, val altitudeMeters: Double)
@@ -25,7 +26,7 @@ object ElevationSeries {
         for (fix in kept) {
             val prev = previous
             if (prev != null) {
-                distance += Geo.distanceMeters(prev.latitude, prev.longitude, fix.latitude, fix.longitude)
+                distance += legMeters(prev, fix)
             }
             fix.altitudeMeters?.let { samples += ElevationSample(distance, it) }
             previous = fix
