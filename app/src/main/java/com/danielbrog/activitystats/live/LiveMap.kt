@@ -36,13 +36,15 @@ private const val FOLLOW_ZOOM = 16f
 
 /**
  * Google Map showing the current route as a line. Follows your latest position until you
- * drag the map; then a Re-centre button turns following back on.
+ * drag the map; then a Re-centre button turns following back on. Before there is a route,
+ * it follows [currentPosition], the GPS warm-up's newest fix.
  */
 @Composable
 fun LiveMap(
     route: List<RoutePoint>,
     hasLocationPermission: Boolean,
     modifier: Modifier = Modifier,
+    currentPosition: RoutePoint? = null,
 ) {
     // Android Studio's preview can't draw a real map, so show a stand-in there.
     if (LocalInspectionMode.current) {
@@ -57,7 +59,8 @@ fun LiveMap(
     val cameraPositionState = rememberCameraPositionState()
     var following by rememberSaveable { mutableStateOf(true) }
     val points = remember(route) { route.map { LatLng(it.latitude, it.longitude) } }
-    val latest = points.lastOrNull()
+    // The route's end while there is one; otherwise where the warm-up says you are.
+    val latest = points.lastOrNull() ?: currentPosition?.let { LatLng(it.latitude, it.longitude) }
 
     // Dragging or pinching the map stops following.
     LaunchedEffect(cameraPositionState.isMoving) {
