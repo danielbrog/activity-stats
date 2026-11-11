@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.dp
+import com.danielbrog.activitystats.location.Route
 import com.danielbrog.activitystats.location.RoutePoint
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -35,13 +36,13 @@ import kotlinx.coroutines.CancellationException
 private const val FOLLOW_ZOOM = 16f
 
 /**
- * Google Map showing the current route as a line. Follows your latest position until you
- * drag the map; then a Re-centre button turns following back on. Before there is a route,
- * it follows [currentPosition], the GPS warm-up's newest fix.
+ * Google Map showing the current route, one line per stretch between manual pauses. Follows
+ * your latest position until you drag the map; then a Re-centre button turns following back
+ * on. Before there is a route, it follows [currentPosition], the GPS warm-up's newest fix.
  */
 @Composable
 fun LiveMap(
-    route: List<RoutePoint>,
+    route: List<List<RoutePoint>>,
     hasLocationPermission: Boolean,
     modifier: Modifier = Modifier,
     currentPosition: RoutePoint? = null,
@@ -58,9 +59,10 @@ fun LiveMap(
     val context = LocalContext.current
     val cameraPositionState = rememberCameraPositionState()
     var following by rememberSaveable { mutableStateOf(true) }
-    val points = remember(route) { route.map { LatLng(it.latitude, it.longitude) } }
+    val lines = remember(route) { route.map { line -> line.map { LatLng(it.latitude, it.longitude) } } }
+    val hasRoute = lines.any { it.isNotEmpty() }
     // The route's end while there is one; otherwise where the warm-up says you are.
-    val latest = points.lastOrNull() ?: currentPosition?.let { LatLng(it.latitude, it.longitude) }
+    val latest = (Route.latest(route) ?: currentPosition)?.let { LatLng(it.latitude, it.longitude) }
 
     // Dragging or pinching the map stops following.
     LaunchedEffect(cameraPositionState.isMoving) {
@@ -86,9 +88,9 @@ fun LiveMap(
 
     // Before any route exists, centre on the phone's last known position.
     LaunchedEffect(hasLocationPermission) {
-        if (hasLocationPermission && points.isEmpty()) {
+        if (hasLocationPermission && !hasRoute) {
             centreOnLastKnownLocation(context) { here ->
-                if (following && points.isEmpty()) {
+                if (following && !hasRoute) {
                     cameraPositionState.move(CameraUpdateFactory.newLatLngZoom(here, FOLLOW_ZOOM))
                 }
             }
@@ -105,8 +107,8 @@ fun LiveMap(
                 mapToolbarEnabled = false,
             ),
         ) {
-            if (points.size >= 2) {
-                Polyline(points = points, color = MaterialTheme.colorScheme.primary, width = 14f)
+            lines.filter { it.size >= 2 }.forEach { line ->
+                Polyline(points = line, color = MaterialTheme.colorScheme.primary, width = 14f)
             }
         }
         if (!following) {

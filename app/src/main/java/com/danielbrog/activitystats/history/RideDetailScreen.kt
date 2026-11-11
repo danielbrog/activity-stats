@@ -177,7 +177,7 @@ private fun RideDetailContent(
 @Composable
 private fun LoadedRide(
     ride: ActivityEntity,
-    route: List<RoutePoint>,
+    route: List<List<RoutePoint>>,
     speedSamples: List<SpeedSample>,
     elevationSamples: List<ElevationSample>,
     splits: List<Split>,
@@ -383,7 +383,7 @@ private fun RideDetailPreview() {
                     distanceMeters = 21_430.0, movingTimeMs = 2_820_000, elapsedTimeMs = 3_120_000,
                     avgSpeedMps = 7.6, maxSpeedMps = 12.4, updatedAt = start,
                 ),
-                route = listOf(RoutePoint(43.65, -79.38), RoutePoint(43.66, -79.37)),
+                route = listOf(listOf(RoutePoint(43.65, -79.38), RoutePoint(43.66, -79.37))),
                 speedSamples = (0..200).map {
                     SpeedSample(it * 107.0, 7.6 + 2.5 * kotlin.math.sin(it / 12.0))
                 },

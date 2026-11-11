@@ -44,8 +44,12 @@ import java.util.UUID
 /**
  * Foreground service of type `location` that owns GPS updates while recording, so tracking
  * keeps going with the screen off or the app in the background. Shows an ongoing
- * notification with elapsed time, the fix count and a Stop action. Saves the activity and
- * its points to Room while recording, through the app's [RecordingWriter] queue.
+ * notification with the time, the fix count and Pause/Resume and Finish actions. Saves the
+ * activity and its points to Room while recording, through the app's [RecordingWriter] queue.
+ *
+ * Pause turns the GPS off but keeps the service and its notification, so Resume is instant.
+ * Each Resume starts a new [GpsData.segment], so nothing between the pause and the resume
+ * counts towards distance or moving time.
  */
 class LocationTrackingService : Service() {
 
@@ -56,6 +60,11 @@ class LocationTrackingService : Service() {
     private var seq = 0
     private var filter = GpsFilter()
     private var stats = StatsEngine(startedAtMillis = 0L)
+
+    // Manual pause: the segment new fixes belong to, and when the current pause began.
+    private var segment = 0
+    private var pausedAtMillis: Long? = null
+    private var pausedMs = 0L
 
     // Saving: fixes are buffered and written in batches, so a crash loses at most ~10 s.
     private val writer by lazy { (application as ActivityStatsApp).recordingWriter }
@@ -75,6 +84,8 @@ class LocationTrackingService : Service() {
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             // Classify in arrival order, since the filter compares to the last kept fix.
+            // A fix delivered just after Pause belongs to no stretch of the ride.
+            if (pausedAtMillis != null) return
             val newFixes = result.locations.map { location ->
                 val fix = location.toGpsData(++seq)
                 fix.copy(status = filter.classify(fix))
@@ -127,6 +138,8 @@ class LocationTrackingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopTracking()
+            ACTION_PAUSE -> pauseTracking()
+            ACTION_RESUME -> resumeTracking()
             else -> startTracking()
         }
         // A recording can't be resumed after the system kills the process, so don't restart.
@@ -146,6 +159,9 @@ class LocationTrackingService : Service() {
         seq = 0
         filter = GpsFilter()
         stats = StatsEngine(startedAtMillis)
+        segment = 0
+        pausedAtMillis = null
+        pausedMs = 0L
         activityId = UUID.randomUUID().toString()
         pendingFixes.clear()
         lastSavedAtMillis = startedAtMillis
@@ -181,6 +197,48 @@ class LocationTrackingService : Service() {
         client.requestLocationUpdates(request, callback, Looper.getMainLooper())
     }
 
+    /** Turns the GPS off and freezes the timers, keeping the recording open. */
+    private fun pauseTracking() {
+        // A Pause from a notification left over after the process died: nothing to pause.
+        if (!isRunning) return stopIfIdle()
+        if (pausedAtMillis != null) return
+        client.removeLocationUpdates(callback)
+        val now = System.currentTimeMillis()
+        pausedAtMillis = now
+        // Freeze the stats as they stood at the last fix, with no current speed.
+        val frozen = stats.snapshot(now).copy(currentSpeedMps = 0.0, isPaused = false)
+        savePending(frozen, now)
+        TrackingState.update { it.copy(stats = frozen, pausedAtMillis = now) }
+        postNotification()
+    }
+
+    /** Turns the GPS back on; the fixes from here on start a new segment. */
+    private fun resumeTracking() {
+        if (!isRunning) return stopIfIdle()
+        val pausedAt = pausedAtMillis ?: return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return // stays paused; Finish still works
+        }
+        pausedMs += (System.currentTimeMillis() - pausedAt).coerceAtLeast(0L)
+        pausedAtMillis = null
+        segment++
+        // Compare the first new fix with nothing, not with where the pause began.
+        filter = GpsFilter()
+        TrackingState.update {
+            it.copy(route = Route.startLine(it.route), pausedAtMillis = null, pausedMs = pausedMs)
+        }
+        requestUpdates()
+        postNotification()
+    }
+
+    /** Stops a service that was started only to handle a stale notification button. */
+    private fun stopIfIdle() {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     private fun stopTracking() {
         if (isRunning) endRecording()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -195,17 +253,19 @@ class LocationTrackingService : Service() {
 
     /**
      * Stops GPS, saves the last fixes and finalizes the activity. Stats are frozen at this
-     * moment: full elapsed time, no current speed.
+     * moment: full elapsed time, no current speed. Finishing while paused ends the ride when
+     * the pause began, so time sat paused before pressing Finish isn't added.
      */
     private fun endRecording() {
         client.removeLocationUpdates(callback)
         isRunning = false
-        val endedAt = System.currentTimeMillis()
+        val endedAt = pausedAtMillis ?: System.currentTimeMillis()
+        pausedAtMillis = null
         val finalStats = stats.snapshot(endedAt).copy(currentSpeedMps = 0.0, isPaused = false)
         savePending(finalStats, endedAt)
         val id = activityId
         writer.enqueue { finishActivity(id, endedAt, finalStats) }
-        TrackingState.update { it.copy(isTracking = false, stats = finalStats) }
+        TrackingState.update { it.copy(isTracking = false, stats = finalStats, pausedAtMillis = null) }
     }
 
     /** Queues the buffered fixes and the stats so far for saving. */
@@ -245,13 +305,10 @@ class LocationTrackingService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val stop = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, LocationTrackingService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val paused = autoPause && stats.isPaused
+        val finish = serviceIntent(1, ACTION_STOP)
+        val manuallyPaused = pausedAtMillis != null
+        val pauseOrResume = if (manuallyPaused) serviceIntent(2, ACTION_RESUME) else serviceIntent(3, ACTION_PAUSE)
+        val paused = manuallyPaused || (autoPause && stats.isPaused)
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_tracking)
             .setContentText(
@@ -260,9 +317,9 @@ class LocationTrackingService : Service() {
                 )
             )
         when {
-            // Paused: stop the timer and show the moving time reached so far.
+            // Paused: stop the timer and show the time reached so far.
             paused -> builder
-                .setContentTitle("Paused · ${Format.clock(stats.movingMs)}")
+                .setContentTitle("Paused · ${Format.clock(timerMs(stats))}")
                 .setShowWhen(false)
                 .setUsesChronometer(false)
             // Auto-pause on: the timer counts moving time, picking up where it paused.
@@ -271,10 +328,10 @@ class LocationTrackingService : Service() {
                 .setWhen(System.currentTimeMillis() - stats.movingMs)
                 .setShowWhen(true)
                 .setUsesChronometer(true)
-            // Auto-pause off: the timer counts elapsed time since Start.
+            // Auto-pause off: the timer counts time since Start, less any manual pauses.
             else -> builder
                 .setContentTitle("Recording")
-                .setWhen(startedAtMillis)
+                .setWhen(startedAtMillis + pausedMs)
                 .setShowWhen(true)
                 .setUsesChronometer(true)
         }
@@ -285,9 +342,24 @@ class LocationTrackingService : Service() {
             .setCategory(NotificationCompat.CATEGORY_WORKOUT)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(openApp)
-            .addAction(0, "Stop", stop)
+            .addAction(0, if (manuallyPaused) "Resume" else "Pause", pauseOrResume)
+            .addAction(0, "Finish", finish)
             .build()
     }
+
+    /** The time the notification shows: moving time with auto-pause on, else time less pauses. */
+    private fun timerMs(stats: ActivityStats): Long {
+        if (autoPause) return stats.movingMs
+        val until = pausedAtMillis ?: System.currentTimeMillis()
+        return (until - startedAtMillis - pausedMs).coerceAtLeast(0L)
+    }
+
+    private fun serviceIntent(requestCode: Int, action: String): PendingIntent = PendingIntent.getService(
+        this,
+        requestCode,
+        Intent(this, LocationTrackingService::class.java).setAction(action),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     private fun Location.toGpsData(seq: Int) = GpsData(
         seq = seq,
@@ -297,6 +369,7 @@ class LocationTrackingService : Service() {
         accuracyMeters = if (hasAccuracy()) accuracy else null,
         speedMps = if (hasSpeed()) speed else null,
         altitudeMeters = if (hasAltitude()) altitude else null,
+        segment = segment,
     )
 
     companion object {
@@ -304,6 +377,8 @@ class LocationTrackingService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val ACTION_START = "com.danielbrog.activitystats.action.START_TRACKING"
         private const val ACTION_STOP = "com.danielbrog.activitystats.action.STOP_TRACKING"
+        private const val ACTION_PAUSE = "com.danielbrog.activitystats.action.PAUSE_TRACKING"
+        private const val ACTION_RESUME = "com.danielbrog.activitystats.action.RESUME_TRACKING"
         private const val MAX_FIXES = 1_000
         private const val SAVE_EVERY_FIXES = 10
         private const val SAVE_EVERY_MS = 10_000L
@@ -317,10 +392,14 @@ class LocationTrackingService : Service() {
             )
         }
 
-        fun stop(context: Context) {
-            context.startService(
-                Intent(context, LocationTrackingService::class.java).setAction(ACTION_STOP)
-            )
+        fun stop(context: Context) = send(context, ACTION_STOP)
+
+        fun pause(context: Context) = send(context, ACTION_PAUSE)
+
+        fun resume(context: Context) = send(context, ACTION_RESUME)
+
+        private fun send(context: Context, action: String) {
+            context.startService(Intent(context, LocationTrackingService::class.java).setAction(action))
         }
     }
 }

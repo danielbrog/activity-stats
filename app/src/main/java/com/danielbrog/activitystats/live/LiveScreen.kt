@@ -26,6 +26,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -83,7 +84,7 @@ import kotlinx.coroutines.delay
 
 private enum class PermissionProblem { None, OnlyApproximate, Denied, DeniedPermanently }
 
-/** The main screen: large live numbers, unit and speed/pace toggles, and Start/Stop. */
+/** The main screen: large live numbers, unit and speed/pace toggles, and Start, Pause and Finish. */
 @Composable
 fun LiveScreen(
     onOpenGpsDetails: () -> Unit,
@@ -195,6 +196,8 @@ fun LiveScreen(
             }
         },
         onStop = viewModel::stop,
+        onPause = viewModel::pause,
+        onResume = viewModel::resume,
         onUnitChange = viewModel::setUnit,
         onSpeedDisplayChange = viewModel::setSpeedDisplay,
         onAutoPauseChange = viewModel::setAutoPause,
@@ -215,7 +218,10 @@ private fun LiveContent(
     /** The GPS warm-up before recording, or null while recording or without permission. */
     gps: GpsPreview?,
     onStart: () -> Unit,
+    /** Finishes the recording. */
     onStop: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
     onUnitChange: (DistanceUnit) -> Unit,
     onSpeedDisplayChange: (SpeedDisplay) -> Unit,
     onAutoPauseChange: (Boolean) -> Unit,
@@ -226,9 +232,10 @@ private fun LiveContent(
     val stats = state.stats
     val unit = settings.unit
     val display = settings.speedDisplay
-    val showPaused = settings.autoPause && state.isTracking && stats.isPaused
+    val manuallyPaused = state.isTracking && state.isManuallyPaused
+    val showPaused = manuallyPaused || (settings.autoPause && state.isTracking && stats.isPaused)
 
-    // Tick the clock every second while recording; after Stop, show the final values.
+    // Tick the clock every second while recording; after Finish, show the final values.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.isTracking) {
         while (state.isTracking) {
@@ -240,7 +247,15 @@ private fun LiveContent(
         state.isTracking -> now - state.startedAtMillis
         else -> stats.elapsedMs
     }
-    val timeMs = displayTimeMs(settings.autoPause, state.isTracking, stats, state.startedAtMillis, now)
+    val timeMs = displayTimeMs(
+        autoPause = settings.autoPause,
+        isTracking = state.isTracking,
+        stats = stats,
+        startedAtMillis = state.startedAtMillis,
+        nowMillis = now,
+        pausedMs = state.pausedMsAt(now),
+        manuallyPaused = manuallyPaused,
+    )
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -269,7 +284,7 @@ private fun LiveContent(
         }
         if (notificationsOff) {
             Notice(
-                "Notifications are off, so the recording notification and its Stop button " +
+                "Notifications are off, so the recording notification and its Pause and Finish buttons " +
                     "are hidden. Tracking still works with the screen off."
             )
         }
@@ -339,14 +354,26 @@ private fun LiveContent(
         Spacer(Modifier.height(12.dp))
 
         if (state.isTracking) {
-            Button(
-                onClick = onStop,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                ),
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-            ) { Text("Stop", style = MaterialTheme.typography.titleLarge) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                val buttonModifier = Modifier.weight(1f).height(64.dp)
+                if (manuallyPaused) {
+                    Button(onClick = onResume, modifier = buttonModifier) {
+                        Text("Resume", style = MaterialTheme.typography.titleLarge)
+                    }
+                } else {
+                    FilledTonalButton(onClick = onPause, modifier = buttonModifier) {
+                        Text("Pause", style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+                Button(
+                    onClick = onStop,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    modifier = buttonModifier,
+                ) { Text("Finish", style = MaterialTheme.typography.titleLarge) }
+            }
         } else {
             Button(
                 onClick = onStart,
@@ -390,7 +417,7 @@ private fun SettingsRow(
     }
 }
 
-/** Shown in place of "Recording" while auto-pause has you stopped. */
+/** Shown in place of "Recording" while paused, by hand or by auto-pause. */
 @Composable
 private fun PausedBadge() {
     Surface(
@@ -535,6 +562,8 @@ private fun LivePreview() {
             gps = GpsPreview(fix = PreviewFix(0.0, 0.0, accuracyMeters = 4f)),
             onStart = {},
             onStop = {},
+            onPause = {},
+            onResume = {},
             onUnitChange = {},
             onSpeedDisplayChange = {},
             onAutoPauseChange = {},

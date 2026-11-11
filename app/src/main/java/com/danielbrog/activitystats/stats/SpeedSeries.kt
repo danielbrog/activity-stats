@@ -2,6 +2,7 @@ package com.danielbrog.activitystats.stats
 
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
+import com.danielbrog.activitystats.location.legMeters
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log10
@@ -59,7 +60,7 @@ object SpeedSeries {
             var derived = 0.0
             val prev = previous
             if (prev != null) {
-                val d = Geo.distanceMeters(prev.latitude, prev.longitude, fix.latitude, fix.longitude)
+                val d = legMeters(prev, fix)
                 distance += d
                 val dtMs = fix.timeMillis - prev.timeMillis
                 if (dtMs > 0) derived = d / (dtMs / 1_000.0)

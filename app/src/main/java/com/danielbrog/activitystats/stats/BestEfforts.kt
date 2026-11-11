@@ -2,6 +2,7 @@ package com.danielbrog.activitystats.stats
 
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
+import com.danielbrog.activitystats.location.legMeters
 
 /**
  * The set distances for best efforts. [key] is what the database stores, so the names here
@@ -27,7 +28,8 @@ enum class Effort(val key: String, val meters: Double, val unit: DistanceUnit, v
  * Strava's best efforts. Plain Kotlin, unit-tested.
  *
  * Uses the kept fixes only. The time is clock time between the two ends, so stops inside the
- * stretch count. The start is placed exactly [Effort.meters] back from each fix, between two
+ * stretch count, manual pauses included. Ground covered while paused by hand isn't counted,
+ * so a lift in a car can never make a best effort. The start is placed exactly [Effort.meters] back from each fix, between two
  * fixes, with its time interpolated, so the stretch is the full distance and no more.
  */
 object BestEfforts {
@@ -40,7 +42,7 @@ object BestEfforts {
         for (i in 1 until n) {
             val a = kept[i - 1]
             val b = kept[i]
-            distance[i] = distance[i - 1] + Geo.distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+            distance[i] = distance[i - 1] + legMeters(a, b)
         }
         return efforts.associateWith { fastest(kept, distance, it.meters) }
     }
