@@ -31,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -40,7 +42,7 @@ import com.danielbrog.activitystats.R
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
- * The Account screen, opened from History: sign in or create an account on Cognito's page,
+ * The Account screen, opened from the Profile header: sign in or create an account on Cognito's page,
  * see who is signed in and whether the backend accepts it, and sign out.
  */
 @Composable
@@ -98,7 +100,11 @@ private fun AccountContent(
             IconButton(onClick = onBack) {
                 Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
             }
-            Text("Account", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Account",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.semantics { heading() },
+            )
         }
         Spacer(Modifier.height(16.dp))
         when (account) {
