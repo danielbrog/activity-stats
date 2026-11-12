@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.net.toUri
 import android.util.Log
 import com.danielbrog.activitystats.data.ActivityRepository
+import com.danielbrog.activitystats.sync.Sync
 import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -11,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -64,6 +66,13 @@ class AuthRepository(
 
     /** The signed-in account's id, for tagging new rides; null when signed out. */
     val signedInUserId: String? get() = (_state.value as? AccountState.SignedIn)?.userId
+
+    /**
+     * Like [signedInUserId], but waits for the saved sign-in to finish loading first, so
+     * background work started in a fresh process doesn't mistake "still loading" for signed out.
+     */
+    suspend fun awaitSignedInUserId(): String? =
+        (state.first { it != AccountState.Loading } as? AccountState.SignedIn)?.userId
 
     init {
         if (config != null) scope.launch {
@@ -143,9 +152,37 @@ class AuthRepository(
      * expire, or null when signed out. If Cognito no longer accepts the sign-in (it expired
      * after 30 days unused, or was revoked), signs out. Throws IOException when offline.
      */
-    suspend fun freshAccessToken(): String? = mutex.withLock {
-        val current = authState ?: return@withLock null
-        try {
+    suspend fun freshAccessToken(): String? = mutex.withLock { freshTokenLocked() }
+
+    /** Who is signed in and a token for them, or null when signed out. */
+    data class Session(val userId: String, val accessToken: String)
+
+    /**
+     * The signed-in account and a fresh token for it, read together under one lock, so the
+     * token always belongs to that account even if someone signs out or in at the same moment.
+     * Null when signed out. Throws IOException when offline.
+     */
+    suspend fun freshSession(): Session? = mutex.withLock {
+        val userId = signedInUserId ?: return@withLock null
+        val token = freshTokenLocked() ?: return@withLock null
+        Session(userId, token)
+    }
+
+    /**
+     * The API refused the current access token. Marks it for refreshing, so the next
+     * [freshSession] gets a new one instead of the same refused one.
+     */
+    suspend fun tokenRejected() = mutex.withLock {
+        authState?.let {
+            it.needsTokenRefresh = true
+            store.save(it.jsonSerializeString())
+        }
+    }
+
+    /** [freshAccessToken]'s work. Call with [mutex] held. */
+    private suspend fun freshTokenLocked(): String? {
+        val current = authState ?: return null
+        return try {
             val token = withService { service ->
                 suspendCancellableCoroutine<String> { cont ->
                     current.performActionWithFreshTokens(service) { accessToken, _, ex ->
@@ -164,6 +201,11 @@ class AuthRepository(
                 throw IOException(messageFor(e), e)
             }
         }
+    }
+
+    /** Asks for a sync, but only while signed in: signed out, there's nothing it could send. */
+    fun requestSyncIfSignedIn() {
+        if (signedInUserId != null) Sync.request(context)
     }
 
     /**
@@ -192,15 +234,20 @@ class AuthRepository(
         _state.value = AccountState.SignedOut
     }
 
-    /** Claims the phone's unowned rides for the signed-in account. Returns how many. */
+    /**
+     * Claims the phone's unowned rides for the signed-in account, then starts a sync so they
+     * and any rides still waiting go up. Returns how many were claimed.
+     */
     private suspend fun claimRides(): Int {
         val userId = signedInUserId ?: return 0
-        return try {
+        val claimed = try {
             rides().claimUnowned(userId)
         } catch (e: Exception) {
             Log.e(TAG, "Couldn't link rides to the account", e)
             0
         }
+        Sync.request(context)
+        return claimed
     }
 
     private inline fun <T> withService(block: (AuthorizationService) -> T): T {

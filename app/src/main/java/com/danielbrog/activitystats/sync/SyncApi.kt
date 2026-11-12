@@ -1,0 +1,140 @@
+package com.danielbrog.activitystats.sync
+
+import com.danielbrog.activitystats.account.AccountHttp.HttpException
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/** What happened to a summary sent with `PUT /activities/{id}`. */
+sealed interface PutResult {
+    /** Saved: the cloud now has this copy. */
+    data object Applied : PutResult
+
+    /** The cloud's copy is newer (a 409), so it was kept; here it is. */
+    data class Newer(val cloud: CloudCopy) : PutResult
+
+    /** The server refused this ride; retrying won't help. */
+    data class Rejected(val code: Int) : PutResult
+}
+
+/** A short-lived link to upload one track file to, with the headers the upload must send. */
+data class UploadLink(val url: String, val headers: Map<String, String>)
+
+/**
+ * The server refused a request for one ride in a way retrying won't fix. Only that ride is
+ * skipped. Network trouble is an [IOException] instead, which means "try again later".
+ */
+class RejectedException(val code: Int) : Exception("Rejected with HTTP $code")
+
+/**
+ * The API didn't accept the sign-in token (a 401). The worker asks for a new token before
+ * the next try, rather than retrying with the same one.
+ */
+class SignInRejectedException : IOException("Sign-in token not accepted")
+
+/** How to treat a reply's status code. */
+internal enum class Outcome { Ok, Retry, Skip }
+
+/**
+ * Sorts a status code into success, try again later, or give up on this ride. Plain Kotlin,
+ * unit-tested, since getting it wrong either drops rides or gets them stuck.
+ *
+ * [fromS3] is for the track upload itself. Its link is only seconds old (it lasts five
+ * minutes), so S3's 403 means S3 refused this file, not that a sign-in expired.
+ */
+internal fun outcomeOf(code: Int, fromS3: Boolean = false): Outcome = when {
+    code in 200..299 -> Outcome.Ok
+    code == 403 && fromS3 -> Outcome.Skip
+    // Sign-in trouble (a new token is fetched next run), timeouts, rate limits, server errors.
+    code == 401 || code == 403 || code == 408 || code == 429 || code >= 500 -> Outcome.Retry
+    else -> Outcome.Skip
+}
+
+/** The sync API calls the upload needs. An interface, so tests can use a fake server. */
+interface SyncApi {
+    suspend fun putActivity(id: String, summary: RideSummary): PutResult
+
+    suspend fun trackUploadLink(id: String): UploadLink
+
+    suspend fun uploadTrack(link: UploadLink, bytes: ByteArray)
+}
+
+/**
+ * [SyncApi] over HTTPS with [HttpURLConnection], like [com.danielbrog.activitystats.account.AccountHttp].
+ * [accessToken] must be fresh: it lasts an hour, longer than one sync takes.
+ */
+class HttpSyncApi(private val apiUrl: String, private val accessToken: String) : SyncApi {
+
+    override suspend fun putActivity(id: String, summary: RideSummary): PutResult {
+        val (code, body) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)
+        if (code == 409) return parseConflict(body)?.let { PutResult.Newer(it) } ?: PutResult.Rejected(code)
+        return when (outcomeOf(code)) {
+            Outcome.Ok -> PutResult.Applied
+            Outcome.Retry -> throw retryFor(code)
+            Outcome.Skip -> PutResult.Rejected(code)
+        }
+    }
+
+    override suspend fun trackUploadLink(id: String): UploadLink {
+        val (code, body) = request("POST", "$apiUrl/activities/$id/track-upload", ByteArray(0), emptyMap())
+        throwUnlessOk(code)
+        val reply = json.decodeFromString(LinkJson.serializer(), body)
+        return UploadLink(reply.url, reply.headers)
+    }
+
+    override suspend fun uploadTrack(link: UploadLink, bytes: ByteArray) {
+        // The link is signed for S3: no sign-in token goes with it.
+        val (code, _) = request("PUT", link.url, bytes, link.headers, withToken = false)
+        throwUnlessOk(code, fromS3 = true)
+    }
+
+    /** Sends one request and returns the status code and the reply's text. */
+    private suspend fun request(
+        method: String,
+        url: String,
+        body: ByteArray,
+        headers: Map<String, String>,
+        withToken: Boolean = true,
+    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = TIMEOUT_MS
+            connection.readTimeout = TIMEOUT_MS
+            connection.requestMethod = method
+            if (withToken) connection.setRequestProperty("Authorization", "Bearer $accessToken")
+            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+            connection.doOutput = true
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            code to (stream?.use { it.readBytes().decodeToString() } ?: "")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** Returns on success; otherwise throws the exception that says whether to retry or skip. */
+    private fun throwUnlessOk(code: Int, fromS3: Boolean = false) {
+        when (outcomeOf(code, fromS3)) {
+            Outcome.Ok -> Unit
+            Outcome.Retry -> throw retryFor(code)
+            Outcome.Skip -> throw RejectedException(code)
+        }
+    }
+
+    private fun retryFor(code: Int): IOException = if (code == 401) SignInRejectedException() else HttpException(code)
+
+    @Serializable
+    private data class LinkJson(val url: String, val headers: Map<String, String> = emptyMap())
+
+    private companion object {
+        const val TIMEOUT_MS = 30_000
+        val JSON_HEADERS = mapOf("Content-Type" to "application/json")
+        val json = Json { ignoreUnknownKeys = true }
+    }
+}

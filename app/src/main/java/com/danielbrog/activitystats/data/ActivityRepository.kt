@@ -8,6 +8,8 @@ import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.BestEfforts
 import com.danielbrog.activitystats.stats.ElevationGain
 import com.danielbrog.activitystats.stats.summarize
+import com.danielbrog.activitystats.sync.CloudCopy
+import com.danielbrog.activitystats.sync.SyncStore
 import kotlinx.coroutines.flow.Flow
 
 /** What happened to an imported track; both carry the id of the ride to open. */
@@ -23,11 +25,15 @@ sealed interface ImportResult {
  *
  * [ownerId] gives the signed-in account's id, or null when signed out: new rides are filed
  * under it, so they belong to the account they were recorded in.
+ *
+ * [onChanged] is called after a change that should reach the cloud: a ride finished,
+ * imported, renamed, deleted or restored. The app starts a sync from it.
  */
 class ActivityRepository(
     private val db: AppDatabase,
     private val ownerId: () -> String? = { null },
-) {
+    private val onChanged: () -> Unit = {},
+) : SyncStore {
 
     private val activities = db.activityDao()
     private val points = db.trackPointDao()
@@ -73,18 +79,28 @@ class ActivityRepository(
         }
     }
 
-    /** Writes the final stats and end time, then works out the ride's climbing and best efforts. */
+    /**
+     * Writes the final stats, end time and climbing together, then the best efforts.
+     *
+     * Climbing is worked out first and saved in the same transaction as the end time: the
+     * moment a ride has an end time it can be uploaded, and its climbing goes up with it.
+     */
     suspend fun finishActivity(id: String, endedAtMillis: Long, stats: ActivityStats) {
-        activities.finish(
-            id = id,
-            endedAt = endedAtMillis,
-            distanceMeters = stats.distanceMeters,
-            movingTimeMs = stats.movingMs,
-            elapsedTimeMs = stats.elapsedMs,
-            avgSpeedMps = stats.avgSpeedMps,
-            maxSpeedMps = stats.maxSpeedMps,
-        )
-        updateDerivedStats(id)
+        val saved = pointsFor(id)
+        db.withTransaction {
+            activities.finish(
+                id = id,
+                endedAt = endedAtMillis,
+                distanceMeters = stats.distanceMeters,
+                movingTimeMs = stats.movingMs,
+                elapsedTimeMs = stats.elapsedMs,
+                avgSpeedMps = stats.avgSpeedMps,
+                maxSpeedMps = stats.maxSpeedMps,
+            )
+            activities.setElevationGain(id, ElevationGain.of(saved))
+        }
+        saveBestEfforts(id, saved)
+        onChanged()
     }
 
     /**
@@ -114,13 +130,16 @@ class ActivityRepository(
                     elapsedTimeMs = stats.elapsedMs,
                     avgSpeedMps = stats.avgSpeedMps,
                     maxSpeedMps = stats.maxSpeedMps,
+                    // Saved with the ride, so it can never be uploaded without its climbing.
+                    elevationGainMeters = ElevationGain.of(fixes),
                     title = track.name?.let { RideTitle.clean(it) } ?: rideTitle(startedAt),
                     updatedAt = nowMillis,
                 )
             )
             fixes.chunked(500).forEach { batch -> points.insertPoints(batch.map { it.toTrackPoint(id) }) }
         }
-        updateDerivedStats(id)
+        saveBestEfforts(id, fixes)
+        onChanged()
         return ImportResult.Imported(id)
     }
 
@@ -134,7 +153,11 @@ class ActivityRepository(
     suspend fun updateDerivedStats(id: String) {
         val saved = pointsFor(id)
         activities.setElevationGain(id, ElevationGain.of(saved))
-        val found = BestEfforts.find(saved)
+        saveBestEfforts(id, saved)
+    }
+
+    private suspend fun saveBestEfforts(id: String, fixes: List<GpsData>) {
+        val found = BestEfforts.find(fixes)
         efforts.replaceFor(id, found.map { (effort, ms) -> BestEffortEntity(id, effort.key, ms) })
     }
 
@@ -145,6 +168,8 @@ class ActivityRepository(
     suspend fun fillMissingDerivedStats(): Int {
         val missing = (activities.finishedWithoutElevationGain() + efforts.finishedWithoutEfforts()).distinct()
         missing.forEach { updateDerivedStats(it) }
+        // Rides waiting for their climbing can upload now.
+        if (missing.isNotEmpty()) onChanged()
         return missing.size
     }
 
@@ -174,16 +199,32 @@ class ActivityRepository(
     /** Renames an activity. [title] should already be cleaned with [RideTitle.clean]. */
     suspend fun rename(id: String, title: String, nowMillis: Long = System.currentTimeMillis()) {
         activities.rename(id, title, nowMillis)
+        onChanged()
     }
 
     /** Soft-deletes an activity; [restore] brings it back. Its points are kept for now. */
     suspend fun delete(id: String, nowMillis: Long = System.currentTimeMillis()) {
         activities.softDelete(id, nowMillis)
+        onChanged()
     }
 
     suspend fun restore(id: String, nowMillis: Long = System.currentTimeMillis()) {
         activities.restore(id, nowMillis)
+        onChanged()
     }
 
-    suspend fun pointsFor(id: String): List<GpsData> = points.pointsFor(id).map { it.toGpsData() }
+    override suspend fun pointsFor(id: String): List<GpsData> = points.pointsFor(id).map { it.toGpsData() }
+
+    // --- Cloud sync ---
+
+    override suspend fun pendingUploads(userId: String): List<ActivityEntity> = activities.pendingUploads(userId)
+
+    override suspend fun markTrackUploaded(id: String) = activities.markTrackUploaded(id)
+
+    override suspend fun markSynced(id: String, sentUpdatedAt: Long) {
+        activities.markSynced(id, sentUpdatedAt)
+    }
+
+    override suspend fun applyCloudCopy(id: String, cloud: CloudCopy): Boolean =
+        activities.applyCloudCopy(id, cloud.title, cloud.deletedAt, cloud.updatedAt) == 1
 }

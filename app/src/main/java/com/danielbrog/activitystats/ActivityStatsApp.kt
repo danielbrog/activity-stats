@@ -21,7 +21,13 @@ class ActivityStatsApp : Application() {
 
     val database: AppDatabase by lazy { AppDatabase.create(this) }
     val activityRepository: ActivityRepository by lazy {
-        ActivityRepository(database, ownerId = { authRepository.signedInUserId })
+        // Changes that should reach the cloud start a sync. Opening the app starts one too,
+        // once the saved sign-in has loaded (see AuthRepository).
+        ActivityRepository(
+            database,
+            ownerId = { authRepository.signedInUserId },
+            onChanged = { authRepository.requestSyncIfSignedIn() },
+        )
     }
     val recordingWriter: RecordingWriter by lazy { RecordingWriter(activityRepository, appScope) }
     val authRepository: AuthRepository by lazy {

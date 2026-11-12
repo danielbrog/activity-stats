@@ -53,6 +53,45 @@ abstract class ActivityDao {
     @Query("UPDATE activities SET userId = :userId, syncState = '${SyncState.PENDING}' WHERE userId IS NULL")
     abstract suspend fun claimUnowned(userId: String): Int
 
+    // --- Cloud sync ---
+
+    /**
+     * Finished rides of [userId] waiting to upload, oldest first. A ride still recording is
+     * never included, even though it is already PENDING, nor one whose climbing hasn't been
+     * worked out yet: climbing goes up with the summary, and filling it in later isn't an edit,
+     * so it wouldn't be re-sent.
+     */
+    @Query(
+        "SELECT * FROM activities WHERE userId = :userId AND syncState = '${SyncState.PENDING}' " +
+            "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL ORDER BY startedAt"
+    )
+    abstract suspend fun pendingUploads(userId: String): List<ActivityEntity>
+
+    @Query("UPDATE activities SET trackUploaded = 1 WHERE id = :id")
+    abstract suspend fun markTrackUploaded(id: String)
+
+    /**
+     * Marks a ride synced, but only if it hasn't changed since the copy at [sentUpdatedAt] was
+     * sent. A rename made during the upload keeps it PENDING, so the rename goes up next time.
+     */
+    @Query(
+        "UPDATE activities SET syncState = '${SyncState.SYNCED}' " +
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = '${SyncState.PENDING}'"
+    )
+    abstract suspend fun markSynced(id: String, sentUpdatedAt: Long): Int
+
+    /**
+     * Takes the cloud's copy of the fields a ride can be edited in and marks the ride synced,
+     * but only if the cloud's copy is newer than the phone's. An edit made on the phone after
+     * the upload began is newer still, so it is kept, stays PENDING and goes up next time.
+     * Returns 1 if the cloud's copy was taken, 0 if not.
+     */
+    @Query(
+        "UPDATE activities SET title = :title, deletedAt = :deletedAt, updatedAt = :updatedAt, " +
+            "syncState = '${SyncState.SYNCED}' WHERE id = :id AND updatedAt < :updatedAt"
+    )
+    abstract suspend fun applyCloudCopy(id: String, title: String, deletedAt: Long?, updatedAt: Long): Int
+
     /** A not-deleted activity that started in the same second, or null: used to spot re-imports. */
     @Query(
         "SELECT id FROM activities WHERE deletedAt IS NULL AND startedAt / 1000 = :startedAtMillis / 1000 LIMIT 1"
