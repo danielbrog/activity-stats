@@ -33,16 +33,22 @@ $env:JAVA_HOME="E:\Android\Android Studio\jbr"; .\gradlew.bat lintDebug --no-dae
   `colors.xml`, `RedundantLabel` or `compose-bom`; they are known. Report anything else.
 
 ## 3. Secret scan
-Search `git diff main..HEAD` (added lines only) for:
-- Google API keys (`AIza`), AWS access keys (`AKIA`), and email addresses.
-- Cognito domains (`amazoncognito.com`), API Gateway URLs (`execute-api`), and Cognito
-  pool ids (`us-east-` or `us-west-` followed by `_`).
-- Any 12-digit number (an AWS account id).
-- Every value in `local.properties` and `backend/cdk.context.json`. Both files are git-ignored
-  and hold the real account-specific values: read them and search the diff for each value.
+Run, from the project root:
 
-Never print a secret's value in your report: give only the file, the line, and what kind of
-value it is.
+```
+python -I scripts/scan_secrets.py
+```
+
+It checks every line added since `main` (committed, uncommitted and untracked, except
+`.idea/`) for API keys, emails, Cognito and API Gateway addresses, AWS ids, and every value in
+the git-ignored `local.properties` and `backend/cdk.context.json`. It prints only
+`file:line  kind`, never the value, and ends with `CLEAN` or the number of findings.
+
+- **Never open, read, print or search `local.properties` or `backend/cdk.context.json`
+  yourself**, by any tool. The script reads them so you don't have to; anything you read
+  shows up in your output.
+- Report the script's findings as it gives them. For each one, look at that line in the diff
+  only if you need to tell whether it is a real problem, and still never quote the value.
 
 ## 4. Report
 Reply with:
