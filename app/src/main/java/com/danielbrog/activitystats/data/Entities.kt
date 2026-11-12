@@ -55,6 +55,12 @@ data class ActivityEntity(
     /** Soft delete, so deletions reach other devices. */
     val deletedAt: Long? = null,
     val syncState: String = SyncState.LOCAL_ONLY,
+    /**
+     * True once the ride's track file is in the cloud. A finished ride's track never changes,
+     * so it is uploaded once; later edits only re-send the summary.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val trackUploaded: Boolean = false,
 )
 
 /**
