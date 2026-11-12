@@ -37,28 +37,25 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.danielbrog.activitystats.R
 import com.danielbrog.activitystats.account.AccountScreen
-import com.danielbrog.activitystats.history.HistoryScreen
 import com.danielbrog.activitystats.history.RideDetailScreen
 import com.danielbrog.activitystats.live.LiveScreen
 import com.danielbrog.activitystats.location.GPSDisplayScreen
+import com.danielbrog.activitystats.profile.ProfileScreen
 import com.danielbrog.activitystats.records.RecordsScreen
+import com.danielbrog.activitystats.settings.SettingsScreen
 
 /** Navigation result key: the id of a ride just deleted from its detail screen. */
 private const val DELETED_RIDE_ID = "deletedRideId"
 
 /** A tab in the bottom bar. */
 private data class Tab(val route: Any, val label: String, @DrawableRes val icon: Int) {
-    fun isSelected(destination: NavDestination?): Boolean = when (route) {
-        RecordRoute -> destination?.hasRoute<RecordRoute>() == true
-        HistoryRoute -> destination?.hasRoute<HistoryRoute>() == true
-        RecordsRoute -> destination?.hasRoute<RecordsRoute>() == true
-        else -> false
-    }
+    /** Whether [destination] is this tab's screen. Works for any route, so a new tab needs no change here. */
+    fun isSelected(destination: NavDestination?): Boolean = destination?.hasRoute(route::class) == true
 }
 
 private val tabs = listOf(
     Tab(RecordRoute, "Record", R.drawable.ic_nav_record),
-    Tab(HistoryRoute, "History", R.drawable.ic_nav_history),
+    Tab(ProfileRoute, "Profile", R.drawable.ic_nav_profile),
     Tab(RecordsRoute, "Records", R.drawable.ic_nav_records),
 )
 
@@ -73,7 +70,8 @@ private const val FADE_IN_MS = 210
 
 /** Screens that open on top of a tab, without the bottom bar, and slide in from the side. */
 private fun NavDestination.opensOnTop(): Boolean =
-    hasRoute<RideDetailRoute>() || hasRoute<AccountRoute>() || hasRoute<GpsDetailsRoute>()
+    hasRoute<RideDetailRoute>() || hasRoute<AccountRoute>() || hasRoute<GpsDetailsRoute>() ||
+        hasRoute<SettingsRoute>()
 
 private fun fadeThroughIn(): EnterTransition = fadeIn(tween(FADE_IN_MS, delayMillis = FADE_OUT_MS))
 
@@ -121,9 +119,10 @@ private fun Opaque(content: @Composable () -> Unit) {
 }
 
 /**
- * The app's screens and how to move between them. Record, History and Records are tabs in a
- * bottom bar, switched with a quick fade. Ride detail, Account and GPS details slide in on top
- * of them, without the bar, and Back slides them away again.
+ * The app's screens and how to move between them. Record, Profile and Records are tabs in a
+ * bottom bar, switched with a quick fade; Profile holds History and Stats tabs of its own.
+ * Ride detail, Account, Settings and GPS details slide in on top of them, without the bar,
+ * and Back slides them away again.
  */
 @Composable
 fun AppNavigation(navController: NavHostController = rememberNavController()) {
@@ -165,15 +164,16 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
             composable<RecordRoute> {
                 Opaque { LiveScreen(onOpenGpsDetails = { navController.navigate(GpsDetailsRoute) }) }
             }
-            composable<HistoryRoute> { entry ->
+            composable<ProfileRoute> { entry ->
                 // Set by the detail screen when it deletes a ride, so History can offer Undo.
                 val deletedRideId by entry.savedStateHandle
                     .getStateFlow<String?>(DELETED_RIDE_ID, null)
                     .collectAsStateWithLifecycle()
                 Opaque {
-                    HistoryScreen(
+                    ProfileScreen(
                         onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
                         onOpenAccount = { navController.navigate(AccountRoute) },
+                        onOpenSettings = { navController.navigate(SettingsRoute) },
                         deletedRideId = deletedRideId,
                         onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
                     )
@@ -204,6 +204,9 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
             }
             composable<AccountRoute> {
                 Opaque { AccountScreen(onBack = { navController.popBackStack() }) }
+            }
+            composable<SettingsRoute> {
+                Opaque { SettingsScreen(onBack = { navController.popBackStack() }) }
             }
             composable<GpsDetailsRoute> {
                 Opaque { GPSDisplayScreen(onBack = { navController.popBackStack() }) }

@@ -8,9 +8,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 object RecordRoute
 
-/** The list of saved rides. */
+/** The Profile tab: the account and settings, with History and Stats tabs inside it. */
 @Serializable
-object HistoryRoute
+object ProfileRoute
 
 /** Personal records: longest ride, longest moving time and best efforts. */
 @Serializable
@@ -20,10 +20,14 @@ object RecordsRoute
 @Serializable
 data class RideDetailRoute(val id: String)
 
-/** Sign in, sign out and see the account; opened from History. */
+/** Sign in, sign out and see the account; opened from Profile. */
 @Serializable
 object AccountRoute
 
 /** The raw GPS fix list for the current recording. */
 @Serializable
 object GpsDetailsRoute
+
+/** App settings; opened from Profile. */
+@Serializable
+object SettingsRoute

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.painterResource
@@ -29,7 +28,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
@@ -37,7 +35,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,23 +52,26 @@ import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
- * The History tab: every saved ride, newest first, and Import GPX, which opens the new ride. When [deletedRideId] is set (a ride was
- * just deleted from its detail screen), shows a "Ride deleted" bar with Undo, then calls
- * [onDeletedRideHandled] so it isn't shown again.
+ * The History tab inside Profile: every saved ride, newest first, and Import GPX, which opens
+ * the new ride. When [deletedRideId] is set (a ride was just deleted from its detail screen),
+ * shows a "Ride deleted" bar with Undo, then calls [onDeletedRideHandled] so it isn't shown
+ * again.
+ *
+ * Messages go to [snackbarHostState], which Profile owns and shows, so a message stays put
+ * when you swipe to another tab.
  */
 @Composable
 fun HistoryScreen(
     onOpenRide: (id: String) -> Unit,
-    onOpenAccount: () -> Unit,
     deletedRideId: String?,
     onDeletedRideHandled: () -> Unit,
+    snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
     viewModel: HistoryViewModel = viewModel(),
 ) {
     val rides by viewModel.rides.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val use24Hour = DateFormat.is24HourFormat(LocalContext.current)
-    val snackbarHostState = remember { SnackbarHostState() }
 
     // Take the id into local state and clear the navigation result first, so the bar is
     // shown once. Showing it from a separate effect means clearing can't cancel it.
@@ -113,16 +113,13 @@ fun HistoryScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        HistoryContent(
-            rides, settings, use24Hour, onOpenRide,
-            importing = importing,
-            // GPX files often have no proper type set, so show every file; reading checks it.
-            onImport = { pickGpx.launch(arrayOf("*/*")) },
-            onOpenAccount = onOpenAccount,
-        )
-        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
-    }
+    HistoryContent(
+        rides, settings, use24Hour, onOpenRide,
+        importing = importing,
+        // GPX files often have no proper type set, so show every file; reading checks it.
+        onImport = { pickGpx.launch(arrayOf("*/*")) },
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -133,19 +130,15 @@ private fun HistoryContent(
     onOpenRide: (id: String) -> Unit,
     importing: Boolean,
     onImport: () -> Unit,
-    onOpenAccount: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
+        // Profile gives the title; this row only holds Import GPX, on the right.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, end = 8.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "History",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.weight(1f),
-            )
             TextButton(onClick = onImport, enabled = !importing) {
                 if (importing) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -154,9 +147,6 @@ private fun HistoryContent(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(if (importing) "Importing…" else "Import GPX")
-            }
-            IconButton(onClick = onOpenAccount) {
-                Icon(painterResource(R.drawable.ic_account), contentDescription = "Account")
             }
         }
         when {
@@ -239,7 +229,6 @@ private fun HistoryPreview() {
             onOpenRide = {},
             importing = false,
             onImport = {},
-            onOpenAccount = {},
         )
     }
 }
@@ -250,7 +239,7 @@ private fun HistoryEmptyPreview() {
     ActivityStatsTheme {
         HistoryContent(
             emptyList(), DisplaySettings(), use24Hour = false, onOpenRide = {},
-            importing = false, onImport = {}, onOpenAccount = {},
+            importing = false, onImport = {},
         )
     }
 }
