@@ -56,6 +56,14 @@ class UploaderTest {
             rides[id] = rides.getValue(id).copy(trackUploaded = true)
         }
 
+        override suspend fun markFailed(id: String, sentUpdatedAt: Long) {
+            // Same rule as the real query: only the waiting copy that was sent becomes failed.
+            val current = rides.getValue(id)
+            if (current.syncState == SyncState.PENDING && current.updatedAt == sentUpdatedAt) {
+                rides[id] = current.copy(syncState = SyncState.FAILED)
+            }
+        }
+
         override suspend fun markSynced(id: String, sentUpdatedAt: Long) {
             val current = rides.getValue(id)
             if (current.updatedAt == sentUpdatedAt) rides[id] = current.copy(syncState = SyncState.SYNCED)
@@ -188,7 +196,38 @@ class UploaderTest {
         val api = FakeApi().apply { badReplyFor = "a" }
         val report = run(store, api)
         assertEquals(listOf("a"), report.rejected)
+        // A garbled reply (a Wi-Fi login page, say) isn't the ride's fault: it just waits.
+        assertEquals(SyncState.PENDING, store.state("a"))
         assertEquals(SyncState.SYNCED, store.state("b"))
+    }
+
+    @Test
+    fun aMissingRouteOrRedirectLeavesTheRideWaiting() {
+        val store = FakeStore(listOf(ride("a", startedAt = 1_000L, trackUploaded = true), ride("b", startedAt = 2_000L, trackUploaded = true)))
+        val api = FakeApi().apply { answers = { id -> PutResult.Rejected(if (id == "a") 404 else 302) } }
+        val report = run(store, api)
+        assertEquals(listOf("a", "b"), report.rejected)
+        assertEquals(SyncState.PENDING, store.state("a"))
+        assertEquals(SyncState.PENDING, store.state("b"))
+    }
+
+    @Test
+    fun anEditMadeWhileTheOldCopyIsRefusedStaysWaiting() {
+        val store = FakeStore(listOf(ride("a", trackUploaded = true, updatedAt = 61_000L)))
+        // The rider shortens the refused title while the old copy is being refused.
+        val api = FakeApi().apply {
+            beforeAnswer = { id -> store.rides[id] = store.rides.getValue(id).copy(title = "Shorter", updatedAt = 90_000L) }
+            answers = { PutResult.Rejected(400) }
+        }
+        run(store, api)
+        assertEquals(SyncState.PENDING, store.state("a"))
+    }
+
+    @Test
+    fun failedRidesAreNotSentAgainUntilRetried() {
+        val api = FakeApi()
+        run(FakeStore(listOf(ride("a", syncState = SyncState.FAILED, trackUploaded = true))), api)
+        assertEquals(emptyList<String>(), api.calls)
     }
 
     @Test
@@ -203,7 +242,7 @@ class UploaderTest {
     }
 
     @Test
-    fun aRefusedRideDoesNotStopTheOthers() {
+    fun aRefusedRideIsMarkedFailedAndDoesNotStopTheOthers() {
         val store = FakeStore(listOf(ride("a", startedAt = 1_000L), ride("b", startedAt = 2_000L), ride("c", startedAt = 3_000L)))
         val api = FakeApi().apply {
             rejectLinkFor = "a"
@@ -213,8 +252,9 @@ class UploaderTest {
 
         assertEquals(listOf("a", "b"), report.rejected)
         assertEquals(1, report.synced)
-        assertEquals(SyncState.PENDING, store.state("a"))
-        assertEquals(SyncState.PENDING, store.state("b"))
+        // Set aside rather than retried on every sync; an edit or Sync now puts them back.
+        assertEquals(SyncState.FAILED, store.state("a"))
+        assertEquals(SyncState.FAILED, store.state("b"))
         assertEquals(SyncState.SYNCED, store.state("c"))
     }
 

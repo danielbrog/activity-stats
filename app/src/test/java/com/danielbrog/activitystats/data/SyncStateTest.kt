@@ -16,6 +16,13 @@ class SyncStateTest {
     }
 
     @Test
+    fun `the four states are distinct, and a new ride is never failed`() {
+        val states = listOf(SyncState.LOCAL_ONLY, SyncState.PENDING, SyncState.SYNCED, SyncState.FAILED)
+        assertEquals(4, states.toSet().size)
+        assertEquals(false, SyncState.forNewRide("someone") == SyncState.FAILED)
+    }
+
+    @Test
     fun `a ride with no owner is local only by default`() {
         val ride = ActivityEntity(id = "a", startedAt = 0, title = "Ride", updatedAt = 0)
         assertEquals(null, ride.userId)

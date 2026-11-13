@@ -55,6 +55,16 @@ class MergeTest {
     }
 
     @Test
+    fun aRefusedRideTakesANewerCloudCopy() {
+        assertEquals(Decision.TakeCloud, decide(local(updatedAt = 4_000L, syncState = SyncState.FAILED), cloud(updatedAt = 5_000L)))
+    }
+
+    @Test
+    fun aRefusedRideKeepsItsCopyOverAnOlderCloudOne() {
+        assertEquals(Decision.Keep, decide(local(updatedAt = 6_000L, syncState = SyncState.FAILED), cloud(updatedAt = 5_000L)))
+    }
+
+    @Test
     fun theSameCopyIsKept() {
         // Most often this phone's own upload coming back in the listing.
         assertEquals(Decision.Keep, decide(local(updatedAt = 5_000L), cloud(updatedAt = 5_000L)))

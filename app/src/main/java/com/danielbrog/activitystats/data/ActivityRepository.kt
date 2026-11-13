@@ -222,6 +222,15 @@ class ActivityRepository(
 
     override suspend fun markTrackUploaded(id: String) = activities.markTrackUploaded(id)
 
+    override suspend fun markFailed(id: String, sentUpdatedAt: Long) = activities.markFailed(id, sentUpdatedAt)
+
+    /** Puts [userId]'s refused rides back in the queue, for Sync now. */
+    suspend fun retryFailed(userId: String) = activities.retryFailed(userId)
+
+    fun waitingCount(userId: String): Flow<Int> = activities.waitingCount(userId)
+
+    fun failedCount(userId: String): Flow<Int> = activities.failedCount(userId)
+
     override suspend fun markSynced(id: String, sentUpdatedAt: Long) {
         activities.markSynced(id, sentUpdatedAt)
     }

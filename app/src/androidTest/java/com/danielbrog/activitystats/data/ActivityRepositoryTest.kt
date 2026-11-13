@@ -157,6 +157,61 @@ class ActivityRepositoryTest {
         assertEquals(SyncState.PENDING, repo.getActivity("synced")!!.syncState)
     }
 
+    private suspend fun insertFinished(id: String, syncState: String, userId: String? = "me", elevation: Double? = 10.0) =
+        db.activityDao().insertActivity(
+            ActivityEntity(
+                id = id, userId = userId, startedAt = start, endedAt = start + 60_000, title = "Ride",
+                updatedAt = start, syncState = syncState, elevationGainMeters = elevation,
+            )
+        )
+
+    @Test
+    fun editingAFailedRideMarksItPending() = runBlocking {
+        insertFinished("renamed", SyncState.FAILED)
+        insertFinished("deleted", SyncState.FAILED)
+        insertFinished("restored", SyncState.FAILED)
+        repo.rename("renamed", "Shorter", nowMillis = start + 1)
+        repo.delete("deleted", nowMillis = start + 1)
+        repo.restore("restored", nowMillis = start + 1)
+        listOf("renamed", "deleted", "restored").forEach {
+            assertEquals(it, SyncState.PENDING, repo.getActivity(it)!!.syncState)
+        }
+    }
+
+    @Test
+    fun onlyTheWaitingCopyThatWasSentIsMarkedFailed() = runBlocking {
+        insertFinished("sent", SyncState.PENDING)
+        insertFinished("edited", SyncState.PENDING)
+        insertFinished("synced", SyncState.SYNCED)
+        repo.markFailed("sent", sentUpdatedAt = start)
+        repo.markFailed("edited", sentUpdatedAt = start - 1) // edited after that copy was sent
+        repo.markFailed("synced", sentUpdatedAt = start)
+        assertEquals(SyncState.FAILED, repo.getActivity("sent")!!.syncState)
+        assertEquals(SyncState.PENDING, repo.getActivity("edited")!!.syncState)
+        assertEquals(SyncState.SYNCED, repo.getActivity("synced")!!.syncState)
+    }
+
+    @Test
+    fun retryFailedOnlyTouchesThatUser() = runBlocking {
+        insertFinished("mine", SyncState.FAILED, userId = "me")
+        insertFinished("theirs", SyncState.FAILED, userId = "someone-else")
+        repo.retryFailed("me")
+        assertEquals(SyncState.PENDING, repo.getActivity("mine")!!.syncState)
+        assertEquals(SyncState.FAILED, repo.getActivity("theirs")!!.syncState)
+    }
+
+    @Test
+    fun theCountsMatchWhatTheNextSyncSends() = runBlocking {
+        insertFinished("waiting", SyncState.PENDING)
+        insertFinished("no-climbing-yet", SyncState.PENDING, elevation = null)
+        insertFinished("refused", SyncState.FAILED)
+        insertFinished("other-user", SyncState.PENDING, userId = "someone-else")
+        repo.startActivity("recording", start) // owned by nobody here, and unfinished
+        assertEquals(1, repo.waitingCount("me").first())
+        assertEquals(repo.pendingUploads("me").size, repo.waitingCount("me").first())
+        assertEquals(1, repo.failedCount("me").first())
+    }
+
     @Test
     fun unfinishedRidesAreRecoveredFromTheirPoints() = runBlocking {
         repo.startActivity("cut-off", start)

@@ -6,12 +6,24 @@ import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
 import com.danielbrog.activitystats.ActivityStatsApp
+import com.danielbrog.activitystats.sync.Sync
+import com.danielbrog.activitystats.sync.SyncCursorStore
+import com.danielbrog.activitystats.sync.SyncStatus
 import java.io.IOException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationResponse
@@ -24,10 +36,14 @@ sealed interface Connection {
     data class Failed(val message: String) : Connection
 }
 
-/** The Account screen: sign in, sign out, and a check that the backend accepts the sign-in. */
+/**
+ * The Account screen: sign in, sign out, a check that the backend accepts the sign-in, and how
+ * syncing stands, with Sync now.
+ */
 class AccountViewModel(application: Application) : AndroidViewModel(application) {
 
     private val auth = (application as ActivityStatsApp).authRepository
+    private val rides = (application as ActivityStatsApp).activityRepository
 
     val account: StateFlow<AccountState> = auth.state
 
@@ -41,6 +57,40 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     private val _message = MutableStateFlow<String?>(null)
     /** A one-off message for a snackbar; call [messageShown] once it is on screen. */
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    /**
+     * How syncing stands for the signed-in account, or null while signed out. Updates itself:
+     * the counts from the database, the last sync time from DataStore, and "running" from WorkManager.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val syncStatus: StateFlow<SyncStatus?> = auth.state
+        .map { (it as? AccountState.SignedIn)?.userId }
+        .distinctUntilChanged()
+        .flatMapLatest { userId ->
+            if (userId == null) {
+                flowOf(null)
+            } else {
+                combine(
+                    Sync.running(application),
+                    rides.waitingCount(userId),
+                    rides.failedCount(userId),
+                    SyncCursorStore(application).lastSynced(userId),
+                ) { running, waiting, failed, lastSynced -> SyncStatus(running, waiting, failed, lastSynced) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
+    /**
+     * Puts refused rides back in the queue, then starts a sync at once: it replaces one waiting
+     * out a retry. The button is off while a sync runs, so this never cuts one short.
+     */
+    fun syncNow() {
+        val userId = auth.signedInUserId ?: return
+        viewModelScope.launch {
+            rides.retryFailed(userId)
+            Sync.request(getApplication(), ExistingWorkPolicy.REPLACE)
+        }
+    }
 
     /** Opens the sign-in and logout pages in a Chrome tab. Made on first use. */
     private val service by lazy { AuthorizationService(application) }
