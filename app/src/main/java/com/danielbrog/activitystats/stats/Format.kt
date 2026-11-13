@@ -15,39 +15,75 @@ object Format {
     const val METERS_PER_MILE = 1_609.344
     const val FEET_PER_METER = 3.280_839_9
 
-    /** Elevation in metres alongside km, feet alongside miles: "152 m", "499 ft". */
-    fun elevation(meters: Double, unit: DistanceUnit): String = when (unit) {
-        DistanceUnit.Km -> "%.0f m".format(Locale.US, meters)
-        DistanceUnit.Mi -> "%.0f ft".format(Locale.US, meters * FEET_PER_METER)
+    // --- Numbers in the chosen unit, for charts and anything else that needs the value itself.
+    // The text functions below use these too, so every screen converts the same way.
+
+    // Each is a `when` over the unit, so adding a unit won't compile until it is handled here.
+
+    /** A distance in km or miles. */
+    fun distanceValue(meters: Double, unit: DistanceUnit): Double = when (unit) {
+        DistanceUnit.Km -> meters / 1_000.0
+        DistanceUnit.Mi -> meters / METERS_PER_MILE
     }
+
+    /** A speed in km/h or mph. */
+    fun speedValue(mps: Double, unit: DistanceUnit): Double = when (unit) {
+        DistanceUnit.Km -> mps * 3.6
+        DistanceUnit.Mi -> mps * 3_600.0 / METERS_PER_MILE
+    }
+
+    /** A height or other short length: metres alongside km, feet alongside miles. */
+    fun elevationValue(meters: Double, unit: DistanceUnit): Double = when (unit) {
+        DistanceUnit.Km -> meters
+        DistanceUnit.Mi -> meters * FEET_PER_METER
+    }
+
+    fun distanceLabel(unit: DistanceUnit): String = when (unit) {
+        DistanceUnit.Km -> "km"
+        DistanceUnit.Mi -> "mi"
+    }
+
+    fun speedLabel(unit: DistanceUnit): String = when (unit) {
+        DistanceUnit.Km -> "km/h"
+        DistanceUnit.Mi -> "mph"
+    }
+
+    fun elevationLabel(unit: DistanceUnit): String = when (unit) {
+        DistanceUnit.Km -> "m"
+        DistanceUnit.Mi -> "ft"
+    }
+
+    /**
+     * A short length that isn't a height, such as GPS accuracy: "4 m", "13 ft", or with
+     * [decimals], "4.2 m". Metres alongside km, feet alongside miles.
+     */
+    fun shortLength(meters: Double, unit: DistanceUnit, decimals: Int = 0): String =
+        "%.${decimals}f %s".format(Locale.US, elevationValue(meters, unit), elevationLabel(unit))
+
+    /** Elevation in metres alongside km, feet alongside miles: "152 m", "499 ft". */
+    fun elevation(meters: Double, unit: DistanceUnit): String =
+        "%.0f %s".format(Locale.US, elevationValue(meters, unit), elevationLabel(unit))
 
     /** A height change with its sign: "+12 m", "−4 m", "0 m"; feet alongside miles. */
     fun elevationChange(meters: Double, unit: DistanceUnit): String {
-        val value = if (unit == DistanceUnit.Km) meters else meters * FEET_PER_METER
-        val rounded = Math.round(value)
+        val rounded = Math.round(elevationValue(meters, unit))
         val sign = when {
             rounded > 0 -> "+"
             rounded < 0 -> "−"
             else -> ""
         }
-        return "$sign${kotlin.math.abs(rounded)} ${if (unit == DistanceUnit.Km) "m" else "ft"}"
+        return "$sign${kotlin.math.abs(rounded)} ${elevationLabel(unit)}"
     }
 
     /** Just the number of a distance, for split labels: "0.43" (km or mi). */
-    fun distanceNumber(meters: Double, unit: DistanceUnit): String = when (unit) {
-        DistanceUnit.Km -> "%.2f".format(Locale.US, meters / 1_000.0)
-        DistanceUnit.Mi -> "%.2f".format(Locale.US, meters / METERS_PER_MILE)
-    }
+    fun distanceNumber(meters: Double, unit: DistanceUnit): String =
+        "%.2f".format(Locale.US, distanceValue(meters, unit))
 
-    fun distance(meters: Double, unit: DistanceUnit): String = when (unit) {
-        DistanceUnit.Km -> "%.2f km".format(Locale.US, meters / 1_000.0)
-        DistanceUnit.Mi -> "%.2f mi".format(Locale.US, meters / METERS_PER_MILE)
-    }
+    fun distance(meters: Double, unit: DistanceUnit): String =
+        "%.2f %s".format(Locale.US, distanceValue(meters, unit), distanceLabel(unit))
 
-    fun speed(mps: Double, unit: DistanceUnit): String = when (unit) {
-        DistanceUnit.Km -> "%.1f km/h".format(Locale.US, mps * 3.6)
-        DistanceUnit.Mi -> "%.1f mph".format(Locale.US, mps * 3_600.0 / METERS_PER_MILE)
-    }
+    fun speed(mps: Double, unit: DistanceUnit): String =
+        "%.1f %s".format(Locale.US, speedValue(mps, unit), speedLabel(unit))
 
     /** Minutes and seconds per km or mile, or a dash when too slow for pace to mean anything. */
     fun pace(mps: Double, unit: DistanceUnit): String {

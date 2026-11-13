@@ -31,11 +31,6 @@ import com.danielbrog.activitystats.stats.SpeedSeries
 import java.util.Locale
 import kotlin.math.abs
 
-/** Distance across the chart in the chosen unit: km or mi. */
-private fun DistanceUnit.metersPerUnit() = if (this == DistanceUnit.Km) 1_000.0 else Format.METERS_PER_MILE
-
-private fun DistanceUnit.distanceLabel() = if (this == DistanceUnit.Km) "km" else "mi"
-
 /**
  * Speed along the ride: distance across, speed up from 0, with a dashed line at the average.
  * Touch and drag to read the exact distance and speed under your finger.
@@ -47,17 +42,17 @@ fun SpeedChart(
     unit: DistanceUnit,
     modifier: Modifier = Modifier,
 ) {
-    val factor = if (unit == DistanceUnit.Km) 3.6 else 3_600.0 / Format.METERS_PER_MILE
+    // Always speed, even with pace chosen: a pace chart reads upside down and runs off the scale at every stop.
     val points = remember(samples, unit) {
-        samples.map { (it.distanceMeters / unit.metersPerUnit()) to (it.speedMps * factor) }
+        samples.map { Format.distanceValue(it.distanceMeters, unit) to Format.speedValue(it.speedMps, unit) }
     }
     val yTicks = remember(points) { SpeedSeries.niceTicks(points.maxOfOrNull { it.second } ?: 0.0) }
     RideChart(
         points = points,
         yTicks = yTicks,
-        referenceY = (avgSpeedMps * factor).takeIf { it > 0 },
-        xUnit = unit.distanceLabel(),
-        yUnit = if (unit == DistanceUnit.Km) "km/h" else "mph",
+        referenceY = Format.speedValue(avgSpeedMps, unit).takeIf { it > 0 },
+        xUnit = Format.distanceLabel(unit),
+        yUnit = Format.speedLabel(unit),
         yDecimals = 1,
         modifier = modifier,
     )
@@ -73,9 +68,8 @@ fun ElevationChart(
     unit: DistanceUnit,
     modifier: Modifier = Modifier,
 ) {
-    val factor = if (unit == DistanceUnit.Km) 1.0 else Format.FEET_PER_METER
     val points = remember(samples, unit) {
-        samples.map { (it.distanceMeters / unit.metersPerUnit()) to (it.altitudeMeters * factor) }
+        samples.map { Format.distanceValue(it.distanceMeters, unit) to Format.elevationValue(it.altitudeMeters, unit) }
     }
     val yTicks = remember(points) {
         SpeedSeries.niceRangeTicks(
@@ -87,8 +81,8 @@ fun ElevationChart(
         points = points,
         yTicks = yTicks,
         referenceY = null,
-        xUnit = unit.distanceLabel(),
-        yUnit = if (unit == DistanceUnit.Km) "m" else "ft",
+        xUnit = Format.distanceLabel(unit),
+        yUnit = Format.elevationLabel(unit),
         yDecimals = 0,
         modifier = modifier,
     )
