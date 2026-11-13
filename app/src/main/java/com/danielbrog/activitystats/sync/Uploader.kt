@@ -14,6 +14,12 @@ interface SyncStore {
 
     suspend fun markTrackUploaded(id: String)
 
+    /**
+     * The server refused the copy at [sentUpdatedAt]: it waits for an edit or Sync now instead of
+     * retrying every sync. Leaves the ride waiting if it changed after that copy was sent.
+     */
+    suspend fun markFailed(id: String, sentUpdatedAt: Long)
+
     /** Marks the ride synced unless it changed after the copy at [sentUpdatedAt] was sent. */
     suspend fun markSynced(id: String, sentUpdatedAt: Long)
 
@@ -35,12 +41,16 @@ interface SyncStore {
  */
 class Uploader(private val store: SyncStore, private val api: SyncApi) {
 
-    /** How a run went: rides now in the cloud, and the ids skipped because the server refused them. */
+    /**
+     * How a run went: rides now in the cloud, and the ids not sent this time. Those the server
+     * clearly refused are marked failed; the rest just wait for the next sync.
+     */
     data class Report(val synced: Int, val rejected: List<String>)
 
     /**
-     * Uploads every waiting ride of [userId], oldest first. A ride the server refuses is
-     * skipped and the rest carry on. Stops early if [stillSignedIn] turns false, so a sign-out
+     * Uploads every waiting ride of [userId], oldest first. A ride the server refuses (a 4xx) is
+     * marked failed; a reply that looks like trouble on the way rather than with the ride (a
+     * redirect, a missing route, a garbled body) leaves it waiting. Either way the rest carry on. Stops early if [stillSignedIn] turns false, so a sign-out
      * or a switch to another account never sends one account's rides under another's sign-in.
      * Throws [IOException] on network trouble, leaving the rides done so far synced and the
      * rest waiting, for the next run.
@@ -48,6 +58,13 @@ class Uploader(private val store: SyncStore, private val api: SyncApi) {
     suspend fun uploadPending(userId: String, stillSignedIn: () -> Boolean = { true }): Report {
         var synced = 0
         val rejected = mutableListOf<String>()
+
+        /** Notes a ride not sent; parks it as failed only if the server clearly refused it. */
+        suspend fun notSent(ride: ActivityEntity, code: Int?) {
+            if (code != null && refusesTheRide(code)) store.markFailed(ride.id, ride.updatedAt)
+            rejected += ride.id
+        }
+
         for (ride in store.pendingUploads(userId)) {
             if (!stillSignedIn()) break
             try {
@@ -63,15 +80,25 @@ class Uploader(private val store: SyncStore, private val api: SyncApi) {
                     }
                     // If the phone's copy changed meanwhile, it is newer still and goes up next time.
                     is PutResult.Newer -> if (store.applyCloudCopy(ride.id, result.cloud)) synced++
-                    is PutResult.Rejected -> rejected += ride.id
+                    is PutResult.Rejected -> notSent(ride, result.code)
                 }
             } catch (e: RejectedException) {
-                rejected += ride.id
+                notSent(ride, e.code)
             } catch (e: SerializationException) {
-                // A reply that isn't what the backend sends: skip this ride rather than stall the rest.
-                rejected += ride.id
+                // A reply that isn't what the backend sends, like a Wi-Fi login page: not the
+                // ride's fault, so it just waits for the next sync.
+                notSent(ride, code = null)
             }
         }
         return Report(synced, rejected)
+    }
+
+    private companion object {
+        /**
+         * A reply that refuses this ride itself, so retrying unchanged won't help: a 4xx other
+         * than 404, which here means a missing route (a setup problem), not a missing ride.
+         * Redirects and the retried codes (401, 403, 408, 429) never mark a ride failed.
+         */
+        fun refusesTheRide(code: Int) = code in 400..499 && code != 404
     }
 }

@@ -1,5 +1,6 @@
 package com.danielbrog.activitystats.account
 
+import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -27,11 +28,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -39,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.danielbrog.activitystats.R
+import kotlinx.coroutines.delay
+import com.danielbrog.activitystats.sync.SyncStatus
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
@@ -55,6 +62,7 @@ fun AccountScreen(
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val connection by viewModel.connection.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -79,6 +87,8 @@ fun AccountScreen(
             onSignIn = { viewModel.signInIntent()?.let(signIn::launch) },
             onSignOut = { viewModel.signOut { intent -> intent?.let(logout::launch) } },
             onRetryConnection = viewModel::checkConnection,
+            syncStatus = syncStatus,
+            onSyncNow = viewModel::syncNow,
         )
         SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
@@ -94,6 +104,8 @@ private fun AccountContent(
     onSignOut: () -> Unit,
     onRetryConnection: () -> Unit,
     modifier: Modifier = Modifier,
+    syncStatus: SyncStatus? = null,
+    onSyncNow: () -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -116,7 +128,8 @@ private fun AccountContent(
                     "(see secrets.defaults.properties) and rebuild."
             )
             AccountState.SignedOut -> SignedOutContent(busy, onSignIn)
-            is AccountState.SignedIn -> SignedInContent(account, busy, connection, onSignOut, onRetryConnection)
+            is AccountState.SignedIn ->
+                SignedInContent(account, busy, connection, onSignOut, onRetryConnection, syncStatus, onSyncNow)
         }
     }
 }
@@ -152,6 +165,8 @@ private fun SignedInContent(
     connection: Connection?,
     onSignOut: () -> Unit,
     onRetryConnection: () -> Unit,
+    syncStatus: SyncStatus?,
+    onSyncNow: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -166,9 +181,48 @@ private fun SignedInContent(
                 ConnectionLine(connection, onRetryConnection)
             }
         }
-        Explanation("Rides recorded while signed in belong to this account. Syncing them is coming next.")
+        SyncCard(syncStatus, onSyncNow)
+        Explanation(
+            "Rides recorded while signed in belong to this account and are kept in the cloud. " +
+                "They sync whenever the app is opened, and after every change."
+        )
         OutlinedButton(onClick = onSignOut, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Text("Sign out")
+        }
+    }
+}
+
+/** How syncing stands, with Sync now. */
+@Composable
+private fun SyncCard(status: SyncStatus?, onSyncNow: () -> Unit) {
+    val use24Hour = DateFormat.is24HourFormat(LocalContext.current)
+    // Ticks each minute, so "last synced 23:58" gains its date once midnight passes.
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) {
+            delay(60_000L)
+            value = System.currentTimeMillis()
+        }
+    }
+    val line = remember(status, now, use24Hour) { status?.text(now, use24Hour) ?: "Checking…" }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Sync", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (status?.running == true) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    line,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if ((status?.failed ?: 0) > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    // TalkBack reads the new line when it changes, such as when Sync now finishes.
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onSyncNow, enabled = status?.running != true) { Text("Sync now") }
         }
     }
 }
@@ -218,6 +272,7 @@ private fun SignedInPreview() {
             busy = false,
             connection = Connection.Connected,
             {}, {}, {}, {},
+            syncStatus = SyncStatus(waiting = 2, lastSyncedAt = 1_793_000_000_000L),
         )
     }
 }

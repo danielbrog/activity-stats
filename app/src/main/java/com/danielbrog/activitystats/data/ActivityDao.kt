@@ -28,12 +28,12 @@ abstract class ActivityDao {
     @Query("SELECT * FROM activities WHERE id = :id")
     abstract fun observeActivity(id: String): Flow<ActivityEntity?>
 
-    // Edits bump updatedAt so sync can tell which copy is newer, and turn an already
-    // synced activity back to PENDING so the change gets uploaded.
+    // Edits bump updatedAt so sync can tell which copy is newer, and turn an already synced
+    // (or refused) activity back to PENDING so the change gets uploaded.
 
     @Query(
         "UPDATE activities SET title = :title, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState = '${SyncState.SYNCED}' THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun rename(id: String, title: String, now: Long)
@@ -41,7 +41,7 @@ abstract class ActivityDao {
     /** Soft delete: the row stays, marked with when it was deleted. */
     @Query(
         "UPDATE activities SET deletedAt = :now, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState = '${SyncState.SYNCED}' THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun softDelete(id: String, now: Long)
@@ -49,7 +49,7 @@ abstract class ActivityDao {
     /** Undoes a soft delete. */
     @Query(
         "UPDATE activities SET deletedAt = NULL, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState = '${SyncState.SYNCED}' THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun restore(id: String, now: Long)
@@ -77,6 +77,36 @@ abstract class ActivityDao {
 
     @Query("UPDATE activities SET trackUploaded = 1 WHERE id = :id")
     abstract suspend fun markTrackUploaded(id: String)
+
+    /**
+     * The server refused the copy at [sentUpdatedAt]: it waits for an edit or Sync now instead
+     * of retrying every sync. A ride edited since that copy was sent stays PENDING, so the
+     * edit, which may be the fix, goes up next time.
+     */
+    @Query(
+        "UPDATE activities SET syncState = '${SyncState.FAILED}' " +
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = '${SyncState.PENDING}'"
+    )
+    abstract suspend fun markFailed(id: String, sentUpdatedAt: Long)
+
+    /** Puts [userId]'s refused rides back in the queue, for Sync now. */
+    @Query("UPDATE activities SET syncState = '${SyncState.PENDING}' WHERE userId = :userId AND syncState = '${SyncState.FAILED}'")
+    abstract suspend fun retryFailed(userId: String)
+
+    /**
+     * How many changes of [userId]'s are waiting to upload: exactly what the next sync sends (the
+     * same rules as [pendingUploads]). Deleted rides count too, since their deletion goes up.
+     * Updates itself.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM activities WHERE userId = :userId AND syncState = '${SyncState.PENDING}' " +
+            "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL"
+    )
+    abstract fun waitingCount(userId: String): Flow<Int>
+
+    /** How many of [userId]'s rides the server refused. Updates itself. */
+    @Query("SELECT COUNT(*) FROM activities WHERE userId = :userId AND syncState = '${SyncState.FAILED}'")
+    abstract fun failedCount(userId: String): Flow<Int>
 
     /**
      * Marks a ride synced, but only if it hasn't changed since the copy at [sentUpdatedAt] was
