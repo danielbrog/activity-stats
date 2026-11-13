@@ -95,6 +95,25 @@ class ActivityRepositoryTest {
     }
 
     @Test
+    fun finishingWithANameSavesThatName() = runBlocking {
+        repo.startActivity("named", start)
+        repo.finishActivity("named", start + 600_000, ActivityStats(), title = "Lakeshore loop")
+        val saved = repo.getActivity("named")!!
+        assertEquals("Lakeshore loop", saved.title)
+        // Saved in the same step as the end time: no separate edit, so nothing extra to sync.
+        assertEquals(start + 600_000, saved.endedAt)
+        assertEquals(start + 600_000, saved.updatedAt)
+    }
+
+    @Test
+    fun finishingWithoutANameKeepsTheDefault() = runBlocking {
+        repo.startActivity("unnamed", start)
+        val default = repo.getActivity("unnamed")!!.title
+        repo.finishActivity("unnamed", start + 600_000, ActivityStats(), title = null)
+        assertEquals(default, repo.getActivity("unnamed")!!.title)
+    }
+
+    @Test
     fun historyListsFinishedRidesNewestFirst() = runBlocking {
         repo.startActivity("older", start)
         repo.finishActivity("older", start + 60_000, ActivityStats())

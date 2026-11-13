@@ -53,6 +53,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.danielbrog.activitystats.data.rideTitle
 import com.danielbrog.activitystats.location.LocationViewModel
 import com.danielbrog.activitystats.location.SavedSummary
 import com.danielbrog.activitystats.location.TrackingUiState
@@ -168,6 +169,26 @@ fun LiveScreen(
         }
     }
 
+    // Finish pauses the ride and asks for its name before saving. Remembered through a rotation,
+    // along with whether the rider had already paused, so Keep riding puts things back as they were.
+    var finishing by rememberSaveable { mutableStateOf(false) }
+    var pausedBeforeFinish by rememberSaveable { mutableStateOf(false) }
+    // Finished another way (the notification's Finish): nothing left to name here.
+    LaunchedEffect(state.isTracking) { if (!state.isTracking) finishing = false }
+    if (finishing && state.isTracking) {
+        FinishRideDialog(
+            defaultTitle = rideTitle(state.startedAtMillis),
+            onSave = { title ->
+                finishing = false
+                viewModel.finish(title)
+            },
+            onKeepRiding = {
+                finishing = false
+                if (!pausedBeforeFinish) viewModel.resumeAfterFinishCancelled()
+            },
+        )
+    }
+
     LiveContent(
         state = state,
         settings = settings,
@@ -195,7 +216,16 @@ fun LiveScreen(
                 permissionLauncher.launch(missing.toTypedArray())
             }
         },
-        onStop = viewModel::stop,
+        onFinish = onFinish@{
+            // A second tap (easy with gloves) before the dialog covers the button: ignore it, or
+            // it would see Finish's own pause and Keep riding wouldn't resume.
+            if (finishing) return@onFinish
+            // Stop the clock while the rider names the ride: typing time isn't riding time. The
+            // ride ends when the pause began: now, or earlier if the rider had already paused.
+            pausedBeforeFinish = state.isManuallyPaused
+            if (!pausedBeforeFinish) viewModel.pause()
+            finishing = true
+        },
         onPause = viewModel::pause,
         onResume = viewModel::resume,
         onUnitChange = viewModel::setUnit,
@@ -218,8 +248,8 @@ private fun LiveContent(
     /** The GPS warm-up before recording, or null while recording or without permission. */
     gps: GpsPreview?,
     onStart: () -> Unit,
-    /** Finishes the recording. */
-    onStop: () -> Unit,
+    /** Finish was pressed: pause and ask for the ride's name. */
+    onFinish: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onUnitChange: (DistanceUnit) -> Unit,
@@ -366,7 +396,7 @@ private fun LiveContent(
                     }
                 }
                 Button(
-                    onClick = onStop,
+                    onClick = onFinish,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,
@@ -561,7 +591,7 @@ private fun LivePreview() {
             hasLocationPermission = true,
             gps = GpsPreview(fix = PreviewFix(0.0, 0.0, accuracyMeters = 4f)),
             onStart = {},
-            onStop = {},
+            onFinish = {},
             onPause = {},
             onResume = {},
             onUnitChange = {},
