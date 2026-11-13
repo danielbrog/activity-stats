@@ -98,7 +98,7 @@ object Splits {
      */
     fun summary(splits: List<Split>, unit: DistanceUnit, display: SpeedDisplay): String {
         val best = fastest(splits) ?: return ""
-        val unitWord = if (unit == DistanceUnit.Km) "km" else "mi"
+        val unitWord = Format.distanceLabel(unit)
         val which = if (best.isPartial) {
             "last ${Format.distanceNumber(best.distanceMeters, unit)} $unitWord"
         } else {

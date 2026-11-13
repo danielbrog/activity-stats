@@ -25,13 +25,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,7 +63,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.FilterChip
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -85,7 +80,7 @@ import kotlinx.coroutines.delay
 
 private enum class PermissionProblem { None, OnlyApproximate, Denied, DeniedPermanently }
 
-/** The main screen: large live numbers, unit and speed/pace toggles, and Start, Pause and Finish. */
+/** The main screen: large live numbers, and Start, Pause and Finish. Units and auto-pause are set in Settings. */
 @Composable
 fun LiveScreen(
     onOpenGpsDetails: () -> Unit,
@@ -228,9 +223,6 @@ fun LiveScreen(
         },
         onPause = viewModel::pause,
         onResume = viewModel::resume,
-        onUnitChange = viewModel::setUnit,
-        onSpeedDisplayChange = viewModel::setSpeedDisplay,
-        onAutoPauseChange = viewModel::setAutoPause,
         onOpenSettings = { context.openAppSettings() },
         onOpenGpsDetails = onOpenGpsDetails,
         modifier = modifier,
@@ -252,9 +244,6 @@ private fun LiveContent(
     onFinish: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
-    onUnitChange: (DistanceUnit) -> Unit,
-    onSpeedDisplayChange: (SpeedDisplay) -> Unit,
-    onAutoPauseChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenGpsDetails: () -> Unit,
     modifier: Modifier = Modifier,
@@ -299,14 +288,11 @@ private fun LiveContent(
                     )
                 }
             }
-            AutoPauseChip(settings.autoPause, onAutoPauseChange)
             TextButton(onClick = onOpenGpsDetails) { Text("GPS details") }
         }
         if (!state.isTracking && gps != null) {
             GpsStatusLine(gps.status, unit)
         }
-
-        SettingsRow(settings, onUnitChange, onSpeedDisplayChange)
 
         PermissionMessage(problem, onOpenSettings)
         if (state.isTracking && state.locationServicesOff) {
@@ -413,40 +399,6 @@ private fun LiveContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsRow(
-    settings: DisplaySettings,
-    onUnitChange: (DistanceUnit) -> Unit,
-    onSpeedDisplayChange: (SpeedDisplay) -> Unit,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-    ) {
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
-            val units = listOf(DistanceUnit.Km to "km", DistanceUnit.Mi to "mi")
-            units.forEachIndexed { i, (unit, label) ->
-                SegmentedButton(
-                    selected = settings.unit == unit,
-                    onClick = { onUnitChange(unit) },
-                    shape = SegmentedButtonDefaults.itemShape(i, units.size),
-                ) { Text(label) }
-            }
-        }
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
-            val modes = listOf(SpeedDisplay.Speed to "Speed", SpeedDisplay.Pace to "Pace")
-            modes.forEachIndexed { i, (mode, label) ->
-                SegmentedButton(
-                    selected = settings.speedDisplay == mode,
-                    onClick = { onSpeedDisplayChange(mode) },
-                    shape = SegmentedButtonDefaults.itemShape(i, modes.size),
-                ) { Text(label) }
-            }
-        }
-    }
-}
-
 /** Shown in place of "Recording" while paused, by hand or by auto-pause. */
 @Composable
 private fun PausedBadge() {
@@ -462,15 +414,6 @@ private fun PausedBadge() {
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         )
     }
-}
-
-@Composable
-private fun AutoPauseChip(enabled: Boolean, onChange: (Boolean) -> Unit) {
-    FilterChip(
-        selected = enabled,
-        onClick = { onChange(!enabled) },
-        label = { Text("Auto-pause") },
-    )
 }
 
 /** A label over a large number, with the unit set smaller after it ("24.3" + "km/h"). */
@@ -594,9 +537,6 @@ private fun LivePreview() {
             onFinish = {},
             onPause = {},
             onResume = {},
-            onUnitChange = {},
-            onSpeedDisplayChange = {},
-            onAutoPauseChange = {},
             onOpenSettings = {},
             onOpenGpsDetails = {},
         )

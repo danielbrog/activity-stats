@@ -49,4 +49,39 @@ class FormatTest {
         assertEquals("0:00", Format.clock(0L))
         assertEquals("0:00", Format.clock(-5_000L))
     }
+
+    // --- The number helpers: charts and other screens use these, so they must match the text.
+
+    @Test
+    fun numberHelpersConvertLikeTheText() {
+        assertEquals(1.243, Format.distanceValue(1_243.0, DistanceUnit.Km), 1e-9)
+        assertEquals(1.0, Format.distanceValue(1_609.344, DistanceUnit.Mi), 1e-9)
+        assertEquals(10.8, Format.speedValue(3.0, DistanceUnit.Km), 1e-9)
+        assertEquals(6.71, Format.speedValue(3.0, DistanceUnit.Mi), 0.01)
+        assertEquals(152.0, Format.elevationValue(152.0, DistanceUnit.Km), 1e-9)
+        assertEquals(498.69, Format.elevationValue(152.0, DistanceUnit.Mi), 0.01)
+    }
+
+    @Test
+    fun milesReadAsExpectedEverywhere() {
+        // Pinned strings, so a change to what riders see in miles can't slip through.
+        assertEquals("7.72 mi", Format.distance(12_430.0, DistanceUnit.Mi))
+        assertEquals("16.6 mph", Format.speed(7.4, DistanceUnit.Mi))
+        assertEquals("1024 ft", Format.elevation(312.0, DistanceUnit.Mi))
+        assertEquals("7.72", Format.distanceNumber(12_430.0, DistanceUnit.Mi))
+    }
+
+    @Test
+    fun shortLengthsForAccuracy() {
+        assertEquals("4 m", Format.shortLength(4.2, DistanceUnit.Km))
+        assertEquals("4.2 m", Format.shortLength(4.2, DistanceUnit.Km, decimals = 1))
+        assertEquals("13.8 ft", Format.shortLength(4.2, DistanceUnit.Mi, decimals = 1))
+        assertEquals("112 ft", Format.shortLength(34.0, DistanceUnit.Mi))
+    }
+
+    @Test
+    fun labelsMatchTheUnit() {
+        assertEquals(listOf("km", "km/h", "m"), listOf(Format.distanceLabel(DistanceUnit.Km), Format.speedLabel(DistanceUnit.Km), Format.elevationLabel(DistanceUnit.Km)))
+        assertEquals(listOf("mi", "mph", "ft"), listOf(Format.distanceLabel(DistanceUnit.Mi), Format.speedLabel(DistanceUnit.Mi), Format.elevationLabel(DistanceUnit.Mi)))
+    }
 }

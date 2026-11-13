@@ -28,6 +28,7 @@ import com.danielbrog.activitystats.data.RecordingWriter
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.StatsEngine
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
+import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,7 +39,6 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import java.util.Locale
 import java.util.UUID
 
 /**
@@ -69,8 +69,10 @@ class LocationTrackingService : Service() {
     // Saving: fixes are buffered and written in batches, so a crash loses at most ~10 s.
     private val writer by lazy { (application as ActivityStatsApp).recordingWriter }
 
-    // Auto-pause setting, kept in step with what the user picked on the Record screen.
+    // Auto-pause setting, kept in step with what the user picked in Settings.
     private var autoPause = true
+    // The distance unit for the notification, from Settings like everything else.
+    private var unit = DistanceUnit.Km
     private var settingsJob: Job? = null
     private var activityId = ""
     private val pendingFixes = mutableListOf<GpsData>()
@@ -119,10 +121,11 @@ class LocationTrackingService : Service() {
         super.onCreate()
         client = LocationServices.getFusedLocationProviderClient(this)
         notifications = NotificationManagerCompat.from(this)
-        // Follow the auto-pause setting, so the notification's timer matches the Record screen.
+        // Follow the settings, so the notification's timer and distance match the Record screen.
         settingsJob = (application as ActivityStatsApp).appScope.launch(Dispatchers.Main) {
             DisplaySettingsRepository(this@LocationTrackingService).settings.collect {
                 autoPause = it.autoPause
+                unit = it.unit
                 postNotification()
             }
         }
@@ -312,11 +315,7 @@ class LocationTrackingService : Service() {
         val paused = manuallyPaused || (autoPause && stats.isPaused)
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_tracking)
-            .setContentText(
-                "%.2f km · %d kept of %d %s".format(
-                    Locale.US, stats.distanceMeters / 1_000.0, kept, total, if (total == 1) "fix" else "fixes",
-                )
-            )
+            .setContentText(notificationText(stats.distanceMeters, unit, kept, total))
         when {
             // Paused: stop the timer and show the time reached so far.
             paused -> builder

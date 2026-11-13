@@ -79,7 +79,7 @@ sealed interface GpsStatus {
 
         /** At least 1, so a very good fix never reads "±0 m". */
         private fun accuracy(meters: Float, unit: DistanceUnit): String =
-            Format.elevation(meters.roundToInt().coerceAtLeast(1).toDouble(), unit)
+            Format.shortLength(meters.roundToInt().coerceAtLeast(1).toDouble(), unit)
     }
 }
 
