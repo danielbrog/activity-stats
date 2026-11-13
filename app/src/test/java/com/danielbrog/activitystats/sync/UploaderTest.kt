@@ -104,6 +104,11 @@ class UploaderTest {
             if (failOn == "track $id") throw IOException("offline")
             uploaded[id] = bytes
         }
+
+        // The upload never downloads.
+        override suspend fun listActivities(since: Long, page: String?) = error("not used by the upload")
+        override suspend fun trackDownloadLink(id: String) = error("not used by the upload")
+        override suspend fun downloadTrack(url: String) = error("not used by the upload")
     }
 
     private fun run(store: FakeStore, api: FakeApi, stillSignedIn: () -> Boolean = { true }) =

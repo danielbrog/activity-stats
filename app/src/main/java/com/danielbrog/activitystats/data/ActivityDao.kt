@@ -2,6 +2,7 @@ package com.danielbrog.activitystats.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,13 @@ abstract class ActivityDao {
 
     @Insert
     abstract suspend fun insertActivity(activity: ActivityEntity)
+
+    /**
+     * Inserts a ride downloaded from the cloud, unless one with its id is already here (then
+     * returns -1 and leaves it alone): a download must never replace a ride on the phone.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertIfNew(activity: ActivityEntity): Long
 
     @Query("SELECT * FROM activities WHERE id = :id")
     abstract suspend fun getActivity(id: String): ActivityEntity?
