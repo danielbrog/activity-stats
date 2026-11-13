@@ -9,6 +9,7 @@ import com.danielbrog.activitystats.stats.BestEfforts
 import com.danielbrog.activitystats.stats.ElevationGain
 import com.danielbrog.activitystats.stats.summarize
 import com.danielbrog.activitystats.sync.CloudCopy
+import com.danielbrog.activitystats.sync.DownloadStore
 import com.danielbrog.activitystats.sync.SyncStore
 import kotlinx.coroutines.flow.Flow
 
@@ -33,7 +34,7 @@ class ActivityRepository(
     private val db: AppDatabase,
     private val ownerId: () -> String? = { null },
     private val onChanged: () -> Unit = {},
-) : SyncStore {
+) : SyncStore, DownloadStore {
 
     private val activities = db.activityDao()
     private val points = db.trackPointDao()
@@ -192,7 +193,7 @@ class ActivityRepository(
     /** Files every ride with no owner under [userId], on sign-in. Returns how many. */
     suspend fun claimUnowned(userId: String): Int = activities.claimUnowned(userId)
 
-    suspend fun getActivity(id: String): ActivityEntity? = activities.getActivity(id)
+    override suspend fun getActivity(id: String): ActivityEntity? = activities.getActivity(id)
 
     fun observeActivity(id: String): Flow<ActivityEntity?> = activities.observeActivity(id)
 
@@ -227,4 +228,20 @@ class ActivityRepository(
 
     override suspend fun applyCloudCopy(id: String, cloud: CloudCopy): Boolean =
         activities.applyCloudCopy(id, cloud.title, cloud.deletedAt, cloud.updatedAt) == 1
+
+    /**
+     * Saves a ride downloaded from the cloud with its points, in one transaction so a half-saved
+     * ride never shows. Climbing comes from the cloud's copy, or the points if it has none; best
+     * efforts are worked out here, as for an import. Doesn't ask for a sync: it already is in sync.
+     */
+    override suspend fun saveDownloadedRide(ride: ActivityEntity, fixes: List<GpsData>) {
+        val inserted = db.withTransaction {
+            val row = activities.insertIfNew(ride.copy(elevationGainMeters = ride.elevationGainMeters ?: ElevationGain.of(fixes)))
+            // Already here (it can't normally be): leave that ride and its points as they are.
+            if (row == -1L) return@withTransaction false
+            fixes.chunked(500).forEach { batch -> points.insertPoints(batch.map { it.toTrackPoint(ride.id) }) }
+            true
+        }
+        if (inserted) saveBestEfforts(ride.id, fixes)
+    }
 }

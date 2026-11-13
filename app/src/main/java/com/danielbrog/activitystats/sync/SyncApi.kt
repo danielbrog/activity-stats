@@ -4,6 +4,7 @@ import com.danielbrog.activitystats.account.AccountHttp.HttpException
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -54,13 +55,24 @@ internal fun outcomeOf(code: Int, fromS3: Boolean = false): Outcome = when {
     else -> Outcome.Skip
 }
 
-/** The sync API calls the upload needs. An interface, so tests can use a fake server. */
+/** The sync API calls the upload and download need. An interface, so tests can use a fake server. */
 interface SyncApi {
     suspend fun putActivity(id: String, summary: RideSummary): PutResult
 
     suspend fun trackUploadLink(id: String): UploadLink
 
     suspend fun uploadTrack(link: UploadLink, bytes: ByteArray)
+
+    /**
+     * One page of the rides saved after [since] (server time), oldest first. [page] is the
+     * previous page's `nextCursor`, or null for the first page; [since] stays the same across pages.
+     */
+    suspend fun listActivities(since: Long, page: String?): CloudPage
+
+    /** A short-lived link to download the ride's track file, or null if it has none yet (404). */
+    suspend fun trackDownloadLink(id: String): String?
+
+    suspend fun downloadTrack(url: String): ByteArray
 }
 
 /**
@@ -70,7 +82,8 @@ interface SyncApi {
 class HttpSyncApi(private val apiUrl: String, private val accessToken: String) : SyncApi {
 
     override suspend fun putActivity(id: String, summary: RideSummary): PutResult {
-        val (code, body) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)
+        val (code, reply) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)
+        val body = reply.decodeToString()
         if (code == 409) return parseConflict(body)?.let { PutResult.Newer(it) } ?: PutResult.Rejected(code)
         return when (outcomeOf(code)) {
             Outcome.Ok -> PutResult.Applied
@@ -82,7 +95,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     override suspend fun trackUploadLink(id: String): UploadLink {
         val (code, body) = request("POST", "$apiUrl/activities/$id/track-upload", ByteArray(0), emptyMap())
         throwUnlessOk(code)
-        val reply = json.decodeFromString(LinkJson.serializer(), body)
+        val reply = json.decodeFromString(LinkJson.serializer(), body.decodeToString())
         return UploadLink(reply.url, reply.headers)
     }
 
@@ -92,14 +105,38 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
         throwUnlessOk(code, fromS3 = true)
     }
 
-    /** Sends one request and returns the status code and the reply's text. */
+    override suspend fun listActivities(since: Long, page: String?): CloudPage {
+        val cursor = page?.let { "&cursor=" + URLEncoder.encode(it, Charsets.UTF_8.name()) } ?: ""
+        val (code, body) = request("GET", "$apiUrl/activities?since=$since$cursor", null, emptyMap())
+        throwUnlessOk(code)
+        return parsePage(body.decodeToString())
+    }
+
+    override suspend fun trackDownloadLink(id: String): String? {
+        val (code, body) = request("GET", "$apiUrl/activities/$id/track", null, emptyMap())
+        if (code == 404) return null
+        throwUnlessOk(code)
+        return json.decodeFromString(LinkJson.serializer(), body.decodeToString()).url
+    }
+
+    override suspend fun downloadTrack(url: String): ByteArray {
+        // Signed for S3, like the upload link: no sign-in token goes with it.
+        val (code, body) = request("GET", url, null, emptyMap(), withToken = false)
+        throwUnlessOk(code, fromS3 = true)
+        return body
+    }
+
+    /**
+     * Sends one request and returns the status code and the reply's bytes. Only sends a body
+     * when there is one: opening one at all turns a GET into a POST in [HttpURLConnection].
+     */
     private suspend fun request(
         method: String,
         url: String,
-        body: ByteArray,
+        body: ByteArray?,
         headers: Map<String, String>,
         withToken: Boolean = true,
-    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+    ): Pair<Int, ByteArray> = withContext(Dispatchers.IO) {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = TIMEOUT_MS
@@ -107,12 +144,14 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
             connection.requestMethod = method
             if (withToken) connection.setRequestProperty("Authorization", "Bearer $accessToken")
             headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
-            connection.doOutput = true
-            connection.setFixedLengthStreamingMode(body.size)
-            connection.outputStream.use { it.write(body) }
+            if (body != null) {
+                connection.doOutput = true
+                connection.setFixedLengthStreamingMode(body.size)
+                connection.outputStream.use { it.write(body) }
+            }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            code to (stream?.use { it.readBytes().decodeToString() } ?: "")
+            code to (stream?.use { it.readBytes() } ?: ByteArray(0))
         } finally {
             connection.disconnect()
         }
