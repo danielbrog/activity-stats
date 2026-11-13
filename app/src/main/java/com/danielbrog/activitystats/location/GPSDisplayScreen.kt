@@ -13,19 +13,26 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.danielbrog.activitystats.R
+import com.danielbrog.activitystats.settings.DisplaySettings
+import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,19 +49,27 @@ fun GPSDisplayScreen(
     viewModel: LocationViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    GPSDisplayContent(state = state, onBack = onBack, modifier = modifier)
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    GPSDisplayContent(state = state, settings = settings, onBack = onBack, modifier = modifier)
 }
 
 @Composable
 private fun GPSDisplayContent(
     state: TrackingUiState,
+    settings: DisplaySettings,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("← Back") }
-            Text("GPS fixes", style = MaterialTheme.typography.headlineMedium)
+            IconButton(onClick = onBack) {
+                Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
+            }
+            Text(
+                "GPS fixes",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.semantics { heading() },
+            )
         }
         Spacer(Modifier.height(8.dp))
         Text(
@@ -72,15 +87,20 @@ private fun GPSDisplayContent(
 
         LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
             items(state.fixes, key = { it.seq }) { fix ->
-                FixRow(fix)
+                FixRow(fix, settings)
                 HorizontalDivider()
             }
         }
     }
 }
 
+/**
+ * One fix as the GPS gave it. Position stays in raw degrees; accuracy and speed are in the
+ * chosen units, with the raw m/s alongside the speed or pace.
+ */
 @Composable
-private fun FixRow(fix: GpsData) {
+private fun FixRow(fix: GpsData, settings: DisplaySettings) {
+    val unit = settings.unit
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val mono = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
     val kept = fix.status == FixStatus.Kept
@@ -96,7 +116,7 @@ private fun FixRow(fix: GpsData) {
                 Text(
                     text = "dropped · " + when (fix.status) {
                         FixStatus.DroppedAccuracy -> fix.accuracyMeters
-                            ?.let { "accuracy %.0f m".format(Locale.US, it) } ?: "no accuracy"
+                            ?.let { "accuracy " + Format.shortLength(it.toDouble(), unit) } ?: "no accuracy"
                         else -> "standing still"
                     },
                     style = MaterialTheme.typography.labelMedium,
@@ -109,13 +129,13 @@ private fun FixRow(fix: GpsData) {
         Text("long %.6f".format(Locale.US, fix.longitude), style = mono)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "acc  " + (fix.accuracyMeters?.let { "%.1f m".format(Locale.US, it) } ?: "—"),
+                text = "acc  " + (fix.accuracyMeters?.let { Format.shortLength(it.toDouble(), unit, decimals = 1) } ?: "—"),
                 style = mono,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = "speed " + (fix.speedMps?.let {
-                    "%.2f m/s (%.1f km/h)".format(Locale.US, it, it * 3.6f)
+                    "%.2f m/s (%s)".format(Locale.US, it, Format.speedOrPace(it.toDouble(), unit, settings.speedDisplay))
                 } ?: "—"),
                 style = mono,
             )
@@ -140,6 +160,7 @@ private fun GPSDisplayPreview() {
                 totalCount = 4,
                 keptCount = 2,
             ),
+            settings = DisplaySettings(),
             onBack = {},
         )
     }
