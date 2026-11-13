@@ -53,16 +53,28 @@ class LocationViewModel(application: Application) : AndroidViewModel(application
         LocationTrackingService.start(getApplication())
     }
 
-    /** Finishes the recording and saves the ride. */
-    fun stop() {
+    /**
+     * Finishes the recording and saves the ride, named [title] (cleaned with RideTitle.clean),
+     * or with its default name when null.
+     */
+    fun finish(title: String? = null) {
         if (!state.value.isTracking) return
-        LocationTrackingService.stop(getApplication())
+        LocationTrackingService.stop(getApplication(), title)
     }
 
     /** Pauses by hand: the GPS goes off and the timers stand still until [resume]. */
     fun pause() {
         if (!state.value.isTracking || state.value.isManuallyPaused) return
         LocationTrackingService.pause(getApplication())
+    }
+
+    /**
+     * Undoes the pause Finish made, when the rider chooses Keep riding. Sent without checking
+     * the pause has landed: the service handles requests in order, so this always follows it,
+     * and a resume with nothing paused does nothing.
+     */
+    fun resumeAfterFinishCancelled() {
+        if (state.value.isTracking) LocationTrackingService.resume(getApplication())
     }
 
     fun resume() {

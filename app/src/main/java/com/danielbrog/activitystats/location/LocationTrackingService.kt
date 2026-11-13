@@ -137,7 +137,7 @@ class LocationTrackingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stopTracking()
+            ACTION_STOP -> stopTracking(intent.getStringExtra(EXTRA_TITLE))
             ACTION_PAUSE -> pauseTracking()
             ACTION_RESUME -> resumeTracking()
             else -> startTracking()
@@ -239,8 +239,9 @@ class LocationTrackingService : Service() {
         stopSelf()
     }
 
-    private fun stopTracking() {
-        if (isRunning) endRecording()
+    /** Finishes the ride, named [title], or with its default name if null (as from the notification). */
+    private fun stopTracking(title: String?) {
+        if (isRunning) endRecording(title)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -252,11 +253,11 @@ class LocationTrackingService : Service() {
     }
 
     /**
-     * Stops GPS, saves the last fixes and finalizes the activity. Stats are frozen at this
-     * moment: full elapsed time, no current speed. Finishing while paused ends the ride when
-     * the pause began, so time sat paused before pressing Finish isn't added.
+     * Stops GPS, saves the last fixes and finalizes the activity, named [title] if given. Stats
+     * are frozen at this moment: full elapsed time, no current speed. Finishing while paused ends
+     * the ride when the pause began, so time sat paused before pressing Finish isn't added.
      */
-    private fun endRecording() {
+    private fun endRecording(title: String? = null) {
         client.removeLocationUpdates(callback)
         isRunning = false
         val endedAt = pausedAtMillis ?: System.currentTimeMillis()
@@ -264,7 +265,7 @@ class LocationTrackingService : Service() {
         val finalStats = stats.snapshot(endedAt).copy(currentSpeedMps = 0.0, isPaused = false)
         savePending(finalStats, endedAt)
         val id = activityId
-        writer.enqueue { finishActivity(id, endedAt, finalStats) }
+        writer.enqueue { finishActivity(id, endedAt, finalStats, title) }
         TrackingState.update { it.copy(isTracking = false, stats = finalStats, pausedAtMillis = null) }
     }
 
@@ -377,6 +378,7 @@ class LocationTrackingService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val ACTION_START = "com.danielbrog.activitystats.action.START_TRACKING"
         private const val ACTION_STOP = "com.danielbrog.activitystats.action.STOP_TRACKING"
+        private const val EXTRA_TITLE = "com.danielbrog.activitystats.extra.TITLE"
         private const val ACTION_PAUSE = "com.danielbrog.activitystats.action.PAUSE_TRACKING"
         private const val ACTION_RESUME = "com.danielbrog.activitystats.action.RESUME_TRACKING"
         private const val MAX_FIXES = 1_000
@@ -392,14 +394,19 @@ class LocationTrackingService : Service() {
             )
         }
 
-        fun stop(context: Context) = send(context, ACTION_STOP)
+        /**
+         * Finishes the ride, named [title] (already cleaned with RideTitle.clean), or with its
+         * default name when null.
+         */
+        fun stop(context: Context, title: String? = null) = send(context, ACTION_STOP) { putExtra(EXTRA_TITLE, title) }
 
         fun pause(context: Context) = send(context, ACTION_PAUSE)
 
         fun resume(context: Context) = send(context, ACTION_RESUME)
 
-        private fun send(context: Context, action: String) {
-            context.startService(Intent(context, LocationTrackingService::class.java).setAction(action))
+        /** Sends [action] to the service, with any [extras] added to the Intent. */
+        private fun send(context: Context, action: String, extras: Intent.() -> Unit = {}) {
+            context.startService(Intent(context, LocationTrackingService::class.java).setAction(action).apply(extras))
         }
     }
 }
