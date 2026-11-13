@@ -81,12 +81,14 @@ class ActivityRepository(
     }
 
     /**
-     * Writes the final stats, end time and climbing together, then the best efforts.
+     * Writes the final stats, end time, climbing and, if given, the name the rider chose,
+     * together; then the best efforts. [title] should already be cleaned with [RideTitle.clean];
+     * null keeps the default name.
      *
-     * Climbing is worked out first and saved in the same transaction as the end time: the
-     * moment a ride has an end time it can be uploaded, and its climbing goes up with it.
+     * All of it goes in one transaction: the moment a ride has an end time it can be uploaded,
+     * and its climbing and name go up with it.
      */
-    suspend fun finishActivity(id: String, endedAtMillis: Long, stats: ActivityStats) {
+    suspend fun finishActivity(id: String, endedAtMillis: Long, stats: ActivityStats, title: String? = null) {
         val saved = pointsFor(id)
         db.withTransaction {
             activities.finish(
@@ -99,6 +101,8 @@ class ActivityRepository(
                 maxSpeedMps = stats.maxSpeedMps,
             )
             activities.setElevationGain(id, ElevationGain.of(saved))
+            // rename keeps the sync bookkeeping right; here updatedAt is already the end time.
+            if (title != null) activities.rename(id, title, now = endedAtMillis)
         }
         saveBestEfforts(id, saved)
         onChanged()
