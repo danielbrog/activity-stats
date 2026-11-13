@@ -8,6 +8,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.danielbrog.activitystats.ActivityStatsApp
@@ -15,6 +16,8 @@ import com.danielbrog.activitystats.account.AuthConfig
 import java.io.IOException
 import kotlinx.serialization.SerializationException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * Syncs rides in the background with WorkManager, which runs it once there is a network,
@@ -49,13 +52,18 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             // A first restore can be long: stop well inside WorkManager's 10 minutes and queue
             // the rest, rather than be stopped and use up a retry.
             val deadline = System.currentTimeMillis() + DOWNLOAD_BUDGET_MS
-            val down = Downloader(app.activityRepository, api, SyncCursorStore(app))
+            val cursorStore = SyncCursorStore(app)
+            val down = Downloader(app.activityRepository, api, cursorStore)
                 .downloadChanges(session.userId, stillSignedIn, deadline)
             if (down.downloaded > 0 || down.updated > 0) {
                 Log.i(TAG, "Downloaded ${down.downloaded} rides, updated ${down.updated}")
             }
             if (down.skipped.isNotEmpty()) Log.w(TAG, "Couldn't get the tracks of ${down.skipped}")
-            if (down.more) Sync.request(app)
+            when {
+                down.more -> Sync.request(app)
+                // Only a run that got to the end counts, not one cut short by a sign-out.
+                stillSignedIn() -> cursorStore.setLastSynced(session.userId, System.currentTimeMillis())
+            }
             Result.success()
         } catch (e: SignInRejectedException) {
             Log.i(TAG, "Sign-in token refused; a new one is fetched next try", e)
@@ -92,20 +100,28 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 }
 
-/** The one way to start a sync. */
+/** The one way to start a sync, and to see whether one is running. */
 object Sync {
 
     private const val WORK_NAME = "sync"
 
+    /** True while a sync is running. Updates itself. */
+    fun running(context: Context): Flow<Boolean> =
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WORK_NAME)
+            .map { infos -> infos.any { it.state == WorkInfo.State.RUNNING } }
+
     /**
-     * Queues a sync for as soon as there is a network. Only one runs at a time; one asked for
-     * while another runs follows it, so a change made mid-sync isn't missed.
+     * Queues a sync for as soon as there is a network. Only one runs at a time. By default
+     * ([ExistingWorkPolicy.APPEND_OR_REPLACE]) one asked for while another runs follows it, so a
+     * change made mid-sync isn't missed. Opening the app uses [ExistingWorkPolicy.KEEP], which
+     * adds nothing if a sync is already queued; Sync now uses [ExistingWorkPolicy.REPLACE], which
+     * starts at once instead of waiting behind a retry that is backing off.
      */
-    fun request(context: Context) {
+    fun request(context: Context, policy: ExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+        WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, policy, request)
     }
 }

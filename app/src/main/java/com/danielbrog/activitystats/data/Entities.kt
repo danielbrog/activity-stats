@@ -8,11 +8,13 @@ import androidx.room.PrimaryKey
 /**
  * Sync states from the build guide's data model. LOCAL_ONLY: no account, stays on this phone.
  * PENDING: belongs to an account and is waiting to upload. SYNCED: the cloud has this copy.
+ * FAILED: the server refused it; it waits until it is edited or Sync now is pressed.
  */
 object SyncState {
     const val LOCAL_ONLY = "LOCAL_ONLY"
     const val PENDING = "PENDING"
     const val SYNCED = "SYNCED"
+    const val FAILED = "FAILED"
 
     /** A new ride waits to upload if it has an owner, and stays on the phone if not. */
     fun forNewRide(userId: String?): String = if (userId == null) LOCAL_ONLY else PENDING

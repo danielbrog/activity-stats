@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.net.toUri
 import android.util.Log
 import com.danielbrog.activitystats.data.ActivityRepository
+import androidx.work.ExistingWorkPolicy
 import com.danielbrog.activitystats.sync.Sync
 import java.io.IOException
 import kotlin.coroutines.resume
@@ -203,9 +204,12 @@ class AuthRepository(
         }
     }
 
-    /** Asks for a sync, but only while signed in: signed out, there's nothing it could send. */
-    fun requestSyncIfSignedIn() {
-        if (signedInUserId != null) Sync.request(context)
+    /**
+     * Asks for a sync, but only while signed in: signed out, there's nothing it could send.
+     * [policy] says how it joins a sync already queued; see [Sync.request].
+     */
+    fun requestSyncIfSignedIn(policy: ExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE) {
+        if (signedInUserId != null) Sync.request(context, policy)
     }
 
     /**

@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.danielbrog.activitystats.data.ActivityEntity
+import com.danielbrog.activitystats.data.SyncState
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
@@ -185,7 +186,15 @@ private fun RideCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(ride.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    ride.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                SyncIcon(ride.syncState)
+            }
             Text(
                 RideFormat.dateLine(ride.startedAt, use24Hour = use24Hour),
                 style = MaterialTheme.typography.bodyMedium,
@@ -205,6 +214,26 @@ private fun RideCard(
     }
 }
 
+/**
+ * Whether the ride is in the cloud: synced, waiting to upload, or refused by the server.
+ * Nothing for a ride recorded while signed out, which stays on this phone.
+ */
+@Composable
+private fun SyncIcon(syncState: String) {
+    val (icon, description) = when (syncState) {
+        SyncState.SYNCED -> R.drawable.ic_cloud_done to "Synced"
+        SyncState.PENDING -> R.drawable.ic_cloud_upload to "Waiting to sync"
+        SyncState.FAILED -> R.drawable.ic_cloud_off to "Couldn't sync"
+        else -> return
+    }
+    Icon(
+        painterResource(icon),
+        contentDescription = description,
+        tint = if (syncState == SyncState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(18.dp),
+    )
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun HistoryPreview() {
@@ -216,12 +245,12 @@ private fun HistoryPreview() {
                 ActivityEntity(
                     id = "a", startedAt = now, endedAt = now + 3_000_000, title = "Morning ride",
                     distanceMeters = 21_430.0, movingTimeMs = 2_820_000, avgSpeedMps = 7.6,
-                    elevationGainMeters = 312.0, updatedAt = now,
+                    elevationGainMeters = 312.0, updatedAt = now, syncState = SyncState.SYNCED,
                 ),
                 ActivityEntity(
                     id = "b", startedAt = now - day, endedAt = now - day + 1_800_000,
                     title = "Evening ride", distanceMeters = 9_880.0, movingTimeMs = 1_600_000,
-                    avgSpeedMps = 6.2, updatedAt = now,
+                    avgSpeedMps = 6.2, updatedAt = now, syncState = SyncState.PENDING,
                 ),
             ),
             settings = DisplaySettings(),
