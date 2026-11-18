@@ -116,30 +116,6 @@ cd backend && npm test                 # backend tests
 
 My own account details only live in files git ignores. [`scripts/scan_secrets.py`](scripts/scan_secrets.py) checks each change for them before I push.
 
-## How I built it
-
-I wrote this with an AI coding assistant (Claude Code). My process for each feature:
-
-1. Plan it and agree the plan before any code is written.
-2. Build it on its own branch.
-3. Run two review agents I set up ([`.claude/agents/`](.claude/agents)) before the pull request:
-   - one reviews the code for bugs and bad habits;
-   - the other runs the build, tests, lint and the secret scan.
-4. Go through their findings and decide what to fix.
-5. Test it on my Pixel 7, then merge it through a pull request.
-
-I made the decisions, did the reviewing and testing, and the assistant wrote most of the code.
-
-## Not done yet
-
-- The Stats tab in Profile is empty for now.
-- A code review found three bugs I haven't fixed yet:
-  - climbing can include height changes across a pause;
-  - the "location is off" warning is only checked when a ride starts;
-  - imported runs and walks count towards cycling records.
-- Deleting a ride doesn't delete its GPS track from the cloud yet.
-- It's not on Google Play.
-
 ## License
 
 [MIT](LICENSE)
