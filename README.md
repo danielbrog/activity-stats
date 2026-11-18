@@ -1,126 +1,97 @@
 # Activity Stats
 
-An offline-first Android cycling tracker. It filters out GPS noise, handles manual pause and auto-pause, and syncs rides to a serverless AWS backend.
+I built this Android app to track my bike rides. It records a ride with the phone's GPS, keeps it on the phone, and syncs it to a small AWS backend I set up, so my rides are backed up and come back if I change phones.
 
-![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)
-![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)
-![Min SDK](https://img.shields.io/badge/minSdk-26-3DDC84?logo=android&logoColor=white)
-![AWS CDK](https://img.shields.io/badge/AWS-CDK%20%2B%20Lambda-FF9900?logo=amazonaws&logoColor=white)
-
-<!-- Demo: a 15–30 s recording of Record → Finish → History → ride detail → sync.
-     Save it as docs/images/demo.gif (or upload an MP4 to a GitHub issue and paste its link here). -->
-<p align="center">
-  <img src="docs/images/demo.gif" alt="Recording a ride, naming it, and opening it in History" width="300">
-</p>
-
-<!-- Screenshots: add these files to docs/images/. Use a ride that doesn't start at home,
-     and keep the Account screen (your email) out of them. -->
 | Record | Ride detail | Records | Profile | Settings |
 |:---:|:---:|:---:|:---:|:---:|
-| <img src="docs/images/record.png" width="160" alt="Record screen mid-ride"> | <img src="docs/images/ride-detail.png" width="160" alt="A ride's map, splits and charts"> | <img src="docs/images/records.png" width="160" alt="Personal records and best efforts"> | <img src="docs/images/profile.png" width="160" alt="Profile with History and Stats tabs"> | <img src="docs/images/settings.png" width="160" alt="Settings: units, speed or pace, auto-pause"> |
+| <img src="docs/images/record.png" width="160" alt="Record screen before starting a ride"> | <img src="docs/images/ride-detail.png" width="160" alt="A ride's map and stats"> | <img src="docs/images/records.png" width="160" alt="Personal records and best efforts"> | <img src="docs/images/profile.png" width="160" alt="Profile with the list of rides"> | <img src="docs/images/settings.png" width="160" alt="Settings: units, speed or pace, auto-pause"> |
 
----
+## What it does
 
-## Features
+**Recording a ride**
+- Shows time, distance, current and average speed (or pace), and max speed while I ride, with the route drawn on a map.
+- Turns the GPS on as soon as the Record screen is open, and shows how accurate it is, so the start of the ride isn't spoiled by a bad first fix.
+- Auto-pause stops the timer when I stop. I can also pause by hand, which turns the GPS off until I resume.
+- When I press Finish, it pauses and asks for a name before saving.
+- Keeps recording with the screen off. The notification has Pause/Resume and Finish buttons.
 
-**Recording**
-- Large live stats: time, distance, current and average speed (or pace), and max speed. A live map draws the route as you go.
-- The GPS warms up before you press Start. A status line reads *Finding GPS…*, *GPS weak*, or *GPS ready ±4 m*, so the first fixes of a ride are already accurate.
-- **Auto-pause** stops the timer when you stop. **Manual pause** turns the GPS off and freezes the timers.
-- **Finish** pauses the ride and asks for its name before saving.
-- Recording carries on with the screen off. A foreground-service notification has Pause/Resume and Finish buttons.
+**Looking back at rides**
+- Each ride has a map, km or mile splits, speed and elevation charts, and total climbing.
+- Records shows my longest ride, longest moving time and biggest climb, plus my fastest 5, 10, 20 and 40 km (or 5, 10 and 25 mi) from any ride.
+- Rides can be exported as GPX files, which Strava, Komoot and Garmin Connect can open. GPX files can be imported too.
+- Rides can be renamed or deleted. A delete can be undone.
 
-**History and stats**
-- Every ride has a map, splits by km or mile, speed and elevation charts, and the climbing total.
-- **Best efforts:** your fastest 5/10/20/40 km and 5/10/25 mi within any ride. **Personal records** cover your longest ride, longest moving time and biggest climb.
-- **GPX export** works with Strava, Komoot and Garmin Connect. **GPX import** keeps the original's pauses as separate track segments.
-- You can rename or delete a ride, and undo the delete.
-
-**Cloud sync** (optional; the app works fully without an account)
-- Sign in with an account hosted by AWS Cognito, using the authorization code flow with PKCE.
-- Rides upload when you finish, rename or delete them, and sync whenever the app comes to the screen.
-- **Restore:** sign in on a new phone and your rides come back, maps included.
-- Each ride shows its sync state (synced, waiting, or refused). The Account screen shows the last sync time and a **Sync now** button.
+**Sync** (optional; everything else works without an account)
+- I sign in through Amazon Cognito. Rides upload when I finish, rename or delete them, and the app syncs whenever I open it.
+- On a new phone, signing in brings my rides back, maps included.
+- Each ride shows whether it's synced. The Account screen shows when the last sync happened, and has a Sync now button.
 
 **Settings**
-- Choose km or miles, speed or pace, and auto-pause. The whole app follows the choice, including the notification and the charts.
+- km or miles, speed or pace, and auto-pause on or off. Every screen uses these, including the notification and the charts.
 
----
+## What it's built with
 
-## Tech stack
+- **App:** Kotlin and Jetpack Compose. Room stores rides, DataStore stores settings, and WorkManager runs sync in the background. Google's fused location provider supplies GPS. Maps use Maps Compose, and sign-in uses AppAuth.
+- **Backend:** written with the AWS CDK in TypeScript. API Gateway passes requests to four small Lambda functions. Ride summaries go in DynamoDB and the GPS tracks go in S3. Cognito handles sign-in, using OAuth 2.0 with PKCE, and its JWTs are checked by API Gateway before any function runs. A few CloudWatch alarms and a $5 monthly budget email me if something goes wrong.
+- **Tests:** JUnit for the app logic, Room tests that run on the phone, and Jest for the backend.
 
-| | |
-|---|---|
-| **Android** | Kotlin · Jetpack Compose (Material 3) · Room · DataStore · WorkManager · Navigation Compose (type-safe routes) · Play Services Location (fused provider) · Maps Compose · AppAuth (PKCE) · kotlinx-serialization |
-| **Backend** | AWS CDK (TypeScript) · API Gateway HTTP API with a Cognito JWT authorizer · Lambda (Node.js 22, arm64) · DynamoDB · S3 (presigned uploads and downloads) · Cognito · CloudWatch alarms → SNS email · AWS Budgets |
-| **Testing** | JUnit with in-memory fakes for the server and database · Room tests on a device · Jest for the backend |
-
----
-
-## Architecture
+## How it fits together
 
 ```mermaid
 flowchart LR
     subgraph Phone
-        UI["Compose screens"] --> VM["ViewModels"]
+        UI["Screens"] --> VM["ViewModels"]
         VM --> Repo["ActivityRepository"]
-        Svc["Recording service<br/>(foreground, location)"] --> Repo
+        Svc["Recording service"] --> Repo
         Repo --> DB[("Room")]
-        Worker["SyncWorker<br/>(WorkManager)"] --> Repo
+        Worker["Sync worker"] --> Repo
     end
     subgraph AWS
-        Cognito["Cognito<br/>sign-in"]
-        API["API Gateway<br/>(JWT authorizer)"] --> Lambda["Lambda"]
-        Lambda --> Dynamo[("DynamoDB<br/>ride summaries")]
-        Lambda -. presigned links .-> S3[("S3<br/>track files")]
+        Cognito["Cognito"]
+        API["API Gateway"] --> Lambda["Lambda"]
+        Lambda --> Dynamo[("DynamoDB")]
+        Lambda -. upload/download links .-> S3[("S3")]
     end
     VM -. sign in .-> Cognito
-    Worker -- "summaries" --> API
-    Worker -- "track files" --> S3
+    Worker -- "ride summaries" --> API
+    Worker -- "GPS tracks" --> S3
 ```
 
-| Package | What's in it |
+| Folder | What's in it |
 |---|---|
-| `location/` | The recording service, the GPS noise filter, the GPS warm-up, live tracking state |
-| `stats/` | The stats engine, splits, best efforts, climbing, chart series, and all unit formatting |
-| `data/` | Room entities and DAOs, the repository, crash recovery |
-| `sync/` | Upload, download and merge, the sync worker, sync status, the track file format |
-| `account/` | Sign-in with AppAuth, token storage encrypted with Android Keystore |
+| `location/` | The recording service, the GPS filter, and the GPS warm-up |
+| `stats/` | Distance, speed, splits, best efforts and climbing, and all unit formatting |
+| `data/` | The Room database and the repository |
+| `sync/` | Uploading, downloading and merging rides |
+| `account/` | Sign-in |
 | `live/`, `history/`, `profile/`, `records/`, `settings/` | The screens |
-| `export/` | Writing and reading GPX |
+| `export/` | GPX reading and writing |
 
-The backend is documented in [`backend/README.md`](backend/README.md).
+There's more about the backend in [`backend/README.md`](backend/README.md).
 
----
+## Problems I had to solve
 
-## Engineering highlights
+**GPS noise.** Phone GPS jumps around, especially when you're standing still, and that adds fake distance. [`GpsFilter`](app/src/main/java/com/danielbrog/activitystats/location/GpsFilter.kt) ignores fixes that are less accurate than ±20 m. It also ignores fixes that have moved less than their own accuracy from the last good fix, while going slower than 0.5 m/s. The ignored fixes are still saved, so I can change the filter later and re-run it on old rides.
 
-### Trusting GPS
-Phones report noisy positions, especially when standing still. [`GpsFilter`](app/src/main/java/com/danielbrog/activitystats/location/GpsFilter.kt) drops fixes worse than ±20 m. It also drops slow "wander": a fix that has moved less than its own accuracy radius from the last kept fix, at under 0.5 m/s. Dropped fixes are **still saved** with their status, so the filter can be re-tuned and re-run on old rides later.
+**Pausing.** If I pause and then move the bike, by walking it or putting it in a car, that distance shouldn't count. Each time I resume, the ride starts a new segment. Distance, time, splits, best efforts and charts never measure across the gap between segments. GPX export keeps them as separate track segments.
 
-### Pauses that don't lie
-Each manual Resume starts a new track **segment**. Distance, moving time, splits, best efforts and charts never measure across a segment break, so putting the bike on a car while paused can't produce a 10 km "best effort". Segments carry through to GPX (one `<trkseg>` each) and to the cloud track file.
+**Sync without losing anything.** The phone has to work offline and catch up later:
+- Each ride's GPS track uploads before its summary, so a ride in the cloud always has its track.
+- If the same ride was changed in two places, the most recently edited copy wins.
+- If I rename a ride while it's uploading, the rename isn't lost. A ride is only marked as synced if it hasn't changed since it was sent.
+- When downloading, the app re-reads the last 5 minutes before where it left off. DynamoDB's index can show a new ride slightly late, and this stops one from being skipped.
 
-### Offline-first sync
-- **The track goes up before the summary.** A ride in the cloud always has its track there too.
-- **The newest `updatedAt` wins** on both sides.
-- **Edits made mid-upload aren't lost.** A ride is only marked synced, or refused, if it hasn't changed since that copy was sent.
-- **Downloads read back over a 5-minute overlap.** DynamoDB's secondary index is eventually consistent, so a ride can be listed late, or share a timestamp with another. Re-reading a ride is harmless.
-- **Logic stays separate from the network.** [`Uploader`](app/src/main/java/com/danielbrog/activitystats/sync/Uploader.kt), [`Downloader`](app/src/main/java/com/danielbrog/activitystats/sync/Downloader.kt) and [`decide()`](app/src/main/java/com/danielbrog/activitystats/sync/Merge.kt) are plain Kotlin, tested against fake servers.
+The upload, download and merge logic is plain Kotlin, tested against a fake server ([`Uploader`](app/src/main/java/com/danielbrog/activitystats/sync/Uploader.kt), [`Downloader`](app/src/main/java/com/danielbrog/activitystats/sync/Downloader.kt), [`Merge`](app/src/main/java/com/danielbrog/activitystats/sync/Merge.kt)).
 
-### Never losing a ride
-Points are saved in batches every 10 fixes or 10 seconds while you ride. If the app is killed or the battery dies, unfinished rides are rebuilt from their saved points the next time the app starts, using the same stats engine as live recording.
+**Not losing a ride if the app dies.** GPS points are saved every 10 points or 10 seconds while riding. If the app is killed or the battery runs out, the next time it opens it finishes the ride from the points that were saved.
 
-### One source of truth for units
-Every km, mile, metre and foot goes through [`Format`](app/src/main/java/com/danielbrog/activitystats/stats/Format.kt). Each conversion is an exhaustive `when` over the unit, so adding a unit won't compile until every conversion handles it. The charts and the notification can't drift from the numbers on screen.
+**Units.** All conversions between km, miles, metres and feet happen in one place, [`Format`](app/src/main/java/com/danielbrog/activitystats/stats/Format.kt), so the screens, charts and notification always agree.
 
----
+## Tests
 
-## Testing
-
-- **230+ unit tests** (`app/src/test`). The logic is plain Kotlin with no Android dependencies: the stats engine, the GPS filter, splits, best efforts, GPX, the track file format, upload, download, merge and sync status. They run on the JVM with in-memory fakes.
-- **On-device tests** (`app/src/androidTest`). These check the real Room queries: finishing, crash recovery, sync states and counts.
-- **Backend tests** (`backend/test`). These cover the CDK stack, checking permissions, alarms and that every route needs sign-in, plus each Lambda handler.
+- 230+ unit tests in `app/src/test`. They cover the stats, the GPS filter, splits, best efforts, GPX, and sync. They run on the computer, no phone needed.
+- Tests in `app/src/androidTest` that run against the real database on a phone.
+- Tests in `backend/test` that check the AWS setup, for example that every API route needs sign-in, plus the Lambda functions.
 
 ```bash
 ./gradlew testDebugUnitTest            # unit tests
@@ -128,53 +99,46 @@ Every km, mile, metre and foot goes through [`Format`](app/src/main/java/com/dan
 cd backend && npm test                 # backend tests
 ```
 
----
+## Running it yourself
 
-## Build it yourself
-
-1. Open the project in Android Studio (AGP 9.5, Kotlin 2.4). Gradle uses Android Studio's bundled JDK.
-2. Add a Google Maps key to `local.properties`. This file is git-ignored; [`secrets.defaults.properties`](secrets.defaults.properties) lists the keys.
+1. Open the project in Android Studio.
+2. Add a Google Maps API key to `local.properties`. That file isn't in git; [`secrets.defaults.properties`](secrets.defaults.properties) lists the keys it can hold.
    ```properties
    MAPS_API_KEY=your-google-maps-key
    ```
-3. Run the app. **No backend is needed.** Recording, history and records all work offline, and the Account screen says sign-in isn't set up.
-4. *(Optional)* For cloud sync, deploy the backend ([`backend/README.md`](backend/README.md)). Then add its outputs to `local.properties`:
+3. Run it. Recording, history and records all work without a backend. The Account screen just says sign-in isn't set up.
+4. To use sync, deploy the backend (see [`backend/README.md`](backend/README.md)) and add its outputs to `local.properties`:
    ```properties
    COGNITO_DOMAIN=https://<prefix>.auth.<region>.amazoncognito.com
    COGNITO_CLIENT_ID=<AppClientId>
    SYNC_API_URL=<ApiUrl>
    ```
 
-Account-specific values stay in git-ignored files. [`scripts/scan_secrets.py`](scripts/scan_secrets.py) checks every branch for them before it's pushed, without ever printing them.
+My own account details only live in files git ignores. [`scripts/scan_secrets.py`](scripts/scan_secrets.py) checks each change for them before I push.
 
----
+## How I built it
 
-## How it was built
+I wrote this with an AI coding assistant (Claude Code). My process for each feature:
 
-I built this with an AI coding assistant (Claude Code), working in small, reviewed steps:
+1. Plan it and agree the plan before any code is written.
+2. Build it on its own branch.
+3. Run two review agents I set up ([`.claude/agents/`](.claude/agents)) before the pull request:
+   - one reviews the code for bugs and bad habits;
+   - the other runs the build, tests, lint and the secret scan.
+4. Go through their findings and decide what to fix.
+5. Test it on my Pixel 7, then merge it through a pull request.
 
-- **Each feature was planned first**, then approved, then built on its own branch and merged through a pull request.
-- **Two custom review agents** ([`.claude/agents/`](.claude/agents)) run before every PR:
-  - `code-improver` reviews the change for bug risks, Android and Compose habits, and Kotlin style.
-  - `release-checker` runs the build, tests and lint, and the secret scan.
-- **Their findings** were triaged by hand, then fixed or declined.
-- **Every feature was tested on a Pixel 7** before merging, including the on-device tests.
+I made the decisions, did the reviewing and testing, and the assistant wrote most of the code.
 
-The decisions, reviews and testing were mine. The assistant wrote most of the code to those decisions.
+## Not done yet
 
----
-
-## Known limitations and roadmap
-
-- The **Stats** tab in Profile is a placeholder.
-- From a full code review, still to fix:
-  - Climbing can count height changes across a manual pause.
-  - The "location is off" warning is only checked when a ride starts.
-  - Imported runs and walks count towards cycling records.
-- Deleting a ride doesn't yet delete its track file from the cloud.
-- Not yet on Google Play. For now, release builds are planned as signed APKs on GitHub Releases.
-
----
+- The Stats tab in Profile is empty for now.
+- A code review found three bugs I haven't fixed yet:
+  - climbing can include height changes across a pause;
+  - the "location is off" warning is only checked when a ride starts;
+  - imported runs and walks count towards cycling records.
+- Deleting a ride doesn't delete its GPS track from the cloud yet.
+- It's not on Google Play.
 
 ## License
 
