@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 7,
-    "identityHash": "b92b92975f202822e6640951b937fc37",
+    "identityHash": "bddab068b43b43036a92c0c18260358a",
     "entities": [
       {
         "tableName": "activities",
@@ -263,7 +263,7 @@
       },
       {
         "tableName": "segments",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT, `name` TEXT NOT NULL, `path` TEXT NOT NULL, `distanceMeters` REAL NOT NULL, `startLat` REAL NOT NULL, `startLon` REAL NOT NULL, `endLat` REAL NOT NULL, `endLon` REAL NOT NULL, `minLat` REAL NOT NULL, `maxLat` REAL NOT NULL, `minLon` REAL NOT NULL, `maxLon` REAL NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `deletedAt` INTEGER, `syncState` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT, `name` TEXT NOT NULL, `path` TEXT NOT NULL, `distanceMeters` REAL NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `deletedAt` INTEGER, `syncState` TEXT NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -291,54 +291,6 @@
           {
             "fieldPath": "distanceMeters",
             "columnName": "distanceMeters",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "startLat",
-            "columnName": "startLat",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "startLon",
-            "columnName": "startLon",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "endLat",
-            "columnName": "endLat",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "endLon",
-            "columnName": "endLon",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "minLat",
-            "columnName": "minLat",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "maxLat",
-            "columnName": "maxLat",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "minLon",
-            "columnName": "minLon",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "maxLon",
-            "columnName": "maxLon",
             "affinity": "REAL",
             "notNull": true
           },
@@ -442,7 +394,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b92b92975f202822e6640951b937fc37')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bddab068b43b43036a92c0c18260358a')"
     ]
   }
 }

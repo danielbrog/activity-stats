@@ -65,8 +65,8 @@ data class ActivityEntity(
     val trackUploaded: Boolean = false,
     /**
      * The smallest box around the ride's kept fixes, so segment matching can skip rides that
-     * are nowhere near a segment. Null until worked out: set when a ride is finished, imported
-     * or downloaded, and filled in for older rides when the app starts.
+     * are nowhere near a segment. Set when a ride is finished, imported or downloaded. Null for
+     * a ride still recording, one with no kept fixes, or one saved before segments existed.
      */
     val minLat: Double? = null,
     val maxLat: Double? = null,
@@ -113,6 +113,7 @@ data class TrackPointEntity(
 /**
  * A road segment the rider made from part of one of their rides. Rides that cover it get a
  * [SegmentEffortEntity]. The user's own data, with the same sync fields as an activity.
+ * Where it is (its ends and area) comes from [path]; see [toPath].
  */
 @Entity(tableName = "segments", indices = [Index("deletedAt")])
 data class SegmentEntity(
@@ -122,16 +123,8 @@ data class SegmentEntity(
     val name: String,
     /** The segment's line, start to end, in Google's encoded polyline format. */
     val path: String,
-    /** Measured along the ride it was made from. */
+    /** Measured along the ride it was made from, before simplifying: the distance to show. */
     val distanceMeters: Double,
-    val startLat: Double,
-    val startLon: Double,
-    val endLat: Double,
-    val endLon: Double,
-    val minLat: Double,
-    val maxLat: Double,
-    val minLon: Double,
-    val maxLon: Double,
     val createdAt: Long,
     val updatedAt: Long,
     val deletedAt: Long? = null,

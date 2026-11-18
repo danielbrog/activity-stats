@@ -31,12 +31,9 @@ abstract class SegmentDao {
     @Query("SELECT * FROM segments WHERE deletedAt IS NULL ORDER BY name COLLATE NOCASE")
     abstract fun observeSegments(): Flow<List<SegmentEntity>>
 
-    /** Segments not deleted whose box overlaps the given one. */
-    @Query(
-        "SELECT * FROM segments WHERE deletedAt IS NULL " +
-            "AND minLat <= :maxLat AND maxLat >= :minLat AND minLon <= :maxLon AND maxLon >= :minLon"
-    )
-    abstract suspend fun segmentsOverlapping(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double): List<SegmentEntity>
+    /** Every segment not deleted, once. There are few, so matching filters them in Kotlin. */
+    @Query("SELECT * FROM segments WHERE deletedAt IS NULL")
+    abstract suspend fun activeSegments(): List<SegmentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insertEfforts(efforts: List<SegmentEffortEntity>)

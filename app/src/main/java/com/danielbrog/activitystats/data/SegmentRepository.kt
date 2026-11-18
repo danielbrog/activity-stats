@@ -15,7 +15,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Road segments the rider makes, and the efforts their rides made on them. Matching uses each
- * ride's bounding box first, so only rides near a segment have their points loaded.
+ * ride's bounding box first, so only rides near a segment have their points loaded. Segments
+ * are few and small, so they are all loaded and compared with a ride's box in Kotlin.
  *
  * [ownerId] gives the signed-in account, as for rides, so a new segment belongs to it.
  *
@@ -52,21 +53,12 @@ class SegmentRepository(
     ): String? = withContext(Dispatchers.Default) {
         val path = SegmentPath.fromRide(keptPointsFor(rideId), startIndex, endIndex) ?: return@withContext null
         val owner = ownerId()
-        val box = path.bounds
         val segment = SegmentEntity(
             id = UUID.randomUUID().toString(),
             userId = owner,
             name = name,
             path = Polyline.encode(path.points),
             distanceMeters = path.distanceMeters,
-            startLat = path.start.latitude,
-            startLon = path.start.longitude,
-            endLat = path.end.latitude,
-            endLon = path.end.longitude,
-            minLat = box.south,
-            maxLat = box.north,
-            minLon = box.west,
-            maxLon = box.east,
             createdAt = nowMillis,
             updatedAt = nowMillis,
             syncState = SyncState.forNewRide(owner),
@@ -107,14 +99,16 @@ class SegmentRepository(
             return
         }
         val box = bounds.expandedBy(SegmentMatcher.END_RADIUS_METERS)
-        val candidates = segments.segmentsOverlapping(box.south, box.north, box.west, box.east)
-        if (candidates.isEmpty()) {
+        val nearby = segments.activeSegments()
+            .map { it to it.toPath() }
+            .filter { (_, path) -> path.bounds.overlaps(box) }
+        if (nearby.isEmpty()) {
             segments.replaceForRide(rideId, emptyList())
             return
         }
         val fixes = keptPointsFor(rideId)
-        val found = candidates.flatMap { segment ->
-            SegmentMatcher.find(segment.toPath(), fixes).map { it.toEntity(segment.id, rideId) }
+        val found = nearby.flatMap { (segment, path) ->
+            SegmentMatcher.find(path, fixes).map { it.toEntity(segment.id, rideId) }
         }
         segments.replaceForRide(rideId, found)
     }
