@@ -165,7 +165,7 @@ private fun RecordList(
             label = "Fastest ${effort.label}",
             holder = record?.holder,
             value = record?.let { Format.clock(it.ms) },
-            // Average speed (or pace) over the stretch, as chosen in Settings.
+            // Average speed (or pace) over the effort's distance, as chosen in Settings.
             detail = record?.let { Format.speedOrPace(effort.meters / (it.ms / 1_000.0), unit, settings.speedDisplay) },
             missing = "Ride ${effort.label} to set this",
             onOpenRide = onOpenRide,

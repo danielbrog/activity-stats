@@ -50,7 +50,8 @@ object GpxWriter {
         val kept = fixes.filter { it.status == FixStatus.Kept }.sortedBy { it.seq }
         out.append("    <trkseg>\n")
         kept.forEachIndexed { i, fix ->
-            if (i > 0 && fix.segment != kept[i - 1].segment) out.append("    </trkseg>\n    <trkseg>\n")
+            // Each stretch between pauses is its own GPX track segment.
+            if (i > 0 && fix.stretch != kept[i - 1].stretch) out.append("    </trkseg>\n    <trkseg>\n")
             out.append("      <trkpt lat=\"").append("%.7f".format(Locale.US, fix.latitude))
                 .append("\" lon=\"").append("%.7f".format(Locale.US, fix.longitude)).append("\">")
             fix.altitudeMeters?.let { out.append("<ele>").append("%.1f".format(Locale.US, it)).append("</ele>") }

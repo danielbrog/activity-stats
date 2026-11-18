@@ -15,13 +15,16 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 import javax.xml.parsers.SAXParserFactory
 
-/** One track point from a GPX file. [segment] counts the file's track segments from 0. */
+/**
+ * One track point from a GPX file. [stretch] numbers the file's track segments (`<trkseg>`)
+ * from 0: each is one stretch between pauses.
+ */
 data class GpxPoint(
     val latitude: Double,
     val longitude: Double,
     val elevation: Double?,
     val timeMillis: Long,
-    val segment: Int = 0,
+    val stretch: Int = 0,
 )
 
 /** A recorded track read from a GPX file, points in time order. [type] is an [ActivityType]. */
@@ -29,7 +32,7 @@ data class GpxTrack(val name: String?, val type: String, val points: List<GpxPoi
 
     /**
      * The points as saved fixes. All are kept: the recording app already cleaned its track.
-     * Each track segment becomes a [GpsData.segment], so a pause in the file stays a pause.
+     * Each track segment becomes a [GpsData.stretch], so a pause in the file stays a pause.
      */
     fun toFixes(): List<GpsData> = points.mapIndexed { i, p ->
         GpsData(
@@ -41,7 +44,7 @@ data class GpxTrack(val name: String?, val type: String, val points: List<GpxPoi
             speedMps = null,
             status = FixStatus.Kept,
             altitudeMeters = p.elevation,
-            segment = p.segment,
+            stretch = p.stretch,
         )
     }
 }
@@ -63,8 +66,8 @@ class GpxImportException(val reason: Reason) : Exception(reason.name) {
  * Wahoo or this app's own export. Plain Kotlin on Java's built-in streaming XML parser,
  * so it is unit-tested and handles long rides without holding the whole file.
  *
- * Every track segment is joined into one track, each keeping its segment number, so the
- * gap between two segments (a pause) isn't counted as ridden. Points without a valid time are skipped,
+ * Every track segment is joined into one track, each kept as its own stretch, so the gap
+ * between two stretches (a pause) isn't counted as ridden. Points without a valid time are skipped,
  * the rest are put in time order, and a second point at the same time is dropped.
  * Elements from other namespaces (heart rate, power and other extensions) are ignored.
  */
@@ -154,8 +157,8 @@ object GpxReader {
         private var lon: Double? = null
         private var ele: Double? = null
         private var time: Long? = null
-        /** The current track segment; -1 before the first. */
-        private var segment = -1
+        /** The stretch of the current track segment; -1 before the first. */
+        private var stretch = -1
         private var depthInForeign = 0
 
         private fun isGpxNamespace(uri: String) =
@@ -182,7 +185,7 @@ object GpxReader {
                     ele = null
                     time = null
                 }
-                "trkseg" -> segment++
+                "trkseg" -> stretch++
                 "rtept" -> routePoints++
             }
         }
@@ -211,7 +214,7 @@ object GpxReader {
                     val lo = lon
                     val t = time
                     if (la != null && lo != null && la in -90.0..90.0 && lo in -180.0..180.0) {
-                        if (t != null) points += GpxPoint(la, lo, ele, t, segment.coerceAtLeast(0)) else untimedPoints++
+                        if (t != null) points += GpxPoint(la, lo, ele, t, stretch.coerceAtLeast(0)) else untimedPoints++
                     }
                 }
             }

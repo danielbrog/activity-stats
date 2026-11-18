@@ -96,7 +96,7 @@ data class TrackPointEntity(
     val speedMps: Float?,
     /** A [com.danielbrog.activitystats.location.FixStatus] name. */
     val status: String,
-    /** The stretch between manual pauses; see [com.danielbrog.activitystats.location.GpsData.segment]. */
+    /** The stretch between manual pauses; see [com.danielbrog.activitystats.location.GpsData.stretch]. */
     @ColumnInfo(defaultValue = "0")
-    val segment: Int = 0,
+    val stretch: Int = 0,
 )

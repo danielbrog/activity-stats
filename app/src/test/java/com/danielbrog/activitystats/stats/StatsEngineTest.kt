@@ -220,7 +220,7 @@ class StatsEngineTest {
     }
 
     @Test
-    fun oneSpikySegmentDoesNotSetMaxSpeed() {
+    fun oneSpikyLegDoesNotSetMaxSpeed() {
         val engine = StatsEngine(start)
         engine.walk(0, 9, 0.0, 3.0)
         engine.add(fix(10, 36.0)) // 9 m in one second: a 9 m/s spike, 6 m ahead of the track

@@ -15,7 +15,7 @@ fun GpsData.toTrackPoint(activityId: String) = TrackPointEntity(
     accuracyMeters = accuracyMeters,
     speedMps = speedMps,
     status = status.name,
-    segment = segment,
+    stretch = stretch,
 )
 
 fun TrackPointEntity.toGpsData() = GpsData(
@@ -28,7 +28,7 @@ fun TrackPointEntity.toGpsData() = GpsData(
     // An unknown name can only come from a future version; don't trust that point.
     status = FixStatus.entries.firstOrNull { it.name == status } ?: FixStatus.DroppedAccuracy,
     altitudeMeters = altitude,
-    segment = segment,
+    stretch = stretch,
 )
 
 /**

@@ -11,15 +11,20 @@ import kotlinx.serialization.json.Json
 
 /**
  * A ride's track as stored in the cloud: gzipped JSON holding every fix, dropped ones
- * included, with the noise filter's decision and the pause segment, so a phone that
+ * included, with the noise filter's decision and the pause stretch, so a phone that
  * downloads it has exactly what the recording phone saved. Plain Kotlin, unit-tested.
  *
  * GPX stays an export format: it only carries the kept points, without accuracy or status.
  */
 object TrackFile {
 
-    /** The format written now. A change that old readers can't handle needs a new number. */
-    const val VERSION = 1
+    /**
+     * The format written now. A change that old readers can't handle needs a new number.
+     * 1: the first format, with each fix's pause stretch under the key "segment".
+     * 2: that key is "stretch". A version 1 file still reads, but its pauses are lost (every
+     *    fix lands in stretch 0); only test rides were ever uploaded in it.
+     */
+    const val VERSION = 2
 
     /** The type the file is uploaded with; the backend's upload link requires it. */
     const val CONTENT_TYPE = "application/gzip"
@@ -40,7 +45,7 @@ object TrackFile {
         val acc: Float? = null,
         val spd: Float? = null,
         val status: String,
-        val segment: Int = 0,
+        val stretch: Int = 0,
     )
 
     fun encode(fixes: List<GpsData>): ByteArray {
@@ -56,7 +61,7 @@ object TrackFile {
                     acc = it.accuracyMeters,
                     spd = it.speedMps,
                     status = it.status.name,
-                    segment = it.segment,
+                    stretch = it.stretch,
                 )
             },
         )
@@ -81,7 +86,7 @@ object TrackFile {
                 // An unknown name can only come from a newer app; don't trust that fix.
                 status = FixStatus.entries.firstOrNull { s -> s.name == it.status } ?: FixStatus.DroppedAccuracy,
                 altitudeMeters = it.alt,
-                segment = it.segment,
+                stretch = it.stretch,
             )
         }
     }

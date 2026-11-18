@@ -49,7 +49,7 @@ class BestEffortsTest {
     }
 
     @Test
-    fun findsTheFastStretchInTheMiddle() {
+    fun findsTheFastWindowInTheMiddle() {
         // 5 km slow at 5 m/s, then 5 km fast at 12.5 m/s, then 5 km slow again.
         val speeds = List(1_000) { 5.0 } + List(400) { 12.5 } + List(1_000) { 5.0 }
         val efforts = BestEfforts.find(ride(speeds))
@@ -67,8 +67,8 @@ class BestEffortsTest {
     }
 
     @Test
-    fun stopsInsideTheStretchCount() {
-        // 2.5 km, a 60 s stop at a light, then 2.6 km, all at 10 m/s. Every 5 km stretch
+    fun stopsInsideTheWindowCount() {
+        // 2.5 km, a 60 s stop at a light, then 2.6 km, all at 10 m/s. Every 5 km window
         // contains the stop, so the best is 500 s of riding plus the 60 s stop.
         val fixes = mutableListOf(fix(0, 0.0))
         for (s in 1..250) fixes += fix(s * 1_000L, s * 10.0)
@@ -90,7 +90,7 @@ class BestEffortsTest {
 
     @Test
     fun theStartIsInterpolatedBetweenFixes() {
-        // Fixes 3 km apart: 0 m at 0 s, 3 km at 300 s, 6 km at 600 s. A 5 km stretch ending
+        // Fixes 3 km apart: 0 m at 0 s, 3 km at 300 s, 6 km at 600 s. A 5 km window ending
         // at 6 km starts at 1 km, a third of the way to the second fix: 100 s in.
         val fixes = listOf(fix(0, 0.0), fix(300_000, 3_000.0), fix(600_000, 6_000.0))
         val efforts = BestEfforts.find(fixes, listOf(Effort.Km5))

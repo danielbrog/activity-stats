@@ -24,9 +24,13 @@ The developer is coming to Kotlin from Java, so explain Kotlin-specific points b
 ## What to look for, most important first
 
 ### 1. Rules this app relies on (bug risks)
-- **Pause segments.** Distance between two fixes must use `legMeters(a, b)`, never
+- **Pause stretches.** Distance between two fixes must use `legMeters(a, b)`, never
   `Geo.distanceMeters` directly on consecutive fixes, so distance never crosses a manual pause.
-  New code that walks a ride's points must not join different `GpsData.segment`s.
+  New code that walks a ride's points must not join different `GpsData.stretch`es.
+- **Words with one meaning each.** "Stretch" is the part of a ride between manual pauses.
+  "Segment" is reserved for user-created road segments (and GPX's own `<trkseg>`, a "track
+  segment"). "Leg" is the distance between two fixes. Flag new code that uses one of these for
+  something else.
 - **Raw units.** Stats are held and saved in metres, m/s and milliseconds. Converting to km,
   km/h, miles or pace happens only on screen, through `stats/Format`.
 - **Room changes come complete.** A version bump in `AppDatabase`, an `AutoMigration`, a

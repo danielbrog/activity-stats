@@ -9,7 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * A manual pause starts a new segment: nothing between the last fix before it and the first
+ * A manual pause starts a new stretch: nothing between the last fix before it and the first
  * after it counts, even if the bike went a long way in between (on a car, say).
  */
 class ManualPauseTest {
@@ -20,7 +20,7 @@ class ManualPauseTest {
     private val start = 1_000_000L
     private var seq = 0
 
-    private fun fix(second: Int, northMeters: Double, speed: Float, segment: Int, altitude: Double? = null) = GpsData(
+    private fun fix(second: Int, northMeters: Double, speed: Float, stretch: Int, altitude: Double? = null) = GpsData(
         seq = ++seq,
         timeMillis = start + second * 1_000L,
         latitude = baseLat + northMeters / metresPerDegreeLat,
@@ -29,19 +29,19 @@ class ManualPauseTest {
         speedMps = speed,
         status = FixStatus.Kept,
         altitudeMeters = altitude,
-        segment = segment,
+        stretch = stretch,
     )
 
     /** One fix a second at [speed] m/s, from [fromSecond] to [toSecond]. */
-    private fun ride(fromSecond: Int, toSecond: Int, fromMeters: Double, speed: Float, segment: Int) =
-        (fromSecond..toSecond).map { s -> fix(s, fromMeters + (s - fromSecond) * speed, speed, segment, altitude = 100.0) }
+    private fun ride(fromSecond: Int, toSecond: Int, fromMeters: Double, speed: Float, stretch: Int) =
+        (fromSecond..toSecond).map { s -> fix(s, fromMeters + (s - fromSecond) * speed, speed, stretch, altitude = 100.0) }
 
     /**
      * 100 s at 10 m/s (1 km), pause, carried 5 km north in 10 minutes, Resume, another
      * 100 s at 10 m/s. Ridden: 2 km in 200 s.
      */
     private fun rideWithALift(): List<GpsData> =
-        ride(0, 100, 0.0, 10f, segment = 0) + ride(700, 800, 6_000.0, 10f, segment = 1)
+        ride(0, 100, 0.0, 10f, stretch = 0) + ride(700, 800, 6_000.0, 10f, stretch = 1)
 
     @Test
     fun theEngineCountsNeitherTheDistanceNorTheTimeAcrossAPause() {
@@ -59,9 +59,9 @@ class ManualPauseTest {
     @Test
     fun currentSpeedStartsAfreshAfterResume() {
         val engine = StatsEngine(start)
-        ride(0, 100, 0.0, 10f, segment = 0).forEach(engine::add)
-        engine.add(fix(700, 6_000.0, 10f, segment = 1))
-        // One fix into the new segment: too few to measure, and never the 5 km jump.
+        ride(0, 100, 0.0, 10f, stretch = 0).forEach(engine::add)
+        engine.add(fix(700, 6_000.0, 10f, stretch = 1))
+        // One fix into the new stretch: too few to measure, and never the 5 km jump.
         val stats = engine.snapshot(start + 700_000L)
         assertEquals(0.0, stats.currentSpeedMps, 0.0)
         assertEquals(10.0, stats.maxSpeedMps, 0.5)
@@ -70,11 +70,11 @@ class ManualPauseTest {
     @Test
     fun anAutoPauseBeforeTheManualPauseDoesNotCarryOver() {
         val engine = StatsEngine(start)
-        ride(0, 10, 0.0, 10f, segment = 0).forEach(engine::add)
+        ride(0, 10, 0.0, 10f, stretch = 0).forEach(engine::add)
         // Standing for 20 s: auto-pause kicks in.
-        (11..30).forEach { engine.add(fix(it, 100.0, 0.1f, segment = 0)) }
+        (11..30).forEach { engine.add(fix(it, 100.0, 0.1f, stretch = 0)) }
         // Resume after a manual pause and ride on: moving again from the first fix.
-        ride(100, 110, 100.0, 10f, segment = 1).forEach(engine::add)
+        ride(100, 110, 100.0, 10f, stretch = 1).forEach(engine::add)
         val stats = engine.snapshot(start + 110_000L)
         assertFalse(stats.isPaused)
         // 10 s riding + 1 s until the first slow fix, then 10 s after Resume.

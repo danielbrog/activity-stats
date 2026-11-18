@@ -8,12 +8,12 @@ import com.danielbrog.activitystats.location.GpsData
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Manual pauses survive saving, export and import as track segments. */
-class GpxSegmentsTest {
+/** Manual pauses survive saving, export and import: each stretch is a GPX track segment. */
+class GpxStretchesTest {
 
     private val start = 1_794_060_185_000L
 
-    private fun fix(seq: Int, segment: Int, status: FixStatus = FixStatus.Kept) = GpsData(
+    private fun fix(seq: Int, stretch: Int, status: FixStatus = FixStatus.Kept) = GpsData(
         seq = seq,
         timeMillis = start + seq * 1_000L,
         latitude = 43.65 + seq * 0.0001,
@@ -21,7 +21,7 @@ class GpxSegmentsTest {
         accuracyMeters = 5f,
         speedMps = 5f,
         status = status,
-        segment = segment,
+        stretch = stretch,
     )
 
     private val paused = listOf(
@@ -38,22 +38,22 @@ class GpxSegmentsTest {
     }
 
     @Test
-    fun aRideWithoutPausesIsOneSegment() {
+    fun aRideWithoutPausesIsOneTrackSegment() {
         val text = GpxWriter.toGpx("Ride", ActivityType.RIDE, start, listOf(fix(1, 0), fix(2, 0)))
         assertEquals(1, Regex("<trkseg>").findAll(text).count())
     }
 
     @Test
-    fun segmentsRoundTripThroughExportAndImport() {
+    fun stretchesRoundTripThroughExportAndImport() {
         val text = GpxWriter.toGpx("Ride", ActivityType.RIDE, start, paused)
         val fixes = GpxReader.read(text.byteInputStream()).toFixes()
-        assertEquals(listOf(0, 0, 1, 1, 2), fixes.map { it.segment })
+        assertEquals(listOf(0, 0, 1, 1, 2), fixes.map { it.stretch })
     }
 
     @Test
-    fun segmentsAreSavedWithThePoints() {
+    fun stretchesAreSavedWithThePoints() {
         val saved = fix(3, 1).toTrackPoint("a")
-        assertEquals(1, saved.segment)
-        assertEquals(1, saved.toGpsData().segment)
+        assertEquals(1, saved.stretch)
+        assertEquals(1, saved.toGpsData().stretch)
     }
 }

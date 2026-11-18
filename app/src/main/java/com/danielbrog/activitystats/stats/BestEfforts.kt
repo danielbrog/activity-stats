@@ -27,10 +27,11 @@ enum class Effort(val key: String, val meters: Double, val unit: DistanceUnit, v
  * Finds a ride's fastest time over each [Effort] distance, anywhere within the ride, like
  * Strava's best efforts. Plain Kotlin, unit-tested.
  *
- * Uses the kept fixes only. The time is clock time between the two ends, so stops inside the
- * stretch count, manual pauses included. Ground covered while paused by hand isn't counted,
- * so a lift in a car can never make a best effort. The start is placed exactly [Effort.meters] back from each fix, between two
- * fixes, with its time interpolated, so the stretch is the full distance and no more.
+ * Uses the kept fixes only. The time is clock time between the two ends of the effort's
+ * window, so stops inside it count, manual pauses included. Ground covered while paused by
+ * hand isn't counted, so a lift in a car can never make a best effort. The start is placed
+ * exactly [Effort.meters] back from each fix, between two fixes, with its time interpolated,
+ * so the window is the full distance and no more.
  */
 object BestEfforts {
 
@@ -55,8 +56,8 @@ object BestEfforts {
             while (i + 1 < j && distance[j] - distance[i + 1] >= target) i++
             // The exact start lies between fix i and fix i + 1.
             val startAt = distance[j] - target
-            val segment = distance[i + 1] - distance[i]
-            val fraction = if (segment > 0.0) (startAt - distance[i]) / segment else 0.0
+            val leg = distance[i + 1] - distance[i]
+            val fraction = if (leg > 0.0) (startAt - distance[i]) / leg else 0.0
             val t0 = kept[i].timeMillis.toDouble()
             val startTime = t0 + (kept[i + 1].timeMillis - t0) * fraction
             val elapsed = kept[j].timeMillis - startTime
