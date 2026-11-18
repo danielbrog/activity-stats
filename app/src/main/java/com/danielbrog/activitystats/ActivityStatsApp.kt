@@ -8,6 +8,7 @@ import com.danielbrog.activitystats.account.AuthStateStore
 import com.danielbrog.activitystats.data.ActivityRepository
 import com.danielbrog.activitystats.data.AppDatabase
 import com.danielbrog.activitystats.data.RecordingWriter
+import com.danielbrog.activitystats.data.SegmentRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +31,9 @@ class ActivityStatsApp : Application() {
         )
     }
     val recordingWriter: RecordingWriter by lazy { RecordingWriter(activityRepository, appScope) }
+    val segmentRepository: SegmentRepository by lazy {
+        SegmentRepository(database, ownerId = { authRepository.signedInUserId })
+    }
     val authRepository: AuthRepository by lazy {
         AuthRepository(this, AuthConfig.current, AuthStateStore(this), { activityRepository }, appScope)
     }
@@ -55,6 +59,13 @@ class ActivityStatsApp : Application() {
                 if (filled > 0) Log.i("ActivityStatsApp", "Worked out climbing and best efforts for $filled rides")
             } catch (e: Exception) {
                 Log.e("ActivityStatsApp", "Climbing and best efforts backfill failed", e)
+            }
+            // Rides saved before segments existed get the box segment matching uses.
+            try {
+                val boxed = activityRepository.fillMissingBounds()
+                if (boxed > 0) Log.i("ActivityStatsApp", "Worked out the area of $boxed rides")
+            } catch (e: Exception) {
+                Log.e("ActivityStatsApp", "Ride bounds backfill failed", e)
             }
         }
     }

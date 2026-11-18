@@ -130,6 +130,25 @@ abstract class ActivityDao {
     )
     abstract suspend fun applyCloudCopy(id: String, title: String, deletedAt: Long?, updatedAt: Long): Int
 
+    // --- Bounding boxes, for segment matching ---
+
+    @Query("UPDATE activities SET minLat = :minLat, maxLat = :maxLat, minLon = :minLon, maxLon = :maxLon WHERE id = :id")
+    abstract suspend fun setBounds(id: String, minLat: Double, maxLat: Double, minLon: Double, maxLon: Double)
+
+    /** Finished rides whose box hasn't been worked out yet, like those saved before it existed. */
+    @Query(
+        "SELECT id FROM activities a WHERE endedAt IS NOT NULL AND minLat IS NULL " +
+            "AND EXISTS (SELECT 1 FROM track_points t WHERE t.activityId = a.id AND t.status = 'Kept')"
+    )
+    abstract suspend fun finishedWithoutBounds(): List<String>
+
+    /** Finished rides not deleted whose box overlaps the given one. */
+    @Query(
+        "SELECT id FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL " +
+            "AND minLat <= :maxLat AND maxLat >= :minLat AND minLon <= :maxLon AND maxLon >= :minLon"
+    )
+    abstract suspend fun ridesOverlapping(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double): List<String>
+
     /** A not-deleted activity that started in the same second, or null: used to spot re-imports. */
     @Query(
         "SELECT id FROM activities WHERE deletedAt IS NULL AND startedAt / 1000 = :startedAtMillis / 1000 LIMIT 1"
