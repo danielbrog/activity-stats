@@ -135,13 +135,6 @@ abstract class ActivityDao {
     @Query("UPDATE activities SET minLat = :minLat, maxLat = :maxLat, minLon = :minLon, maxLon = :maxLon WHERE id = :id")
     abstract suspend fun setBounds(id: String, minLat: Double, maxLat: Double, minLon: Double, maxLon: Double)
 
-    /** Finished rides whose box hasn't been worked out yet, like those saved before it existed. */
-    @Query(
-        "SELECT id FROM activities a WHERE endedAt IS NOT NULL AND minLat IS NULL " +
-            "AND EXISTS (SELECT 1 FROM track_points t WHERE t.activityId = a.id AND t.status = 'Kept')"
-    )
-    abstract suspend fun finishedWithoutBounds(): List<String>
-
     /** Finished rides not deleted whose box overlaps the given one. */
     @Query(
         "SELECT id FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL " +

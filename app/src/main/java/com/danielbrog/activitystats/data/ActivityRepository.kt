@@ -163,21 +163,13 @@ class ActivityRepository(
         saveBestEfforts(id, saved)
     }
 
-    /** Stores the box around a ride's kept fixes, for segment matching. */
-    /** Saves the box around [fixes]' kept points; false if there are none to box. */
-    private suspend fun saveBounds(id: String, fixes: List<GpsData>): Boolean {
-        val b = RouteBounds.ofKept(fixes) ?: return false
-        activities.setBounds(id, b.south, b.north, b.west, b.east)
-        return true
-    }
-
     /**
-     * Works out the box for finished rides that don't have one yet, such as rides saved before
-     * segments existed. Rides with no kept points have no box and aren't tried. Returns how
-     * many were filled in.
+     * Stores the box around a ride's kept fixes, for segment matching. A ride with none (Start
+     * then Finish before a fix) gets no box, so no segment ever looks at it.
      */
-    suspend fun fillMissingBounds(): Int =
-        activities.finishedWithoutBounds().count { saveBounds(it, pointsFor(it)) }
+    private suspend fun saveBounds(id: String, fixes: List<GpsData>) {
+        RouteBounds.ofKept(fixes)?.let { activities.setBounds(id, it.south, it.north, it.west, it.east) }
+    }
 
     private suspend fun saveBestEfforts(id: String, fixes: List<GpsData>) {
         val found = BestEfforts.find(fixes)

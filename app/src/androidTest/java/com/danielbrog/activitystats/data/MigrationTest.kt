@@ -46,7 +46,7 @@ class MigrationTest {
                 assertTrue(c.moveToFirst())
                 assertEquals("Morning ride", c.getString(0))
                 assertEquals(1234.5, c.getDouble(1), 0.0)
-                // The box is filled in at app start, not by the migration.
+                // Rides from before segments have no box, so segments ignore them.
                 assertTrue(c.isNull(2))
             }
             db.query("SELECT stretch FROM track_points WHERE activityId = 'ride-1'").use { c ->

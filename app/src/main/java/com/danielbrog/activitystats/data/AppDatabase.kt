@@ -18,7 +18,7 @@ import androidx.room.migration.AutoMigrationSpec
  * 6. Renames track_points.segment to stretch, freeing "segment" for user-made segments.
  *    Automatic, with [RenamePauseSegmentToStretch]: the values are kept.
  * 7. Adds segments and segment_efforts, and each ride's bounding box (activities.minLat and
- *    so on). Automatic: new tables, and nullable columns filled in at app start.
+ *    so on). Automatic: new tables, and nullable columns that rides saved before stay without.
  */
 @Database(
     entities = [

@@ -102,13 +102,4 @@ class SegmentRepositoryTest {
         assertNull(segments.create("Nothing", "first", 80, 80))
         assertTrue(segments.allSegments.first().isEmpty())
     }
-
-    @Test
-    fun olderRidesGetTheirBoxFilledIn() = runBlocking {
-        rideAlong("first", 1_000_000L)
-        db.openHelper.writableDatabase.execSQL("UPDATE activities SET minLat = NULL, maxLat = NULL, minLon = NULL, maxLon = NULL")
-        assertEquals(1, rides.fillMissingBounds())
-        assertNotNull(rides.getActivity("first")!!.minLat)
-        assertEquals(0, rides.fillMissingBounds())
-    }
 }

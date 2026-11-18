@@ -60,13 +60,6 @@ class ActivityStatsApp : Application() {
             } catch (e: Exception) {
                 Log.e("ActivityStatsApp", "Climbing and best efforts backfill failed", e)
             }
-            // Rides saved before segments existed get the box segment matching uses.
-            try {
-                val boxed = activityRepository.fillMissingBounds()
-                if (boxed > 0) Log.i("ActivityStatsApp", "Worked out the area of $boxed rides")
-            } catch (e: Exception) {
-                Log.e("ActivityStatsApp", "Ride bounds backfill failed", e)
-            }
         }
     }
 }
