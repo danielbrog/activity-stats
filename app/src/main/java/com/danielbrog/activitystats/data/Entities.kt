@@ -63,6 +63,15 @@ data class ActivityEntity(
      */
     @ColumnInfo(defaultValue = "0")
     val trackUploaded: Boolean = false,
+    /**
+     * The smallest box around the ride's kept fixes, so segment matching can skip rides that
+     * are nowhere near a segment. Set when a ride is finished, imported or downloaded. Null for
+     * a ride still recording, one with no kept fixes, or one saved before segments existed.
+     */
+    val minLat: Double? = null,
+    val maxLat: Double? = null,
+    val minLon: Double? = null,
+    val maxLon: Double? = null,
 )
 
 /**
@@ -99,4 +108,43 @@ data class TrackPointEntity(
     /** The stretch between manual pauses; see [com.danielbrog.activitystats.location.GpsData.stretch]. */
     @ColumnInfo(defaultValue = "0")
     val stretch: Int = 0,
+)
+
+/**
+ * A road segment the rider made from part of one of their rides. Rides that cover it get a
+ * [SegmentEffortEntity]. The user's own data, with the same sync fields as an activity.
+ * Where it is (its ends and area) comes from [path]; see [toPath].
+ */
+@Entity(tableName = "segments", indices = [Index("deletedAt")])
+data class SegmentEntity(
+    /** UUID made on the phone. */
+    @PrimaryKey val id: String,
+    val userId: String? = null,
+    val name: String,
+    /** The segment's line, start to end, in Google's encoded polyline format. */
+    val path: String,
+    /** Measured along the ride it was made from, before simplifying: the distance to show. */
+    val distanceMeters: Double,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val deletedAt: Long? = null,
+    val syncState: String = SyncState.LOCAL_ONLY,
+)
+
+/**
+ * One time a ride covered a segment. Derived data, like [BestEffortEntity]: rebuilt from the
+ * ride's points, so it is never synced. [occurrence] counts the times within one ride (laps).
+ * An effort is always ridden in one go, with no pause or stop inside it.
+ */
+@Entity(
+    tableName = "segment_efforts",
+    primaryKeys = ["segmentId", "activityId", "occurrence"],
+    indices = [Index("activityId")],
+)
+data class SegmentEffortEntity(
+    val segmentId: String,
+    val activityId: String,
+    val occurrence: Int,
+    val startedAt: Long,
+    val elapsedMs: Long,
 )

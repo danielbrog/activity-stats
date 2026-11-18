@@ -15,4 +15,8 @@ interface TrackPointDao {
 
     @Query("SELECT * FROM track_points WHERE activityId = :activityId ORDER BY seq")
     suspend fun pointsFor(activityId: String): List<TrackPointEntity>
+
+    /** Only the points the noise filter kept, for segment matching, which ignores the rest. */
+    @Query("SELECT * FROM track_points WHERE activityId = :activityId AND status = 'Kept' ORDER BY seq")
+    suspend fun keptPointsFor(activityId: String): List<TrackPointEntity>
 }

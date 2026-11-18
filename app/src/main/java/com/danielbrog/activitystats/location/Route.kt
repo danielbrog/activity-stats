@@ -1,5 +1,7 @@
 package com.danielbrog.activitystats.location
 
+import com.danielbrog.activitystats.stats.Geo
+
 /** One point on the drawn route. Plain Kotlin, so no map library types leak into state. */
 data class RoutePoint(val latitude: Double, val longitude: Double)
 
@@ -10,7 +12,22 @@ data class RouteBounds(val south: Double, val west: Double, val north: Double, v
 
     val centre: RoutePoint get() = RoutePoint((south + north) / 2, (west + east) / 2)
 
+    /** Whether this box and [other] share any area (touching counts). */
+    fun overlaps(other: RouteBounds): Boolean =
+        south <= other.north && north >= other.south && west <= other.east && east >= other.west
+
+    /** This box grown by [meters] on every side. Fine for the small margins used here. */
+    fun expandedBy(meters: Double): RouteBounds {
+        val dLat = Math.toDegrees(meters / Geo.EARTH_RADIUS_M)
+        val dLon = dLat / kotlin.math.cos(Math.toRadians(centre.latitude)).coerceAtLeast(0.01)
+        return RouteBounds(south - dLat, west - dLon, north + dLat, east + dLon)
+    }
+
     companion object {
+        /** Bounds of a ride's kept fixes, or null when it has none. */
+        fun ofKept(fixes: List<GpsData>): RouteBounds? =
+            of(fixes.filter { it.status == FixStatus.Kept }.map { RoutePoint(it.latitude, it.longitude) })
+
         /** Bounds of [points], or null when there are none. */
         fun of(points: List<RoutePoint>): RouteBounds? {
             if (points.isEmpty()) return null

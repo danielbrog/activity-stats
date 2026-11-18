@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.danielbrog.activitystats.export.GpxTrack
 import java.util.UUID
 import com.danielbrog.activitystats.location.GpsData
+import com.danielbrog.activitystats.location.RouteBounds
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.BestEfforts
 import com.danielbrog.activitystats.stats.ElevationGain
@@ -101,6 +102,7 @@ class ActivityRepository(
                 maxSpeedMps = stats.maxSpeedMps,
             )
             activities.setElevationGain(id, ElevationGain.of(saved))
+            saveBounds(id, saved)
             // rename keeps the sync bookkeeping right; here updatedAt is already the end time.
             if (title != null) activities.rename(id, title, now = endedAtMillis)
         }
@@ -139,7 +141,7 @@ class ActivityRepository(
                     elevationGainMeters = ElevationGain.of(fixes),
                     title = track.name?.let { RideTitle.clean(it) } ?: rideTitle(startedAt),
                     updatedAt = nowMillis,
-                )
+                ).withBounds(fixes)
             )
             fixes.chunked(500).forEach { batch -> points.insertPoints(batch.map { it.toTrackPoint(id) }) }
         }
@@ -159,6 +161,14 @@ class ActivityRepository(
         val saved = pointsFor(id)
         activities.setElevationGain(id, ElevationGain.of(saved))
         saveBestEfforts(id, saved)
+    }
+
+    /**
+     * Stores the box around a ride's kept fixes, for segment matching. A ride with none (Start
+     * then Finish before a fix) gets no box, so no segment ever looks at it.
+     */
+    private suspend fun saveBounds(id: String, fixes: List<GpsData>) {
+        RouteBounds.ofKept(fixes)?.let { activities.setBounds(id, it.south, it.north, it.west, it.east) }
     }
 
     private suspend fun saveBestEfforts(id: String, fixes: List<GpsData>) {
@@ -249,7 +259,9 @@ class ActivityRepository(
      */
     override suspend fun saveDownloadedRide(ride: ActivityEntity, fixes: List<GpsData>) {
         val inserted = db.withTransaction {
-            val row = activities.insertIfNew(ride.copy(elevationGainMeters = ride.elevationGainMeters ?: ElevationGain.of(fixes)))
+            val row = activities.insertIfNew(
+                ride.copy(elevationGainMeters = ride.elevationGainMeters ?: ElevationGain.of(fixes)).withBounds(fixes)
+            )
             // Already here (it can't normally be): leave that ride and its points as they are.
             if (row == -1L) return@withTransaction false
             fixes.chunked(500).forEach { batch -> points.insertPoints(batch.map { it.toTrackPoint(ride.id) }) }
@@ -257,4 +269,10 @@ class ActivityRepository(
         }
         if (inserted) saveBestEfforts(ride.id, fixes)
     }
+}
+
+/** This ride with the box around [fixes]' kept points, for segment matching. */
+private fun ActivityEntity.withBounds(fixes: List<GpsData>): ActivityEntity {
+    val b = RouteBounds.ofKept(fixes) ?: return this
+    return copy(minLat = b.south, maxLat = b.north, minLon = b.west, maxLon = b.east)
 }

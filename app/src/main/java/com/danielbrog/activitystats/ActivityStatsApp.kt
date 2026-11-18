@@ -8,6 +8,7 @@ import com.danielbrog.activitystats.account.AuthStateStore
 import com.danielbrog.activitystats.data.ActivityRepository
 import com.danielbrog.activitystats.data.AppDatabase
 import com.danielbrog.activitystats.data.RecordingWriter
+import com.danielbrog.activitystats.data.SegmentRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +31,9 @@ class ActivityStatsApp : Application() {
         )
     }
     val recordingWriter: RecordingWriter by lazy { RecordingWriter(activityRepository, appScope) }
+    val segmentRepository: SegmentRepository by lazy {
+        SegmentRepository(database, ownerId = { authRepository.signedInUserId })
+    }
     val authRepository: AuthRepository by lazy {
         AuthRepository(this, AuthConfig.current, AuthStateStore(this), { activityRepository }, appScope)
     }
