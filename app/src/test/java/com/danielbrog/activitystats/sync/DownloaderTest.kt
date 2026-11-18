@@ -19,7 +19,7 @@ class DownloaderTest {
     private val user = "user-1"
     private val track = listOf(
         GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept),
-        GpsData(2, 2_000L, 43.66, -79.38, 5f, 5f, FixStatus.Kept, segment = 1),
+        GpsData(2, 2_000L, 43.66, -79.38, 5f, 5f, FixStatus.Kept, stretch = 1),
     )
 
     /** "Now", on the same clock as syncedAt. Rides below are synced a little before it. */
@@ -93,7 +93,7 @@ class DownloaderTest {
             if (id in refusedTracks) throw RejectedException(403)
             return if (id in brokenTracks) "not gzip".toByteArray() else TrackFile.encode(listOf(
                 GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept),
-                GpsData(2, 2_000L, 43.66, -79.38, 5f, 5f, FixStatus.Kept, segment = 1),
+                GpsData(2, 2_000L, 43.66, -79.38, 5f, 5f, FixStatus.Kept, stretch = 1),
             ))
         }
 

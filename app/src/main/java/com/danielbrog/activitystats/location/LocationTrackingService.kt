@@ -48,7 +48,7 @@ import java.util.UUID
  * activity and its points to Room while recording, through the app's [RecordingWriter] queue.
  *
  * Pause turns the GPS off but keeps the service and its notification, so Resume is instant.
- * Each Resume starts a new [GpsData.segment], so nothing between the pause and the resume
+ * Each Resume starts a new [GpsData.stretch], so nothing between the pause and the resume
  * counts towards distance or moving time.
  */
 class LocationTrackingService : Service() {
@@ -61,8 +61,8 @@ class LocationTrackingService : Service() {
     private var filter = GpsFilter()
     private var stats = StatsEngine(startedAtMillis = 0L)
 
-    // Manual pause: the segment new fixes belong to, and when the current pause began.
-    private var segment = 0
+    // Manual pause: the stretch new fixes belong to, and when the current pause began.
+    private var stretch = 0
     private var pausedAtMillis: Long? = null
     private var pausedMs = 0L
 
@@ -162,7 +162,7 @@ class LocationTrackingService : Service() {
         seq = 0
         filter = GpsFilter()
         stats = StatsEngine(startedAtMillis)
-        segment = 0
+        stretch = 0
         pausedAtMillis = null
         pausedMs = 0L
         activityId = UUID.randomUUID().toString()
@@ -215,7 +215,7 @@ class LocationTrackingService : Service() {
         postNotification()
     }
 
-    /** Turns the GPS back on; the fixes from here on start a new segment. */
+    /** Turns the GPS back on; the fixes from here on start a new stretch. */
     private fun resumeTracking() {
         if (!isRunning) return stopIfIdle()
         val pausedAt = pausedAtMillis ?: return
@@ -226,7 +226,7 @@ class LocationTrackingService : Service() {
         }
         pausedMs += (System.currentTimeMillis() - pausedAt).coerceAtLeast(0L)
         pausedAtMillis = null
-        segment++
+        stretch++
         // Compare the first new fix with nothing, not with where the pause began.
         filter = GpsFilter()
         TrackingState.update {
@@ -369,7 +369,7 @@ class LocationTrackingService : Service() {
         accuracyMeters = if (hasAccuracy()) accuracy else null,
         speedMps = if (hasSpeed()) speed else null,
         altitudeMeters = if (hasAltitude()) altitude else null,
-        segment = segment,
+        stretch = stretch,
     )
 
     companion object {

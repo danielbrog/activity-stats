@@ -53,7 +53,7 @@ fun paceSecondsPerKm(speedMps: Double, minSpeedMps: Double = 0.5): Double? =
  * first slow fix, so the time spent deciding isn't counted as moving. A gap of over
  * [maxGapMs] between fixes is never moving time.
  *
- * A manual pause starts a new [GpsData.segment]. Nothing between the last fix before the
+ * A manual pause starts a new [GpsData.stretch]. Nothing between the last fix before the
  * pause and the first after it counts, neither distance nor time, and the first fix after
  * it starts afresh, as at Start.
  */
@@ -84,14 +84,14 @@ class StatsEngine(
     private var slowSinceMillis: Long? = null
     /** Slow time not yet counted: kept if you speed up again, dropped if you pause. */
     private var pendingMs = 0L
-    /** The segment of the fixes seen so far; a fix from another one means a manual pause ended. */
-    private var segment: Int? = null
+    /** The stretch of the fixes seen so far; a fix from another one means a manual pause ended. */
+    private var stretch: Int? = null
 
     fun add(fix: GpsData) {
         if (fix.status == FixStatus.DroppedAccuracy) return // untrustworthy: no say in anything
 
-        if (segment != null && fix.segment != segment) startNewSegment()
-        segment = fix.segment
+        if (stretch != null && fix.stretch != stretch) startNewStretch()
+        stretch = fix.stretch
 
         var derivedSpeedMps = 0.0
         if (fix.status == FixStatus.Kept) {
@@ -121,7 +121,7 @@ class StatsEngine(
      * After a manual pause: forget the last position and the auto-pause state, so neither
      * the distance nor the time across the pause is counted. Totals so far are kept.
      */
-    private fun startNewSegment() {
+    private fun startNewStretch() {
         lastKept = null
         recent.clear()
         lastPauseCheckMillis = null

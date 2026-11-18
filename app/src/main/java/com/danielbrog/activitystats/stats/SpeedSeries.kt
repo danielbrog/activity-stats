@@ -12,7 +12,7 @@ import kotlin.math.pow
 data class SpeedSample(val distanceMeters: Double, val speedMps: Double)
 
 /**
- * Groups [samples] (in distance order) into at most [maxPoints] equal stretches of distance,
+ * Groups [samples] (in distance order) into at most [maxPoints] equal slices of distance,
  * each with the average distance and value of the samples in it. Shared by the ride charts:
  * smooths GPS jitter and keeps drawing fast. Returns the samples unchanged when there are
  * few enough.
@@ -72,7 +72,7 @@ object SpeedSeries {
     }
 
     /**
-     * Groups [samples] into at most [maxPoints] equal stretches of distance, each with the
+     * Groups [samples] into at most [maxPoints] equal slices of distance, each with the
      * average distance and speed of the samples in it. Smooths GPS jitter and keeps drawing
      * fast. Returns the samples unchanged when there are few enough.
      */

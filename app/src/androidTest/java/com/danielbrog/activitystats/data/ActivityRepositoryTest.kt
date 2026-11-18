@@ -249,7 +249,7 @@ class ActivityRepositoryTest {
         val fixed = repo.getActivity("cut-off")!!
         // Ends at the last saved point, dropped ones included.
         assertEquals(start + 31_000, fixed.endedAt)
-        // 30 kept segments of 3 m; the dropped 500 m fix adds nothing.
+        // 30 legs of 3 m between kept fixes; the dropped 500 m fix adds nothing.
         assertEquals(90.0, fixed.distanceMeters, 1.0)
         assertEquals(30_000L, fixed.movingTimeMs)
         assertNull(repo.getActivity("in-progress")!!.endedAt)

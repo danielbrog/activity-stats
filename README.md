@@ -73,7 +73,7 @@ There's more about the backend in [`backend/README.md`](backend/README.md).
 
 **GPS noise.** Phone GPS jumps around, especially when you're standing still, and that adds fake distance. [`GpsFilter`](app/src/main/java/com/danielbrog/activitystats/location/GpsFilter.kt) ignores fixes that are less accurate than ±20 m. It also ignores fixes that have moved less than their own accuracy from the last good fix, while going slower than 0.5 m/s. The ignored fixes are still saved, so I can change the filter later and re-run it on old rides.
 
-**Pausing.** If I pause and then move the bike, by walking it or putting it in a car, that distance shouldn't count. Each time I resume, the ride starts a new segment. Distance, time, splits, best efforts and charts never measure across the gap between segments. GPX export keeps them as separate track segments.
+**Pausing.** If I pause and then move the bike, by walking it or putting it in a car, that distance shouldn't count. Each time I resume, the ride starts a new stretch. Distance, time, splits, best efforts and charts never measure across the gap between stretches. GPX export writes each stretch as its own track segment.
 
 **Sync without losing anything.** The phone has to work offline and catch up later:
 - Each ride's GPS track uploads before its summary, so a ride in the cloud always has its track.

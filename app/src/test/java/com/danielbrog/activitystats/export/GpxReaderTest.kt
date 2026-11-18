@@ -45,7 +45,7 @@ class GpxReaderTest {
     """.trimIndent()
 
     @Test
-    fun readsPointsElevationAndTimeAcrossSegments() {
+    fun readsPointsElevationAndTimeAcrossTrackSegments() {
         val track = read(garmin)
         assertEquals(3, track.points.size)
         val first = track.points[0]

@@ -9,7 +9,7 @@ data class ElevationSample(val distanceMeters: Double, val altitudeMeters: Doubl
 
 /**
  * Builds the elevation-over-distance data for a ride's chart. Plain Kotlin, unit-tested.
- * Phone altitude is noisy, so long rides are grouped into stretches and averaged, which
+ * Phone altitude is noisy, so long rides are grouped into slices of distance and averaged, which
  * smooths most of it out.
  */
 object ElevationSeries {

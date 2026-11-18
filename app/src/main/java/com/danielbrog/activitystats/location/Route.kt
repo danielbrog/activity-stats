@@ -47,14 +47,14 @@ object Route {
     fun startLine(route: List<List<RoutePoint>>): List<List<RoutePoint>> =
         if (route.isEmpty() || route.last().isEmpty()) route else route + listOf(emptyList())
 
-    /** A saved ride's route: its kept fixes in order, one line per segment. */
+    /** A saved ride's route: its kept fixes in order, one line per stretch. */
     fun of(fixes: List<GpsData>): List<List<RoutePoint>> {
         val lines = mutableListOf<MutableList<RoutePoint>>()
-        var segment: Int? = null
+        var stretch: Int? = null
         for (fix in fixes.filter { it.status == FixStatus.Kept }.sortedBy { it.seq }) {
-            if (fix.segment != segment || lines.isEmpty()) {
+            if (fix.stretch != stretch || lines.isEmpty()) {
                 lines += mutableListOf<RoutePoint>()
-                segment = fix.segment
+                stretch = fix.stretch
             }
             lines.last() += RoutePoint(fix.latitude, fix.longitude)
         }

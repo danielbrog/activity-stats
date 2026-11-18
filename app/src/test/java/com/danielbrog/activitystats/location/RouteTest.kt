@@ -8,7 +8,7 @@ import org.junit.Test
 
 class RouteTest {
 
-    private fun fix(seq: Int, status: FixStatus = FixStatus.Kept, segment: Int = 0) = GpsData(
+    private fun fix(seq: Int, status: FixStatus = FixStatus.Kept, stretch: Int = 0) = GpsData(
         seq = seq,
         timeMillis = seq * 1_000L,
         latitude = 43.0 + seq * 0.0001,
@@ -16,7 +16,7 @@ class RouteTest {
         accuracyMeters = 5f,
         speedMps = 5f,
         status = status,
-        segment = segment,
+        stretch = stretch,
     )
 
     private fun point(seq: Int) = RoutePoint(fix(seq).latitude, -79.0)
@@ -74,7 +74,7 @@ class RouteTest {
     fun resumingStartsANewLine() {
         var route = Route.extend(emptyList(), listOf(fix(1), fix(2)))
         route = Route.startLine(route)
-        route = Route.extend(route, listOf(fix(3, segment = 1), fix(4, segment = 1)))
+        route = Route.extend(route, listOf(fix(3, stretch = 1), fix(4, stretch = 1)))
         assertEquals(listOf(listOf(point(1), point(2)), listOf(point(3), point(4))), route)
     }
 
@@ -94,11 +94,11 @@ class RouteTest {
     }
 
     @Test
-    fun aSavedRideSplitsIntoOneLinePerSegment() {
+    fun aSavedRideSplitsIntoOneLinePerStretch() {
         val fixes = listOf(
             fix(1), fix(2), fix(3, FixStatus.DroppedAccuracy),
-            fix(4, segment = 1), fix(5, segment = 1),
-            fix(6, segment = 2),
+            fix(4, stretch = 1), fix(5, stretch = 1),
+            fix(6, stretch = 2),
         )
         assertEquals(
             listOf(listOf(point(1), point(2)), listOf(point(4), point(5)), listOf(point(6))),
@@ -109,6 +109,6 @@ class RouteTest {
     @Test
     fun legMetersIsZeroAcrossAPause() {
         assertTrue(legMeters(fix(1), fix(2)) > 10.0)
-        assertEquals(0.0, legMeters(fix(1), fix(200, segment = 1)), 0.0)
+        assertEquals(0.0, legMeters(fix(1), fix(200, stretch = 1)), 0.0)
     }
 }

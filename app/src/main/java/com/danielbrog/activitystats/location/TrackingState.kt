@@ -28,7 +28,7 @@ data class GpsData(
      * one more after each Resume. Distance and time are never counted between two fixes with
      * different numbers, since whatever happened in between wasn't ridden.
      */
-    val segment: Int = 0,
+    val stretch: Int = 0,
 )
 
 /**
@@ -36,7 +36,7 @@ data class GpsData(
  * lies between them, since the gap wasn't ridden.
  */
 fun legMeters(a: GpsData, b: GpsData): Double =
-    if (a.segment != b.segment) 0.0 else Geo.distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+    if (a.stretch != b.stretch) 0.0 else Geo.distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
 
 data class TrackingUiState(
     val isTracking: Boolean = false,
