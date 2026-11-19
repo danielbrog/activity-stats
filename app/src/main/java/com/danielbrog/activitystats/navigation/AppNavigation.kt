@@ -42,6 +42,7 @@ import com.danielbrog.activitystats.live.LiveScreen
 import com.danielbrog.activitystats.location.GPSDisplayScreen
 import com.danielbrog.activitystats.profile.ProfileScreen
 import com.danielbrog.activitystats.records.RecordsScreen
+import com.danielbrog.activitystats.segments.ui.CreateSegmentScreen
 import com.danielbrog.activitystats.settings.SettingsScreen
 
 /** Navigation result key: the id of a ride just deleted from its detail screen. */
@@ -71,7 +72,7 @@ private const val FADE_IN_MS = 210
 /** Screens that open on top of a tab, without the bottom bar, and slide in from the side. */
 private fun NavDestination.opensOnTop(): Boolean =
     hasRoute<RideDetailRoute>() || hasRoute<AccountRoute>() || hasRoute<GpsDetailsRoute>() ||
-        hasRoute<SettingsRoute>()
+        hasRoute<SettingsRoute>() || hasRoute<CreateSegmentRoute>()
 
 private fun fadeThroughIn(): EnterTransition = fadeIn(tween(FADE_IN_MS, delayMillis = FADE_OUT_MS))
 
@@ -120,9 +121,9 @@ private fun Opaque(content: @Composable () -> Unit) {
 
 /**
  * The app's screens and how to move between them. Record, Profile and Records are tabs in a
- * bottom bar, switched with a quick fade; Profile holds History and Stats tabs of its own.
- * Ride detail, Account, Settings and GPS details slide in on top of them, without the bar,
- * and Back slides them away again.
+ * bottom bar, switched with a quick fade; Profile holds History, Segments and Stats tabs of
+ * its own. Ride detail, Create segment, Account, Settings and GPS details slide in on top of
+ * them, without the bar, and Back slides them away again.
  */
 @Composable
 fun AppNavigation(navController: NavHostController = rememberNavController()) {
@@ -195,12 +196,16 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                 Opaque {
                     RideDetailScreen(
                         onBack = { navController.popBackStack() },
+                        onCreateSegment = { id -> navController.navigate(CreateSegmentRoute(id)) },
                         onDeleted = { id ->
                             navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_RIDE_ID, id)
                             navController.popBackStack()
                         },
                     )
                 }
+            }
+            composable<CreateSegmentRoute> {
+                Opaque { CreateSegmentScreen(onBack = { navController.popBackStack() }) }
             }
             composable<AccountRoute> {
                 Opaque { AccountScreen(onBack = { navController.popBackStack() }) }
