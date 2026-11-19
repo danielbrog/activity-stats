@@ -220,6 +220,9 @@ private fun Readout(distanceMeters: Double, check: SelectionCheck?, unit: Distan
         text,
         style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),
         color = if (isProblem) MaterialTheme.colorScheme.error else Color.Unspecified,
+        // Always room for two lines, so the map above (which takes what's left) doesn't jump
+        // as the message changes length.
+        minLines = 2,
         // Read out when it changes, since it follows the ends as they move.
         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
