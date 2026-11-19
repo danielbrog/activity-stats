@@ -81,7 +81,10 @@ class CreateSegmentViewModel(
 
     private val selection = MutableStateFlow<SegmentSelection?>(null)
 
-    /** The chosen ends, saved with the screen; unset until the ride has loaded. */
+    /**
+     * The chosen ends, saved with the screen; null until the ride has loaded. Note that
+     * getStateFlow stores its starting value (-1) in the handle straight away.
+     */
     private val range: StateFlow<IntRange?> =
         combine(savedStateHandle.getStateFlow(START, -1), savedStateHandle.getStateFlow(END, -1)) { s, e ->
             if (s in 0 until e) s..e else null
@@ -131,8 +134,12 @@ class CreateSegmentViewModel(
         viewModelScope.launch {
             val points = app.activityRepository.pointsFor(rideId)
             val picker = withContext(Dispatchers.Default) { SegmentSelection(points) }
-            // Coming back after Android stopped the app, the saved ends are still there.
-            if (picker.canPick && savedStateHandle.get<Int>(START) == null) setEnds(picker.initialRange())
+            // Coming back after Android stopped the app, the saved ends are still there. Judge
+            // by the values, not whether any are stored: getStateFlow above stores -1 at once.
+            val start = savedStateHandle.get<Int>(START) ?: -1
+            val end = savedStateHandle.get<Int>(END) ?: -1
+            val savedEndsFit = start in 0 until end && end <= picker.kept.lastIndex
+            if (picker.canPick && !savedEndsFit) setEnds(picker.initialRange())
             selection.value = picker
         }
     }
