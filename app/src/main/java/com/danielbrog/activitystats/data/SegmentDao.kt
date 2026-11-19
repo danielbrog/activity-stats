@@ -17,6 +17,16 @@ data class SegmentEffortWithRide(
     val rideTitle: String,
 )
 
+/** A segment for the list: its best time and how many efforts, from rides not deleted. */
+data class SegmentSummary(
+    val id: String,
+    val name: String,
+    val distanceMeters: Double,
+    /** Null when no ride has covered it yet. */
+    val bestMs: Long?,
+    val effortCount: Int,
+)
+
 /** Queries on `segments` and `segment_efforts`. */
 @Dao
 abstract class SegmentDao {
@@ -30,6 +40,15 @@ abstract class SegmentDao {
     /** Every segment not deleted, by name. Updates itself. */
     @Query("SELECT * FROM segments WHERE deletedAt IS NULL ORDER BY name COLLATE NOCASE")
     abstract fun observeSegments(): Flow<List<SegmentEntity>>
+
+    /** Every segment not deleted, by name, with its best time and effort count. Updates itself. */
+    @Query(
+        "SELECT s.id, s.name, s.distanceMeters, MIN(e.elapsedMs) AS bestMs, COUNT(e.activityId) AS effortCount " +
+            "FROM segments s LEFT JOIN segment_efforts e ON e.segmentId = s.id " +
+            "AND e.activityId IN (SELECT id FROM activities WHERE deletedAt IS NULL) " +
+            "WHERE s.deletedAt IS NULL GROUP BY s.id ORDER BY s.name COLLATE NOCASE"
+    )
+    abstract fun observeSummaries(): Flow<List<SegmentSummary>>
 
     /** Every segment not deleted, once. There are few, so matching filters them in Kotlin. */
     @Query("SELECT * FROM segments WHERE deletedAt IS NULL")

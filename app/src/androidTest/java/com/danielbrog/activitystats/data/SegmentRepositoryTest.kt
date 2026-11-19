@@ -7,11 +7,13 @@ import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.stats.ActivityStats
 import kotlin.math.cos
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -35,7 +37,7 @@ class SegmentRepositoryTest {
     fun setUp() {
         db = Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java).build()
         rides = ActivityRepository(db)
-        segments = SegmentRepository(db)
+        segments = SegmentRepository(db, background = CoroutineScope(SupervisorJob() + Dispatchers.Default))
     }
 
     @After
@@ -50,6 +52,13 @@ class SegmentRepositoryTest {
         }
         rides.savePoints(id, fixes, ActivityStats(), startMillis + 200_000L)
         rides.finishActivity(id, startMillis + 200_000L, ActivityStats(distanceMeters = 2_000.0))
+    }
+
+    /** Makes a segment of fixes 50 to 150 of the ride "first" and waits for its efforts. */
+    private suspend fun createAndMatch(name: String): String {
+        val created = requireNotNull(segments.create(name, "first", 50, 150))
+        created.matching.join()
+        return created.id
     }
 
     @Test
@@ -67,19 +76,23 @@ class SegmentRepositoryTest {
         rideAlong("elsewhere", 9_000_000L, eastMeters = 30_000.0)
 
         // Fixes 50 to 150 of the first ride: 1 km of the road.
-        val id = segments.create("Road", "first", startIndex = 50, endIndex = 150, nowMillis = 10_000_000L)
-        assertNotNull(id)
+        val created = requireNotNull(segments.create("Road", "first", startIndex = 50, endIndex = 150, nowMillis = 10_000_000L))
+        created.matching.join()
+        assertTrue(segments.finding.value.isEmpty())
 
-        val efforts = segments.effortsFor(id!!).first()
+        val efforts = segments.effortsFor(created.id).first()
         assertEquals(setOf("first", "second"), efforts.map { it.activityId }.toSet())
         efforts.forEach { assertEquals(100_000.0, it.elapsedMs.toDouble(), 1_500.0) }
         assertEquals(listOf("Road"), segments.allSegments.first().map { it.name })
+        val summary = segments.summaries.first().single()
+        assertEquals(2, summary.effortCount)
+        assertEquals(100_000.0, summary.bestMs!!.toDouble(), 1_500.0)
     }
 
     @Test
     fun aRideAddedLaterGetsItsEffortWhenRecomputed() = runBlocking {
         rideAlong("first", 1_000_000L)
-        val id = segments.create("Road", "first", 50, 150)!!
+        val id = createAndMatch("Road")
         rideAlong("later", 5_000_000L)
         assertEquals(1, segments.effortsFor(id).first().size) // not hooked in until slice 3
 
@@ -91,7 +104,7 @@ class SegmentRepositoryTest {
     fun deletedRidesDropOutOfASegmentsEfforts() = runBlocking {
         rideAlong("first", 1_000_000L)
         rideAlong("second", 5_000_000L)
-        val id = segments.create("Road", "first", 50, 150)!!
+        val id = createAndMatch("Road")
         rides.delete("second")
         assertEquals(listOf("first"), segments.effortsFor(id).first().map { it.activityId })
     }
@@ -100,6 +113,8 @@ class SegmentRepositoryTest {
     fun aPartThatCantBeASegmentIsRefused() = runBlocking {
         rideAlong("first", 1_000_000L)
         assertNull(segments.create("Nothing", "first", 80, 80))
+        assertNull(segments.create("Too short", "first", 80, 85)) // 50 m
+        assertNull(segments.create("   ", "first", 50, 150)) // no name
         assertTrue(segments.allSegments.first().isEmpty())
     }
 }

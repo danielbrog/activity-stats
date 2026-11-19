@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 object RecordRoute
 
-/** The Profile tab: the account and settings, with History and Stats tabs inside it. */
+/** The Profile tab: the account and settings, with History, Segments and Stats tabs inside it. */
 @Serializable
 object ProfileRoute
 
@@ -31,3 +31,7 @@ object GpsDetailsRoute
 /** App settings; opened from Profile. */
 @Serializable
 object SettingsRoute
+
+/** Making a segment from part of a ride, by the ride's activity id; opened from the ride. */
+@Serializable
+data class CreateSegmentRoute(val rideId: String)

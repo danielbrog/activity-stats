@@ -29,14 +29,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.danielbrog.activitystats.R
 import com.danielbrog.activitystats.history.HistoryScreen
+import com.danielbrog.activitystats.segments.ui.SegmentsTab
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 import kotlinx.coroutines.launch
 
 /** The tabs inside Profile, in order. */
-private enum class ProfileTab(val label: String) { History("History"), Stats("Stats") }
+private enum class ProfileTab(val label: String) { History("History"), Segments("Segments"), Stats("Stats") }
 
 /**
- * The Profile tab: a header with the account and settings, then History and Stats tabs.
+ * The Profile tab: a header with the account and settings, then History, Segments and Stats tabs.
  * Tap a tab or swipe between them; the chosen one is kept while a ride is open on top.
  * Messages, like "Ride deleted · Undo", are shown here rather than in a tab, so they stay
  * put when you swipe.
@@ -67,6 +68,7 @@ fun ProfileScreen(
                 snackbarHostState = snackbarHostState,
             )
         },
+        segments = { SegmentsTab() },
         stats = { StatsTab() },
     )
 }
@@ -77,6 +79,7 @@ private fun ProfileContent(
     onOpenSettings: () -> Unit,
     snackbarHostState: SnackbarHostState,
     history: @Composable () -> Unit,
+    segments: @Composable () -> Unit,
     stats: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -112,11 +115,12 @@ private fun ProfileContent(
                     )
                 }
             }
-            // Keep the other tab loaded while it's off screen. There are only two, and it means
-            // History carries on (an import still reports back) while you look at Stats.
-            HorizontalPager(state = pagerState, beyondViewportPageCount = 1, modifier = Modifier.fillMaxSize()) { page ->
+            // Keep every tab loaded while off screen. They are light lists, and it means History
+            // carries on (an import reports back, Undo stays up) while you look at another tab.
+            HorizontalPager(state = pagerState, beyondViewportPageCount = tabs.size - 1, modifier = Modifier.fillMaxSize()) { page ->
                 when (tabs[page]) {
                     ProfileTab.History -> history()
+                    ProfileTab.Segments -> segments()
                     ProfileTab.Stats -> stats()
                 }
             }
@@ -147,6 +151,7 @@ private fun ProfilePreview() {
             onOpenSettings = {},
             snackbarHostState = remember { SnackbarHostState() },
             history = { Text("History list", modifier = Modifier.padding(16.dp)) },
+            segments = { Text("Segment list", modifier = Modifier.padding(16.dp)) },
             stats = { StatsTab() },
         )
     }

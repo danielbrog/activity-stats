@@ -51,6 +51,16 @@ object SegmentMatcher {
     const val STOP_AFTER_MS = 5_000L
     const val STOP_SPEED_MPS = 0.5
 
+    /**
+     * Whether the leg from kept fix [a] to the next kept fix [b] is a stop: slow for
+     * [STOP_AFTER_MS] or more. The noise filter drops fixes while standing still, so a stop
+     * shows up as one long leg from where the rider stopped to the first fix after they moved off.
+     */
+    fun isStop(a: GpsData, b: GpsData): Boolean {
+        val ms = b.timeMillis - a.timeMillis
+        return ms >= STOP_AFTER_MS && legMeters(a, b) / (ms / 1_000.0) < STOP_SPEED_MPS
+    }
+
     fun find(segment: SegmentPath, fixes: List<GpsData>): List<SegmentEffort> {
         val kept = fixes.filter { it.status == FixStatus.Kept }.sortedBy { it.seq }
         if (kept.size < 2) return emptyList()
@@ -189,15 +199,8 @@ object SegmentMatcher {
             fixes[k].latitude, fixes[k].longitude, fixes[k + 1].latitude, fixes[k + 1].longitude,
         ).distanceMeters
 
-        /**
-         * Whether the leg from fix [k] to the next is a stop: slow for [STOP_AFTER_MS] or more.
-         * The noise filter drops fixes while standing still, so a stop shows up as one long leg
-         * from where the rider stopped to the first fix after they moved off.
-         */
-        fun isStop(k: Int): Boolean {
-            val ms = fixes[k + 1].timeMillis - fixes[k].timeMillis
-            return ms >= STOP_AFTER_MS && legMeters(fixes[k], fixes[k + 1]) / (ms / 1_000.0) < STOP_SPEED_MPS
-        }
+        /** Whether the leg from fix [k] to the next is a stop; see [SegmentMatcher.isStop]. */
+        fun isStop(k: Int): Boolean = isStop(fixes[k], fixes[k + 1])
 
         /** A manual pause anywhere in the effort, or a stop on a leg wholly inside it. */
         fun pausedOrStoppedBetween(start: Crossing, end: Crossing): Boolean {

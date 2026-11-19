@@ -59,12 +59,14 @@ import com.danielbrog.activitystats.stats.SpeedDisplay
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
- * One saved ride: its route on a map and its stats. The ⋮ menu edits the name or deletes
- * the ride; [onDeleted] is called with its id once it is deleted, so History can offer Undo.
+ * One saved ride: its route on a map and its stats. The ⋮ menu exports it, makes a segment
+ * from part of it ([onCreateSegment], with its id), edits the name or deletes the ride;
+ * [onDeleted] is called with its id once it is deleted, so History can offer Undo.
  */
 @Composable
 fun RideDetailScreen(
     onBack: () -> Unit,
+    onCreateSegment: (rideId: String) -> Unit,
     onDeleted: (id: String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: RideDetailViewModel = viewModel(),
@@ -88,6 +90,7 @@ fun RideDetailScreen(
                 onError = { Toast.makeText(context, "Couldn't export this ride", Toast.LENGTH_SHORT).show() },
             )
         },
+        onCreateSegment = { onCreateSegment(viewModel.rideId) },
         onEdit = { showEdit = true },
         onDelete = { showDelete = true },
         onToggleSplits = viewModel::setShowSplits,
@@ -136,6 +139,7 @@ private fun RideDetailContent(
     use24Hour: Boolean,
     onBack: () -> Unit,
     onExport: () -> Unit,
+    onCreateSegment: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleSplits: (show: Boolean) -> Unit,
@@ -154,7 +158,7 @@ private fun RideDetailContent(
                 modifier = Modifier.weight(1f),
             )
             if (state is RideDetailState.Loaded) {
-                RideMenu(onExport = onExport, onEdit = onEdit, onDelete = onDelete)
+                RideMenu(onExport = onExport, onCreateSegment = onCreateSegment, onEdit = onEdit, onDelete = onDelete)
             }
         }
 
@@ -261,9 +265,9 @@ private fun LoadedRide(
     Spacer(Modifier.height(16.dp))
 }
 
-/** The ⋮ button and its drop-down with Export GPX, Edit and Delete. */
+/** The ⋮ button and its drop-down with Export GPX, Create segment, Edit and Delete. */
 @Composable
-private fun RideMenu(onExport: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun RideMenu(onExport: () -> Unit, onCreateSegment: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -276,6 +280,14 @@ private fun RideMenu(onExport: () -> Unit, onEdit: () -> Unit, onDelete: () -> U
                 onClick = {
                     expanded = false
                     onExport()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Create segment") },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_segment), contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onCreateSegment()
                 },
             )
             DropdownMenuItem(
@@ -395,6 +407,7 @@ private fun RideDetailPreview() {
             use24Hour = false,
             onBack = {},
             onExport = {},
+            onCreateSegment = {},
             onEdit = {},
             onDelete = {},
             onToggleSplits = {},
