@@ -54,6 +54,33 @@ class SegmentSelection(fixes: List<GpsData>) {
     /** Metres ridden from the start of [range] to its end. */
     fun distanceMeters(range: IntRange): Double = along[range.last] - along[range.first]
 
+    /** Metres ridden from the start of the ride to fix [index]. */
+    fun metersAt(index: Int): Double = along[index]
+
+    /** Every fix, start to finish: the slider's widest window. */
+    val wholeRide: IntRange get() = 0..kept.lastIndex
+
+    /**
+     * The window the slider covers around [range]: the part plus its own length again on
+     * each side (at least [MIN_WINDOW_MARGIN] fixes), within the ride. The shorter the part,
+     * the narrower the window, so the slider moves the ends in finer steps.
+     */
+    fun windowAround(range: IntRange): IntRange {
+        val margin = maxOf(range.last - range.first, MIN_WINDOW_MARGIN)
+        return (range.first - margin).coerceAtLeast(0)..(range.last + margin).coerceAtMost(kept.lastIndex)
+    }
+
+    /**
+     * [range] with its start ([moveStart]) or end moved [by] fixes, within the ride and
+     * never meeting the other end. Unchanged if it can't move.
+     */
+    fun nudge(range: IntRange, moveStart: Boolean, by: Int): IntRange =
+        if (moveStart) {
+            (range.first + by).coerceIn(0, range.last - 1)..range.last
+        } else {
+            range.first..(range.last + by).coerceIn(range.first + 1, kept.lastIndex)
+        }
+
     /** [range] split where a manual pause falls, as index ranges into [points]. Copies nothing. */
     fun runs(range: IntRange): List<IntRange> = buildList {
         var from = range.first
@@ -122,6 +149,9 @@ class SegmentSelection(fixes: List<GpsData>) {
          * [SegmentMatcher.END_RADIUS_METERS], so anything shorter mostly measures GPS error.
          */
         const val MIN_LENGTH_METERS = 100.0
+
+        /** The fewest fixes the zoomed slider shows either side of the part (about 20 s of riding). */
+        const val MIN_WINDOW_MARGIN = 20
 
         /** Room either side when picking out this ride's own effort, for interpolation. */
         private const val TIME_SLACK_MS = 1_000L

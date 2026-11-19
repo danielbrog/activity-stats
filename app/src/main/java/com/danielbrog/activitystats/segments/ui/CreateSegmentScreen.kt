@@ -1,6 +1,8 @@
 package com.danielbrog.activitystats.segments.ui
 
 import android.widget.Toast
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,16 +15,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +55,7 @@ import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 /**
  * Makes a segment from part of a ride: pick the part on the map or with the slider, name it,
@@ -87,12 +94,27 @@ fun CreateSegmentScreen(
         unit = settings.unit,
         saving = saving,
         onBack = onBack,
-        onRangeChange = viewModel::setRange,
-        onMapTap = viewModel::onMapTap,
-        onCreate = viewModel::create,
+        actions = PickerActions(
+            onRangeChange = viewModel::setRange,
+            onSliderReleased = viewModel::onSliderReleased,
+            onShowWholeRide = viewModel::showWholeRide,
+            onNudge = viewModel::nudge,
+            onMapTap = viewModel::onMapTap,
+            onCreate = viewModel::create,
+        ),
         modifier = modifier,
     )
 }
+
+/** What the picker can ask for, gathered so they pass down as one. */
+private class PickerActions(
+    val onRangeChange: (start: Int, end: Int) -> Unit,
+    val onSliderReleased: () -> Unit,
+    val onShowWholeRide: () -> Unit,
+    val onNudge: (moveStart: Boolean, forward: Boolean) -> Unit,
+    val onMapTap: (point: RoutePoint, radiusMeters: Double) -> Unit,
+    val onCreate: (name: String) -> Unit,
+)
 
 @Composable
 private fun CreateSegmentContent(
@@ -100,9 +122,7 @@ private fun CreateSegmentContent(
     unit: DistanceUnit,
     saving: Boolean,
     onBack: () -> Unit,
-    onRangeChange: (start: Int, end: Int) -> Unit,
-    onMapTap: (point: RoutePoint, radiusMeters: Double) -> Unit,
-    onCreate: (name: String) -> Unit,
+    actions: PickerActions,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().imePadding()) {
@@ -129,20 +149,22 @@ private fun CreateSegmentContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            is CreateSegmentState.Picking -> Picker(state, unit, saving, onRangeChange, onMapTap, onCreate)
+            is CreateSegmentState.Picking -> Picker(state, unit, saving, actions)
         }
     }
 }
 
-/** The map on top, filling what's left; the slider, readout, name and Create underneath. */
+/**
+ * The map on top, filling what's left; underneath, the slider with its nudge buttons, the
+ * readout, the name and Create. Everything underneath keeps the same height whatever it
+ * says, so the map doesn't jump about.
+ */
 @Composable
 private fun Picker(
     state: CreateSegmentState.Picking,
     unit: DistanceUnit,
     saving: Boolean,
-    onRangeChange: (start: Int, end: Int) -> Unit,
-    onMapTap: (point: RoutePoint, radiusMeters: Double) -> Unit,
-    onCreate: (name: String) -> Unit,
+    actions: PickerActions,
 ) = Column(Modifier.fillMaxSize()) {
     SegmentPickerMap(
         points = state.points,
@@ -150,22 +172,39 @@ private fun Picker(
         picked = state.picked,
         start = state.start,
         end = state.end,
-        onTap = onMapTap,
+        focus = state.window,
+        onTap = actions.onMapTap,
         modifier = Modifier.weight(1f).fillMaxWidth(),
     )
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        // The slider covers [window]: the whole ride, or zoomed in around the part once you
+        // let go of it, so shorter parts move in finer steps.
         RangeSlider(
             value = state.range.first.toFloat()..state.range.last.toFloat(),
-            onValueChange = { onRangeChange(it.start.roundToInt(), it.endInclusive.roundToInt()) },
-            valueRange = 0f..state.lastIndex.toFloat(),
+            onValueChange = { actions.onRangeChange(it.start.roundToInt(), it.endInclusive.roundToInt()) },
+            onValueChangeFinished = actions.onSliderReleased,
+            valueRange = state.window.first.toFloat()..state.window.last.toFloat(),
             // The values are point numbers, which mean nothing read aloud; say the distance.
             modifier = Modifier.semantics {
                 contentDescription = "Segment start and end"
                 stateDescription = Format.distance(state.distanceMeters, unit)
             },
         )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            NudgeButtons(end = "start", onNudge = { forward -> actions.onNudge(true, forward) })
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "${Format.distance(state.windowStartMeters, unit)} → ${Format.distance(state.windowEndMeters, unit)}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                // Always there (greyed out over the whole ride), so the controls keep their height.
+                TextButton(onClick = actions.onShowWholeRide, enabled = !state.isWholeRide) { Text("Whole ride") }
+            }
+            NudgeButtons(end = "end", onNudge = { forward -> actions.onNudge(false, forward) })
+        }
         Text(
-            "Drag the ends, or tap the map near the route to move the nearer end there.",
+            "Drag the ends, tap the map near the route, or use ‹ › to move an end a point at a time.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -185,7 +224,7 @@ private fun Picker(
         )
         Spacer(Modifier.height(8.dp))
         Button(
-            onClick = { cleaned?.let(onCreate) },
+            onClick = { cleaned?.let(actions.onCreate) },
             enabled = cleaned != null && state.check is SelectionCheck.Ready && !saving,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -200,6 +239,49 @@ private fun Picker(
         }
     }
 }
+
+/** ‹ and › for one [end] of the part ("start" or "end"): one point a tap, repeating while held. */
+@Composable
+private fun NudgeButtons(end: String, onNudge: (forward: Boolean) -> Unit) {
+    Row {
+        RepeatingButton(symbol = "‹", description = "Move the $end back", onStep = { onNudge(false) })
+        RepeatingButton(symbol = "›", description = "Move the $end forward", onStep = { onNudge(true) })
+    }
+}
+
+/**
+ * A button that calls [onStep] once when tapped, and over and over while held down (after a
+ * short wait), so an end can be walked along the route.
+ */
+@Composable
+private fun RepeatingButton(symbol: String, description: String, onStep: () -> Unit) {
+    val step by rememberUpdatedState(onStep)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // Set once holding has started repeating, so letting go doesn't add one more step.
+    var repeated by remember { mutableStateOf(false) }
+    LaunchedEffect(pressed) {
+        if (!pressed) return@LaunchedEffect
+        repeated = false
+        delay(REPEAT_AFTER_MS)
+        repeated = true
+        while (true) {
+            step()
+            delay(REPEAT_EVERY_MS)
+        }
+    }
+    FilledTonalIconButton(
+        onClick = { if (!repeated) step() },
+        interactionSource = interaction,
+        modifier = Modifier.semantics { contentDescription = description },
+    ) {
+        Text(symbol, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+/** How long a nudge button must be held before it repeats, then how often. */
+private const val REPEAT_AFTER_MS = 400L
+private const val REPEAT_EVERY_MS = 80L
 
 /** The distance, then this ride's time on the part or why it can't be a segment. */
 @Composable
@@ -240,15 +322,17 @@ private fun CreateSegmentPreview() {
                 stretches = listOf(0..1),
                 picked = listOf(0..1),
                 range = 0..1,
+                window = 0..1,
+                windowStartMeters = 3_200.0,
+                windowEndMeters = 4_400.0,
+                isWholeRide = false,
                 distanceMeters = 1_240.0,
                 check = SelectionCheck.Ready(1_240.0, yourTimeMs = 151_000L, stoppedInside = false),
             ),
             unit = DistanceUnit.Km,
             saving = false,
             onBack = {},
-            onRangeChange = { _, _ -> },
-            onMapTap = { _, _ -> },
-            onCreate = {},
+            actions = PickerActions({ _, _ -> }, {}, {}, { _, _ -> }, { _, _ -> }, {}),
         )
     }
 }

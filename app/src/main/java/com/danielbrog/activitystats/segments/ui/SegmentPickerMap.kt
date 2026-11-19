@@ -35,12 +35,16 @@ import kotlin.math.roundToInt
 /** A tap counts as on the route if it is within this much of it on screen (about a fingertip). */
 private val TAP_REACH = 24.dp
 
+/** How long the map takes to glide to a new window. */
+private const val FOCUS_GLIDE_MS = 500
+
 /** Never ask for a tap closer than this on the ground, however far you zoom in: GPS isn't finer. */
 private const val MIN_TAP_RADIUS_METERS = 15.0
 
 /**
  * The whole ride in a muted colour with the [picked] part drawn over it, and pins at its
- * [start] and [end]. Zooms to fit the ride once; then pan and zoom freely.
+ * [start] and [end]. Fits [focus] (index range into [points]: the slider's window) on
+ * screen, and glides to it again when it changes; in between, pan and zoom freely.
  *
  * [points] is every point of the ride; [stretches] and [picked] are index ranges into it, one
  * per stretch between manual pauses (as on the ride's own map), so a new part is drawn from
@@ -54,6 +58,7 @@ fun SegmentPickerMap(
     picked: List<IntRange>,
     start: RoutePoint,
     end: RoutePoint,
+    focus: IntRange,
     onTap: (point: RoutePoint, radiusMeters: Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -67,22 +72,24 @@ fun SegmentPickerMap(
 
     // Converted once per ride; each line below is a slice of this list.
     val latLngs = remember(points) { points.map { it.toLatLng() } }
-    val bounds = remember(points) { RouteBounds.of(points) }
+    val bounds = remember(points, focus) { RouteBounds.of(points.subList(focus.first, focus.last + 1)) }
     val cameraPositionState = rememberCameraPositionState()
     var mapLoaded by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val paddingPx = with(density) { 48.dp.roundToPx() }
     val reachPx = with(density) { TAP_REACH.toPx() }
 
-    // Fitting to bounds needs the map's size, so wait until it has loaded.
+    // Fitting to bounds needs the map's size, so wait until it has loaded. The first fit is
+    // instant; later ones glide, so it's clear where the map went.
+    var fitted by remember { mutableStateOf(false) }
     LaunchedEffect(mapLoaded, bounds) {
         if (!mapLoaded || bounds == null || bounds.isSinglePoint) return@LaunchedEffect
-        cameraPositionState.move(
-            CameraUpdateFactory.newLatLngBounds(
-                LatLngBounds(LatLng(bounds.south, bounds.west), LatLng(bounds.north, bounds.east)),
-                paddingPx,
-            )
+        val update = CameraUpdateFactory.newLatLngBounds(
+            LatLngBounds(LatLng(bounds.south, bounds.west), LatLng(bounds.north, bounds.east)),
+            paddingPx,
         )
+        if (fitted) cameraPositionState.animate(update, FOCUS_GLIDE_MS) else cameraPositionState.move(update)
+        fitted = true
     }
 
     GoogleMap(

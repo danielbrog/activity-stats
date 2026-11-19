@@ -137,4 +137,34 @@ class SegmentSelectionTest {
         assertEquals(50..150, SegmentSelection(ride()).initialRange())
         assertEquals(0..1, SegmentSelection(ride(2)).initialRange())
     }
+
+    @Test
+    fun theSliderWindowNarrowsWithThePart() {
+        val selection = SegmentSelection(ride())
+        assertEquals(20..140, selection.windowAround(60..100)) // 40 either side
+        assertEquals(70..130, selection.windowAround(90..110)) // 20 either side
+        assertEquals(75..125, selection.windowAround(95..105)) // a 10-fix part still gets 20
+    }
+
+    @Test
+    fun theSliderWindowStaysInsideTheRide() {
+        val selection = SegmentSelection(ride())
+        assertEquals(0..200, selection.windowAround(10..150))
+        assertEquals(selection.wholeRide, 0..200)
+    }
+
+    @Test
+    fun nudgesMoveOneEndAndNeverCross() {
+        val selection = SegmentSelection(ride())
+        assertEquals(49..150, selection.nudge(50..150, moveStart = true, by = -1))
+        assertEquals(50..151, selection.nudge(50..150, moveStart = false, by = 1))
+        assertEquals(50..51, selection.nudge(50..51, moveStart = false, by = -1)) // would meet the start
+        assertEquals(0..150, selection.nudge(0..150, moveStart = true, by = -1)) // already at the ride's start
+        assertEquals(50..200, selection.nudge(50..200, moveStart = false, by = 1)) // already at its end
+    }
+
+    @Test
+    fun metresAlongTheRideAtAFix() {
+        assertEquals(420.0, SegmentSelection(ride()).metersAt(42), 0.5)
+    }
 }

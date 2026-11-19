@@ -42,6 +42,12 @@ sealed interface CreateSegmentState {
         val picked: List<IntRange>,
         /** The chosen part, as indices into [points], for the slider. */
         val range: IntRange,
+        /** The stretch of the ride the slider covers: all of it, or zoomed in around [range]. */
+        val window: IntRange,
+        /** Metres along the ride at each end of [window], for its labels. */
+        val windowStartMeters: Double,
+        val windowEndMeters: Double,
+        val isWholeRide: Boolean,
         val distanceMeters: Double,
         /** Null while it is being worked out. */
         val check: SelectionCheck?,
@@ -90,6 +96,12 @@ class CreateSegmentViewModel(
             if (s in 0 until e) s..e else null
         }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** The slider's window, saved like the ends; null (the whole ride) until set. */
+    private val window: StateFlow<IntRange?> =
+        combine(savedStateHandle.getStateFlow(WINDOW_START, -1), savedStateHandle.getStateFlow(WINDOW_END, -1)) { s, e ->
+            if (s in 0 until e) s..e else null
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     /** A check result and the part it was made for. */
     private data class Checked(val range: IntRange, val result: SelectionCheck)
 
@@ -102,19 +114,27 @@ class CreateSegmentViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val state: StateFlow<CreateSegmentState> =
-        combine(selection, range, checked) { picker, r, done ->
+        combine(selection, range, window, checked) { picker, r, w, done ->
             when {
                 picker == null -> CreateSegmentState.Loading
                 !picker.canPick -> CreateSegmentState.NoRoute
                 r == null -> CreateSegmentState.Loading
-                else -> CreateSegmentState.Picking(
-                    points = picker.points,
-                    stretches = picker.stretches,
-                    picked = picker.runs(r),
-                    range = r,
-                    distanceMeters = picker.distanceMeters(r),
-                    check = done?.takeIf { it.range == r }?.result,
-                )
+                else -> {
+                    // The window always holds the part, whatever moved the ends.
+                    val shown = (w ?: picker.wholeRide).let { minOf(it.first, r.first)..maxOf(it.last, r.last) }
+                    CreateSegmentState.Picking(
+                        points = picker.points,
+                        stretches = picker.stretches,
+                        picked = picker.runs(r),
+                        range = r,
+                        window = shown,
+                        windowStartMeters = picker.metersAt(shown.first),
+                        windowEndMeters = picker.metersAt(shown.last),
+                        isWholeRide = shown == picker.wholeRide,
+                        distanceMeters = picker.distanceMeters(r),
+                        check = done?.takeIf { it.range == r }?.result,
+                    )
+                }
             }
         }
             .flowOn(Dispatchers.Default)
@@ -154,6 +174,31 @@ class CreateSegmentViewModel(
         if (start < end) setEnds(start..end)
     }
 
+    /** The slider was let go: zoom it in around the part, for finer steps next time. */
+    fun onSliderReleased() {
+        val picker = selection.value ?: return
+        val current = range.value ?: return
+        setWindow(picker.windowAround(current))
+    }
+
+    /** Back to a slider over the whole ride, to move to another part of it. */
+    fun showWholeRide() {
+        val picker = selection.value ?: return
+        setWindow(picker.wholeRide)
+    }
+
+    /** Moves the start ([moveStart]) or end one fix [forward] or back. */
+    fun nudge(moveStart: Boolean, forward: Boolean) {
+        val picker = selection.value ?: return
+        val current = range.value ?: return
+        setEnds(picker.nudge(current, moveStart, by = if (forward) 1 else -1))
+    }
+
+    private fun setWindow(w: IntRange) {
+        savedStateHandle[WINDOW_START] = w.first
+        savedStateHandle[WINDOW_END] = w.last
+    }
+
     /**
      * A tap on the map within [radiusMeters] of the ride moves the nearer end there; see
      * [SegmentSelection.tappedIndex]. Searching every point runs off the main thread.
@@ -165,8 +210,12 @@ class CreateSegmentViewModel(
             val moved = withContext(Dispatchers.Default) {
                 picker.tappedIndex(point, current, radiusMeters)?.let { picker.moveNearerEnd(current, it) }
             }
-            // Only if nothing else moved the ends meanwhile.
-            if (moved != null && range.value == current) setEnds(moved)
+            // Only if nothing else moved the ends meanwhile. Then zoom the slider in around
+            // the new part, as letting go of it does.
+            if (moved != null && range.value == current) {
+                setEnds(moved)
+                setWindow(picker.windowAround(moved))
+            }
         }
     }
 
@@ -192,5 +241,7 @@ class CreateSegmentViewModel(
         const val CHECK_DELAY_MS = 250L
         const val START = "start"
         const val END = "end"
+        const val WINDOW_START = "windowStart"
+        const val WINDOW_END = "windowEnd"
     }
 }
