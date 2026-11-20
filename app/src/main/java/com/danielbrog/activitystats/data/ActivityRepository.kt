@@ -30,11 +30,17 @@ sealed interface ImportResult {
  *
  * [onChanged] is called after a change that should reach the cloud: a ride finished,
  * imported, renamed, deleted or restored. The app starts a sync from it.
+ *
+ * [onRideSaved] is called with a ride's id once it is saved with its route and could cover a
+ * segment: finished, imported, downloaded, or restored (here or, through sync, on another
+ * phone). The app matches it against segments.
+ * Not for a rename (the route is the same) or a delete (deleted rides are hidden anyway).
  */
 class ActivityRepository(
     private val db: AppDatabase,
     private val ownerId: () -> String? = { null },
     private val onChanged: () -> Unit = {},
+    private val onRideSaved: (rideId: String) -> Unit = {},
 ) : SyncStore, DownloadStore {
 
     private val activities = db.activityDao()
@@ -108,6 +114,7 @@ class ActivityRepository(
         }
         saveBestEfforts(id, saved)
         onChanged()
+        onRideSaved(id)
     }
 
     /**
@@ -147,6 +154,7 @@ class ActivityRepository(
         }
         saveBestEfforts(id, fixes)
         onChanged()
+        onRideSaved(id)
         return ImportResult.Imported(id)
     }
 
@@ -223,9 +231,11 @@ class ActivityRepository(
         onChanged()
     }
 
+    /** Undoes [delete]. A segment made while it was deleted couldn't see it, so it is matched again. */
     suspend fun restore(id: String, nowMillis: Long = System.currentTimeMillis()) {
         activities.restore(id, nowMillis)
         onChanged()
+        onRideSaved(id)
     }
 
     override suspend fun pointsFor(id: String): List<GpsData> = points.pointsFor(id).map { it.toGpsData() }
@@ -249,8 +259,17 @@ class ActivityRepository(
         activities.markSynced(id, sentUpdatedAt)
     }
 
-    override suspend fun applyCloudCopy(id: String, cloud: CloudCopy): Boolean =
-        activities.applyCloudCopy(id, cloud.title, cloud.deletedAt, cloud.updatedAt) == 1
+    /**
+     * Takes the cloud's copy when it is newer. If that brings back a ride deleted here (it was
+     * restored on another phone), it is matched again, as [restore] does. A rename from the
+     * cloud doesn't change the route, so it isn't.
+     */
+    override suspend fun applyCloudCopy(id: String, cloud: CloudCopy): Boolean {
+        val wasDeleted = activities.getActivity(id)?.deletedAt != null
+        val taken = activities.applyCloudCopy(id, cloud.title, cloud.deletedAt, cloud.updatedAt) == 1
+        if (taken && wasDeleted && cloud.deletedAt == null) onRideSaved(id)
+        return taken
+    }
 
     /**
      * Saves a ride downloaded from the cloud with its points, in one transaction so a half-saved
@@ -267,7 +286,10 @@ class ActivityRepository(
             fixes.chunked(500).forEach { batch -> points.insertPoints(batch.map { it.toTrackPoint(ride.id) }) }
             true
         }
-        if (inserted) saveBestEfforts(ride.id, fixes)
+        if (inserted) {
+            saveBestEfforts(ride.id, fixes)
+            onRideSaved(ride.id)
+        }
     }
 }
 

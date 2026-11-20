@@ -23,11 +23,13 @@ class ActivityStatsApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.create(this) }
     val activityRepository: ActivityRepository by lazy {
         // Changes that should reach the cloud start a sync. Opening the app starts one too,
-        // once the saved sign-in has loaded (see AuthRepository).
+        // once the saved sign-in has loaded (see AuthRepository). A ride saved with its route
+        // is matched against segments in the background.
         ActivityRepository(
             database,
             ownerId = { authRepository.signedInUserId },
             onChanged = { authRepository.requestSyncIfSignedIn() },
+            onRideSaved = { rideId -> segmentRepository.matchRideInBackground(rideId) },
         )
     }
     val recordingWriter: RecordingWriter by lazy { RecordingWriter(activityRepository, appScope) }
