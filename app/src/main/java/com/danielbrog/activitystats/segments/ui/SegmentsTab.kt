@@ -17,9 +17,16 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +49,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /** The segment list, or null while it is first loading. */
 class SegmentsViewModel(application: Application) : AndroidViewModel(application) {
@@ -57,18 +65,49 @@ class SegmentsViewModel(application: Application) : AndroidViewModel(application
     val unit: StateFlow<DistanceUnit> = DisplaySettingsRepository(application).settings
         .map { it.unit }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DistanceUnit.Km)
+
+    /** Undoes a delete made from the segment screen. */
+    fun restore(id: String) {
+        viewModelScope.launch { repository.restore(id) }
+    }
 }
 
 /**
  * The Segments tab inside Profile: every segment, by name, with your best time on it. Tapping
  * one opens it ([onOpenSegment], with its id).
+ *
+ * When [deletedSegmentId] is set (a segment was just deleted from its screen), shows a
+ * "Segment deleted" bar with Undo in [snackbarHostState] (Profile's, so it stays put when you
+ * swipe), then calls [onDeletedSegmentHandled] so it isn't shown again.
  */
 @Composable
 fun SegmentsTab(
     onOpenSegment: (id: String) -> Unit,
+    deletedSegmentId: String?,
+    onDeletedSegmentHandled: () -> Unit,
+    snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
     viewModel: SegmentsViewModel = viewModel(),
 ) {
+    // Same two-step handling as History, so clearing the result can't cancel the bar.
+    var undoSegmentId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(deletedSegmentId) {
+        if (deletedSegmentId != null) {
+            undoSegmentId = deletedSegmentId
+            onDeletedSegmentHandled()
+        }
+    }
+    LaunchedEffect(undoSegmentId) {
+        val id = undoSegmentId ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "Segment deleted",
+            actionLabel = "Undo",
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.ActionPerformed) viewModel.restore(id)
+        undoSegmentId = null
+    }
+
     val segments by viewModel.segments.collectAsStateWithLifecycle()
     val finding by viewModel.finding.collectAsStateWithLifecycle()
     val unit by viewModel.unit.collectAsStateWithLifecycle()

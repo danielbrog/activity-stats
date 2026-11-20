@@ -48,7 +48,7 @@ class SegmentDetailViewModel(
 
     private val repository = (application as ActivityStatsApp).segmentRepository
     private val rides = (application as ActivityStatsApp).activityRepository
-    private val segmentId: String = savedStateHandle.toRoute<SegmentDetailRoute>().id
+    val segmentId: String = savedStateHandle.toRoute<SegmentDetailRoute>().id
 
     /** The segment with its line decoded once, not on every change to its efforts. */
     private val segmentWithLine = repository.segment(segmentId)
@@ -65,6 +65,19 @@ class SegmentDetailViewModel(
     val unit: StateFlow<DistanceUnit> = DisplaySettingsRepository(application).settings
         .map { it.unit }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DistanceUnit.Km)
+
+    /** Saves a new name; ignored if it is blank after cleaning. */
+    fun rename(name: String) {
+        viewModelScope.launch { repository.rename(segmentId, name) }
+    }
+
+    /** Soft-deletes the segment, then calls [onDeleted] so the screen can close. */
+    fun delete(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            repository.delete(segmentId)
+            onDeleted()
+        }
+    }
 
     /** Undoes deleting a ride opened from this screen; its effort comes back with it. */
     fun restoreRide(id: String) {

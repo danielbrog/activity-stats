@@ -43,7 +43,8 @@ private enum class ProfileTab(val label: String) { History("History"), Segments(
  * put when you swipe.
  *
  * [deletedRideId] and [onDeletedRideHandled] pass a ride deleted from its detail screen on
- * to History, which offers Undo.
+ * to History, which offers Undo; [deletedSegmentId] and [onDeletedSegmentHandled] do the same
+ * for a segment, to the Segments tab.
  */
 @Composable
 fun ProfileScreen(
@@ -53,6 +54,8 @@ fun ProfileScreen(
     onOpenSettings: () -> Unit,
     deletedRideId: String?,
     onDeletedRideHandled: () -> Unit,
+    deletedSegmentId: String?,
+    onDeletedSegmentHandled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -69,7 +72,14 @@ fun ProfileScreen(
                 snackbarHostState = snackbarHostState,
             )
         },
-        segments = { SegmentsTab(onOpenSegment = onOpenSegment) },
+        segments = {
+            SegmentsTab(
+                onOpenSegment = onOpenSegment,
+                deletedSegmentId = deletedSegmentId,
+                onDeletedSegmentHandled = onDeletedSegmentHandled,
+                snackbarHostState = snackbarHostState,
+            )
+        },
         stats = { StatsTab() },
     )
 }
