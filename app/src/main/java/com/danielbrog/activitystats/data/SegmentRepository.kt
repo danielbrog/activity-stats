@@ -29,8 +29,8 @@ import kotlinx.coroutines.withContext
  * are few and small, so they are all loaded and compared with a ride's box in Kotlin.
  *
  * [ownerId] gives the signed-in account, as for rides, so a new segment belongs to it.
- * [background] is where a new segment's efforts are found: a scope that outlives screens (the
- * app's), so leaving the screen doesn't stop it.
+ * [background] is where matching runs, for a new segment's efforts and a newly saved ride's:
+ * a scope that outlives screens (the app's), so leaving a screen doesn't stop it.
  *
  * Matching is CPU work, so it runs on [Dispatchers.Default] whoever calls it. Recomputes run
  * one at a time: each reads, matches, then replaces rows, and two at once could each wipe an
@@ -139,6 +139,22 @@ class SegmentRepository(
         }
         segments.replaceForSegment(segment.id, found)
         return found.size
+    }
+
+    /**
+     * Finds [rideId]'s efforts on every segment in [background], for a ride just finished,
+     * imported, downloaded or restored; see [recomputeForRide]. The job finishes when they are
+     * saved. A failure is logged, not thrown: the ride is safe, it just has no efforts until
+     * it is matched again.
+     */
+    fun matchRideInBackground(rideId: String): Job = background.launch {
+        try {
+            recomputeForRide(rideId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("SegmentRepository", "Matching a ride against segments failed", e)
+        }
     }
 
     /**

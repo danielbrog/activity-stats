@@ -3,14 +3,20 @@ package com.danielbrog.activitystats.data
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.danielbrog.activitystats.export.GpxPoint
+import com.danielbrog.activitystats.export.GpxTrack
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.stats.ActivityStats
+import com.danielbrog.activitystats.sync.CloudCopy
 import kotlin.math.cos
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -29,31 +35,53 @@ class SegmentRepositoryTest {
     private lateinit var rides: ActivityRepository
     private lateinit var segments: SegmentRepository
 
+    /** Every ride the repository reported as saved, and the matching started for it, as the app wires it. */
+    private val savedRides = mutableListOf<String>()
+    private val matching = mutableListOf<Job>()
+
     private val lat0 = 43.65
     private val lon0 = -79.38
     private val perDegLat = 111_195.0
     private val perDegLon = perDegLat * cos(Math.toRadians(lat0))
 
+    /** Where the repository matches, as the app's own scope; stopped after each test. */
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     @Before
     fun setUp() {
         db = Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java).build()
-        rides = ActivityRepository(db)
-        segments = SegmentRepository(db, background = CoroutineScope(SupervisorJob() + Dispatchers.Default))
+        segments = SegmentRepository(db, background = background)
+        rides = ActivityRepository(db, onRideSaved = { id ->
+            savedRides += id
+            matching += segments.matchRideInBackground(id)
+        })
     }
 
+    /** Lets any matching finish and stops the scope before the database goes, so nothing runs on into the next test. */
     @After
-    fun tearDown() = db.close()
+    fun tearDown() {
+        runBlocking { awaitMatching() }
+        background.cancel()
+        db.close()
+    }
 
-    /** A finished ride 2 km north along a road [eastMeters] east of the origin, 10 m a second. */
+    /** 2 km north along a road [eastMeters] east of the origin, a fix every 10 m and every second. */
+    private fun road(startMillis: Long, eastMeters: Double = 0.0) = (0..200).map { i ->
+        GpsData(i + 1, startMillis + i * 1_000L, lat0 + i * 10.0 / perDegLat, lon0 + eastMeters / perDegLon,
+            5f, 10f, FixStatus.Kept)
+    }
+
+    /** A finished ride along [road], then waits for its matching. */
     private suspend fun rideAlong(id: String, startMillis: Long, eastMeters: Double = 0.0) {
         rides.startActivity(id, startMillis)
-        val fixes = (0..200).map { i ->
-            GpsData(i + 1, startMillis + i * 1_000L, lat0 + i * 10.0 / perDegLat, lon0 + eastMeters / perDegLon,
-                5f, 10f, FixStatus.Kept)
-        }
+        val fixes = road(startMillis, eastMeters)
         rides.savePoints(id, fixes, ActivityStats(), startMillis + 200_000L)
         rides.finishActivity(id, startMillis + 200_000L, ActivityStats(distanceMeters = 2_000.0))
+        awaitMatching()
     }
+
+    /** Waits for every background match started so far. */
+    private suspend fun awaitMatching() = matching.toList().joinAll()
 
     /** Makes a segment of fixes 50 to 150 of the ride "first" and waits for its efforts. */
     private suspend fun createAndMatch(name: String): String {
@@ -98,14 +126,81 @@ class SegmentRepositoryTest {
     }
 
     @Test
-    fun aRideAddedLaterGetsItsEffortWhenRecomputed() = runBlocking {
+    fun aRideFinishedLaterIsMatchedAutomatically() = runBlocking {
         rideAlong("first", 1_000_000L)
         val id = createAndMatch("Road")
-        rideAlong("later", 5_000_000L)
-        assertEquals(1, segments.effortsFor(id).first().size) // not hooked in until slice 3
-
-        segments.recomputeForRide("later")
+        rideAlong("later", 5_000_000L) // finishes, then waits for its matching
         assertEquals(setOf("first", "later"), segments.effortsFor(id).first().map { it.activityId }.toSet())
+    }
+
+    @Test
+    fun anImportedRideIsMatchedAutomatically() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        val track = GpxTrack("Imported ride", "ride", (0..200).map { i ->
+            GpxPoint(lat0 + i * 10.0 / perDegLat, lon0, elevation = null, timeMillis = 9_000_000L + i * 1_000L)
+        })
+        val imported = rides.importTrack(track) as ImportResult.Imported
+        awaitMatching()
+        assertTrue(imported.id in segments.effortsFor(id).first().map { it.activityId })
+    }
+
+    @Test
+    fun aRestoredRideCatchesUpOnSegmentsMadeWhileItWasDeleted() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        rideAlong("second", 5_000_000L)
+        rides.delete("second")
+        val id = createAndMatch("Road") // can't see the deleted ride
+        assertEquals(listOf("first"), segments.effortsFor(id).first().map { it.activityId })
+
+        rides.restore("second")
+        awaitMatching()
+        assertEquals(setOf("first", "second"), segments.effortsFor(id).first().map { it.activityId }.toSet())
+    }
+
+    @Test
+    fun aRideRestoredOnAnotherPhoneIsMatchedWhenItSyncsBack() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        rideAlong("second", 5_000_000L)
+        rides.delete("second", nowMillis = 6_000_000L)
+        val id = createAndMatch("Road")
+
+        // The cloud's copy, undeleted elsewhere and newer than this phone's.
+        assertTrue(rides.applyCloudCopy("second", CloudCopy("Second", updatedAt = 7_000_000L, deletedAt = null)))
+        awaitMatching()
+        assertEquals(setOf("first", "second"), segments.effortsFor(id).first().map { it.activityId }.toSet())
+
+        // A rename from the cloud doesn't change the route, so it isn't matched again.
+        savedRides.clear()
+        assertTrue(rides.applyCloudCopy("second", CloudCopy("Renamed", updatedAt = 8_000_000L)))
+        assertTrue(savedRides.isEmpty())
+    }
+
+    @Test
+    fun aDownloadedRideIsMatchedOnceEvenIfDownloadedAgain() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        savedRides.clear()
+        val downloaded = ActivityEntity(
+            id = "downloaded", startedAt = 9_000_000L, endedAt = 9_200_000L, title = "From the cloud",
+            distanceMeters = 2_000.0, movingTimeMs = 200_000L, elapsedTimeMs = 200_000L,
+            avgSpeedMps = 10.0, maxSpeedMps = 10.0, updatedAt = 9_200_000L,
+        )
+        rides.saveDownloadedRide(downloaded, road(9_000_000L))
+        rides.saveDownloadedRide(downloaded, road(9_000_000L)) // already here: not saved or matched again
+        awaitMatching()
+        assertEquals(listOf("downloaded"), savedRides)
+        assertTrue("downloaded" in segments.effortsFor(id).first().map { it.activityId })
+    }
+
+    @Test
+    fun finishingAndRestoringAskForMatchingButRenamingAndDeletingDont() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        rides.rename("first", "Renamed")
+        rides.delete("first")
+        rides.restore("first")
+        // Finished, then restored; not renamed or deleted.
+        assertEquals(listOf("first", "first"), savedRides)
     }
 
     @Test
