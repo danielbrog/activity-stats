@@ -48,7 +48,7 @@ class SegmentDetailViewModel(
 
     private val repository = (application as ActivityStatsApp).segmentRepository
     private val rides = (application as ActivityStatsApp).activityRepository
-    val segmentId: String = savedStateHandle.toRoute<SegmentDetailRoute>().id
+    private val segmentId: String = savedStateHandle.toRoute<SegmentDetailRoute>().id
 
     /** The segment with its line decoded once, not on every change to its efforts. */
     private val segmentWithLine = repository.segment(segmentId)
@@ -71,11 +71,11 @@ class SegmentDetailViewModel(
         viewModelScope.launch { repository.rename(segmentId, name) }
     }
 
-    /** Soft-deletes the segment, then calls [onDeleted] so the screen can close. */
-    fun delete(onDeleted: () -> Unit) {
+    /** Soft-deletes the segment, then calls [onDeleted] with its id so the screen can close. */
+    fun delete(onDeleted: (id: String) -> Unit) {
         viewModelScope.launch {
             repository.delete(segmentId)
-            onDeleted()
+            onDeleted(segmentId)
         }
     }
 

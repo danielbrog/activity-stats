@@ -141,7 +141,7 @@ fun SegmentDetailScreen(
             name = segment.name,
             onConfirm = {
                 showDelete = false
-                viewModel.delete { onDeleted(viewModel.segmentId) }
+                viewModel.delete(onDeleted)
             },
             onDismiss = { showDelete = false },
         )
