@@ -13,20 +13,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +49,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -51,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.danielbrog.activitystats.R
 import com.danielbrog.activitystats.data.SegmentEffortWithRide
 import com.danielbrog.activitystats.data.SegmentEntity
+import com.danielbrog.activitystats.data.SegmentName
 import com.danielbrog.activitystats.history.RideFormat
 import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.segments.EffortSpeed
@@ -67,11 +77,15 @@ import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
  *
  * Like History and Records, shows Undo when a ride opened from here was deleted
  * ([deletedRideId], then [onDeletedRideHandled] so it isn't shown again).
+ *
+ * The ⋮ menu edits the name or deletes the segment; [onDeleted] is called with its id once it
+ * is deleted, so the Segments tab can offer Undo.
  */
 @Composable
 fun SegmentDetailScreen(
     onBack: () -> Unit,
     onOpenRide: (id: String) -> Unit,
+    onDeleted: (id: String) -> Unit,
     deletedRideId: String?,
     onDeletedRideHandled: () -> Unit,
     modifier: Modifier = Modifier,
@@ -80,6 +94,9 @@ fun SegmentDetailScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val unit by viewModel.unit.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showEdit by rememberSaveable { mutableStateOf(false) }
+    var showDelete by rememberSaveable { mutableStateOf(false) }
+    val segment = (state as? SegmentDetailState.Loaded)?.segment
 
     // Same two-step handling as History, so clearing the result can't cancel the bar.
     var undoRideId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -101,9 +118,124 @@ fun SegmentDetailScreen(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        SegmentDetailContent(state, unit, onBack, onOpenRide)
+        SegmentDetailContent(
+            state, unit, onBack, onOpenRide,
+            onEdit = { showEdit = true },
+            onDelete = { showDelete = true },
+        )
         SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
+
+    if (showEdit && segment != null) {
+        EditSegmentDialog(
+            currentName = segment.name,
+            onSave = { name ->
+                viewModel.rename(name)
+                showEdit = false
+            },
+            onDismiss = { showEdit = false },
+        )
+    }
+    if (showDelete && segment != null) {
+        DeleteSegmentDialog(
+            name = segment.name,
+            onConfirm = {
+                showDelete = false
+                viewModel.delete(onDeleted)
+            },
+            onDismiss = { showDelete = false },
+        )
+    }
+}
+
+/** The ⋮ button and its drop-down with Edit and Delete. */
+@Composable
+private fun SegmentMenu(onEdit: () -> Unit, onDelete: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "More options")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Edit") },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_edit), contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onEdit()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = {
+                    Icon(
+                        painterResource(R.drawable.ic_delete),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onDelete()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * Rename dialog, with the same rules as when it was made. Save (or Done on the keyboard) stays
+ * off while the name is blank or unchanged, so an unchanged name isn't saved as an edit.
+ */
+@Composable
+private fun EditSegmentDialog(currentName: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf(currentName) }
+    val cleaned = SegmentName.clean(text)
+    val canSave = cleaned != null && cleaned != currentName
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit segment") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(SegmentName.MAX_LENGTH) },
+                label = { Text("Name") },
+                singleLine = true,
+                isError = cleaned == null,
+                // Road names: "Hill Climb". Done saves, for one hand on the bars.
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Words,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { if (canSave) cleaned?.let(onSave) }),
+                supportingText = {
+                    Text(
+                        if (cleaned == null) "Name can't be blank"
+                        else "${text.length} / ${SegmentName.MAX_LENGTH}"
+                    )
+                },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { cleaned?.let(onSave) }, enabled = canSave) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun DeleteSegmentDialog(name: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete \"$name\"?") },
+        text = { Text("It will be removed from this phone.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -112,6 +244,8 @@ private fun SegmentDetailContent(
     unit: DistanceUnit,
     onBack: () -> Unit,
     onOpenRide: (id: String) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -129,6 +263,7 @@ private fun SegmentDetailContent(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).semantics { heading() },
             )
+            if (state is SegmentDetailState.Loaded) SegmentMenu(onEdit = onEdit, onDelete = onDelete)
         }
         when (state) {
             SegmentDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -294,6 +429,8 @@ private fun SegmentDetailPreview() {
             unit = DistanceUnit.Km,
             onBack = {},
             onOpenRide = {},
+            onEdit = {},
+            onDelete = {},
         )
     }
 }

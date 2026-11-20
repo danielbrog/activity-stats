@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -123,5 +124,54 @@ class SegmentRepositoryTest {
         assertNull(segments.create("Too short", "first", 80, 85)) // 50 m
         assertNull(segments.create("   ", "first", 50, 150)) // no name
         assertTrue(segments.allSegments.first().isEmpty())
+    }
+
+    @Test
+    fun renamingChangesTheNameAndRefusesABlankOne() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        assertTrue(segments.rename(id, "  Hill climb  ", nowMillis = 20_000_000L))
+        val renamed = checkNotNull(segments.segment(id).first()) { "the segment should still be there" }
+        assertEquals("Hill climb", renamed.name)
+        assertEquals(20_000_000L, renamed.updatedAt)
+
+        assertFalse(segments.rename(id, "   ")) // blank
+        assertFalse(segments.rename(id, "Hill climb", nowMillis = 30_000_000L)) // unchanged: not an edit
+        assertEquals(20_000_000L, segments.segment(id).first()?.updatedAt)
+        assertFalse(segments.rename("missing", "Anything")) // no such segment
+    }
+
+    @Test
+    fun deletingHidesASegmentAndRestoringBringsItBackWithItsEfforts() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        rideAlong("second", 5_000_000L)
+        val id = createAndMatch("Road")
+
+        segments.delete(id)
+        assertNull(segments.segment(id).first())
+        assertTrue(segments.summaries.first().isEmpty())
+
+        // Matching a ride again while the segment is deleted leaves its efforts alone.
+        segments.recomputeForRide("second")
+
+        segments.restore(id)
+        assertEquals("Road", segments.segment(id).first()?.name)
+        assertEquals(2, segments.summaries.first().single().effortCount)
+    }
+
+    @Test
+    fun editingASyncedSegmentMarksItWaitingToUpload() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        val sql = db.openHelper.writableDatabase
+        sql.execSQL("UPDATE segments SET syncState = '${SyncState.SYNCED}' WHERE id = '$id'")
+        segments.rename(id, "Hill climb")
+        assertEquals(SyncState.PENDING, segments.segment(id).first()?.syncState)
+
+        // One that never belonged to an account stays on this phone.
+        sql.execSQL("UPDATE segments SET syncState = '${SyncState.LOCAL_ONLY}' WHERE id = '$id'")
+        segments.delete(id)
+        segments.restore(id)
+        assertEquals(SyncState.LOCAL_ONLY, segments.segment(id).first()?.syncState)
     }
 }

@@ -56,6 +56,21 @@ class SegmentRepository(
     /** The ids of new segments whose efforts are still being found, for "Finding efforts…". */
     val finding: StateFlow<Set<String>> = _finding.asStateFlow()
 
+    /**
+     * Saves a new name. False (and nothing saved) if it is blank after cleaning, the same as
+     * now, or there is no such segment.
+     */
+    suspend fun rename(id: String, name: String, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val clean = SegmentName.clean(name) ?: return false
+        return segments.rename(id, clean, nowMillis) > 0
+    }
+
+    /** Soft-deletes a segment: it disappears everywhere, but [restore] brings it back as it was. */
+    suspend fun delete(id: String, nowMillis: Long = System.currentTimeMillis()) = segments.softDelete(id, nowMillis)
+
+    /** Undoes [delete]. */
+    suspend fun restore(id: String, nowMillis: Long = System.currentTimeMillis()) = segments.restore(id, nowMillis)
+
     /** One segment, or null when it is missing or deleted. */
     fun segment(id: String): Flow<SegmentEntity?> = segments.observeSegment(id)
 

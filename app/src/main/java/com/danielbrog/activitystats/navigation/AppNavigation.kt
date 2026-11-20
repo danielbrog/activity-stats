@@ -49,6 +49,9 @@ import com.danielbrog.activitystats.settings.SettingsScreen
 /** Navigation result key: the id of a ride just deleted from its detail screen. */
 private const val DELETED_RIDE_ID = "deletedRideId"
 
+/** Navigation result key: the id of a segment just deleted from its screen. */
+private const val DELETED_SEGMENT_ID = "deletedSegmentId"
+
 /** A tab in the bottom bar. */
 private data class Tab(val route: Any, val label: String, @DrawableRes val icon: Int) {
     /** Whether [destination] is this tab's screen. Works for any route, so a new tab needs no change here. */
@@ -167,9 +170,13 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                 Opaque { LiveScreen(onOpenGpsDetails = { navController.navigate(GpsDetailsRoute) }) }
             }
             composable<ProfileRoute> { entry ->
-                // Set by the detail screen when it deletes a ride, so History can offer Undo.
+                // Set by the ride and segment screens when they delete one, so the tab can
+                // offer Undo.
                 val deletedRideId by entry.savedStateHandle
                     .getStateFlow<String?>(DELETED_RIDE_ID, null)
+                    .collectAsStateWithLifecycle()
+                val deletedSegmentId by entry.savedStateHandle
+                    .getStateFlow<String?>(DELETED_SEGMENT_ID, null)
                     .collectAsStateWithLifecycle()
                 Opaque {
                     ProfileScreen(
@@ -179,6 +186,8 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                         onOpenSettings = { navController.navigate(SettingsRoute) },
                         deletedRideId = deletedRideId,
                         onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                        deletedSegmentId = deletedSegmentId,
+                        onDeletedSegmentHandled = { entry.savedStateHandle[DELETED_SEGMENT_ID] = null },
                     )
                 }
             }
@@ -218,6 +227,11 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                     SegmentDetailScreen(
                         onBack = { navController.popBackStack() },
                         onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                        onDeleted = { id ->
+                            // Segments open from Profile, whose Segments tab offers Undo.
+                            navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_SEGMENT_ID, id)
+                            navController.popBackStack()
+                        },
                         deletedRideId = deletedRideId,
                         onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
                     )

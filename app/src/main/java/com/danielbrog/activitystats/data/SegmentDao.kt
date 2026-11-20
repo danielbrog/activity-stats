@@ -41,6 +41,36 @@ abstract class SegmentDao {
     @Query("SELECT * FROM segments WHERE id = :id AND deletedAt IS NULL")
     abstract fun observeSegment(id: String): Flow<SegmentEntity?>
 
+    // Edits bump updatedAt so sync can tell which copy is newer, and turn an already synced
+    // (or refused) segment back to PENDING so the change gets uploaded. The same as rides.
+
+    /**
+     * Returns how many rows changed: 0 for an unknown id, or when the name is already [name]
+     * (so an unchanged name isn't an edit that needs uploading).
+     */
+    @Query(
+        "UPDATE segments SET name = :name, updatedAt = :now, " +
+            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "ELSE syncState END WHERE id = :id AND name IS NOT :name"
+    )
+    abstract suspend fun rename(id: String, name: String, now: Long): Int
+
+    /** Soft delete: the row and its efforts stay, marked with when it was deleted. */
+    @Query(
+        "UPDATE segments SET deletedAt = :now, updatedAt = :now, " +
+            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "ELSE syncState END WHERE id = :id"
+    )
+    abstract suspend fun softDelete(id: String, now: Long)
+
+    /** Undoes a soft delete; its efforts come back with it. */
+    @Query(
+        "UPDATE segments SET deletedAt = NULL, updatedAt = :now, " +
+            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "ELSE syncState END WHERE id = :id"
+    )
+    abstract suspend fun restore(id: String, now: Long)
+
     /** Every segment not deleted, by name. Updates itself. */
     @Query("SELECT * FROM segments WHERE deletedAt IS NULL ORDER BY name COLLATE NOCASE")
     abstract fun observeSegments(): Flow<List<SegmentEntity>>
@@ -64,7 +94,14 @@ abstract class SegmentDao {
     @Query("DELETE FROM segment_efforts WHERE segmentId = :segmentId")
     abstract suspend fun deleteEffortsForSegment(segmentId: String)
 
-    @Query("DELETE FROM segment_efforts WHERE activityId = :activityId")
+    /**
+     * Removes one ride's efforts on segments not deleted. A deleted segment keeps its efforts,
+     * so Undo brings it back whole even if the ride was matched again in between.
+     */
+    @Query(
+        "DELETE FROM segment_efforts WHERE activityId = :activityId " +
+            "AND segmentId IN (SELECT id FROM segments WHERE deletedAt IS NULL)"
+    )
     abstract suspend fun deleteEffortsForRide(activityId: String)
 
     /** Replaces every effort on one segment, in one go. */

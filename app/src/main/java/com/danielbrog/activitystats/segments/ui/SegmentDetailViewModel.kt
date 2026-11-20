@@ -66,6 +66,19 @@ class SegmentDetailViewModel(
         .map { it.unit }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DistanceUnit.Km)
 
+    /** Saves a new name; ignored if it is blank after cleaning. */
+    fun rename(name: String) {
+        viewModelScope.launch { repository.rename(segmentId, name) }
+    }
+
+    /** Soft-deletes the segment, then calls [onDeleted] with its id so the screen can close. */
+    fun delete(onDeleted: (id: String) -> Unit) {
+        viewModelScope.launch {
+            repository.delete(segmentId)
+            onDeleted(segmentId)
+        }
+    }
+
     /** Undoes deleting a ride opened from this screen; its effort comes back with it. */
     fun restoreRide(id: String) {
         viewModelScope.launch { rides.restore(id) }
