@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -31,7 +31,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -66,6 +65,7 @@ import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.segments.EffortSpeed
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
+import com.danielbrog.activitystats.ui.BestLabel
 import com.danielbrog.activitystats.ui.RouteMap
 import com.danielbrog.activitystats.ui.rememberRouteMapState
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
@@ -326,8 +326,10 @@ private fun LoadedSegment(state: SegmentDetailState.Loaded, unit: DistanceUnit, 
                 )
             }
         } else {
-            itemsIndexed(state.efforts, key = { _, e -> "${e.activityId}/${e.occurrence}" }) { index, effort ->
-                EffortRow(effort, distance, isBest = index == 0, unit, onClick = { onOpenRide(effort.activityId) })
+            // Every effort with the fastest time is Best (ties are both best), as on the ride screen.
+            val bestMs = state.efforts.first().elapsedMs
+            items(state.efforts, key = { "${it.activityId}/${it.occurrence}" }) { effort ->
+                EffortRow(effort, distance, isBest = effort.elapsedMs == bestMs, unit, onClick = { onOpenRide(effort.activityId) })
             }
         }
     }
@@ -392,18 +394,6 @@ private fun EffortRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun BestLabel() {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
-        Text(
-            "Best",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
     }
 }
 

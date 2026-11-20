@@ -10,7 +10,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.data.ActivityEntity
+import com.danielbrog.activitystats.data.RideSegmentEffort
 import com.danielbrog.activitystats.data.RideTitle
+import com.danielbrog.activitystats.export.GpxWriter
 import com.danielbrog.activitystats.location.Route
 import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.navigation.RideDetailRoute
@@ -18,23 +20,22 @@ import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.ElevationSample
-import com.danielbrog.activitystats.stats.Split
-import com.danielbrog.activitystats.stats.Splits
 import com.danielbrog.activitystats.stats.ElevationSeries
 import com.danielbrog.activitystats.stats.SpeedSample
 import com.danielbrog.activitystats.stats.SpeedSeries
-import com.danielbrog.activitystats.export.GpxWriter
+import com.danielbrog.activitystats.stats.Split
+import com.danielbrog.activitystats.stats.Splits
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface RideDetailState {
     data object Loading : RideDetailState
@@ -75,6 +76,7 @@ class RideDetailViewModel(
 ) : AndroidViewModel(application) {
 
     private val repository = (application as ActivityStatsApp).activityRepository
+    private val segmentRepository = (application as ActivityStatsApp).segmentRepository
     val rideId: String = savedStateHandle.toRoute<RideDetailRoute>().id
 
     private val track = MutableStateFlow<RideTrack?>(null)
@@ -90,6 +92,18 @@ class RideDetailViewModel(
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), RideDetailState.Loading)
+
+    /**
+     * The segments this ride covered, in riding order. Kept apart from [state] so the stats
+     * and charts don't redraw each time an effort changes (matching finishing, a segment renamed).
+     */
+    val segmentEfforts: StateFlow<List<RideSegmentEffort>> = segmentRepository.effortsForRide(rideId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+
+    /** Undoes deleting a segment opened from this ride. */
+    fun restoreSegment(id: String) {
+        viewModelScope.launch { segmentRepository.restore(id) }
+    }
 
     private val settingsRepository = DisplaySettingsRepository(application)
 
