@@ -56,6 +56,7 @@ import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.stats.SpeedDisplay
+import com.danielbrog.activitystats.ui.RouteMap
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
@@ -213,7 +214,7 @@ private fun LoadedRide(
             contentAlignment = Alignment.Center,
         ) { Text("No route recorded", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     } else {
-        RideMap(route, modifier = mapModifier)
+        RouteMap(route, modifier = mapModifier)
     }
 
     Spacer(Modifier.height(16.dp))

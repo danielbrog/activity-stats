@@ -35,3 +35,7 @@ object SettingsRoute
 /** Making a segment from part of a ride, by the ride's activity id; opened from the ride. */
 @Serializable
 data class CreateSegmentRoute(val rideId: String)
+
+/** One segment and its efforts, by its id; opened from the Segments tab. */
+@Serializable
+data class SegmentDetailRoute(val id: String)

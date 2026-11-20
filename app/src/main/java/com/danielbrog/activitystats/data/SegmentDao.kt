@@ -37,6 +37,10 @@ abstract class SegmentDao {
     @Query("SELECT * FROM segments WHERE id = :id")
     abstract suspend fun getSegment(id: String): SegmentEntity?
 
+    /** One segment, or null when it is missing or deleted. Updates itself. */
+    @Query("SELECT * FROM segments WHERE id = :id AND deletedAt IS NULL")
+    abstract fun observeSegment(id: String): Flow<SegmentEntity?>
+
     /** Every segment not deleted, by name. Updates itself. */
     @Query("SELECT * FROM segments WHERE deletedAt IS NULL ORDER BY name COLLATE NOCASE")
     abstract fun observeSegments(): Flow<List<SegmentEntity>>

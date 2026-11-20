@@ -1,6 +1,7 @@
 package com.danielbrog.activitystats.segments.ui
 
 import android.app.Application
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -55,13 +59,20 @@ class SegmentsViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DistanceUnit.Km)
 }
 
-/** The Segments tab inside Profile: every segment, by name, with your best time on it. */
+/**
+ * The Segments tab inside Profile: every segment, by name, with your best time on it. Tapping
+ * one opens it ([onOpenSegment], with its id).
+ */
 @Composable
-fun SegmentsTab(modifier: Modifier = Modifier, viewModel: SegmentsViewModel = viewModel()) {
+fun SegmentsTab(
+    onOpenSegment: (id: String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: SegmentsViewModel = viewModel(),
+) {
     val segments by viewModel.segments.collectAsStateWithLifecycle()
     val finding by viewModel.finding.collectAsStateWithLifecycle()
     val unit by viewModel.unit.collectAsStateWithLifecycle()
-    SegmentsContent(segments, finding, unit, modifier)
+    SegmentsContent(segments, finding, unit, onOpenSegment, modifier)
 }
 
 @Composable
@@ -69,6 +80,7 @@ private fun SegmentsContent(
     segments: List<SegmentSummary>?,
     finding: Set<String>,
     unit: DistanceUnit,
+    onOpenSegment: (id: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when {
@@ -88,14 +100,20 @@ private fun SegmentsContent(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(segments, key = { it.id }) { SegmentCard(it, isFinding = it.id in finding, unit) }
+            items(segments, key = { it.id }) { SegmentCard(it, isFinding = it.id in finding, unit, onClick = { onOpenSegment(it.id) }) }
         }
     }
 }
 
 @Composable
-private fun SegmentCard(segment: SegmentSummary, isFinding: Boolean, unit: DistanceUnit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun SegmentCard(segment: SegmentSummary, isFinding: Boolean, unit: DistanceUnit, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Clip first, so the tap ripple follows the card's rounded corners.
+            .clip(CardDefaults.shape)
+            .clickable(onClickLabel = "Open segment", role = Role.Button, onClick = onClick),
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(segment.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
@@ -127,6 +145,7 @@ private fun SegmentsPreview() {
             ),
             finding = setOf("b"),
             unit = DistanceUnit.Km,
+            onOpenSegment = {},
         )
     }
 }
@@ -134,5 +153,5 @@ private fun SegmentsPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun SegmentsEmptyPreview() {
-    ActivityStatsTheme { SegmentsContent(emptyList(), emptySet(), DistanceUnit.Km) }
+    ActivityStatsTheme { SegmentsContent(emptyList(), emptySet(), DistanceUnit.Km, onOpenSegment = {}) }
 }

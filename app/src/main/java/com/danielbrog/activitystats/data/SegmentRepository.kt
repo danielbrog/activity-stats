@@ -56,6 +56,9 @@ class SegmentRepository(
     /** The ids of new segments whose efforts are still being found, for "Finding efforts…". */
     val finding: StateFlow<Set<String>> = _finding.asStateFlow()
 
+    /** One segment, or null when it is missing or deleted. */
+    fun segment(id: String): Flow<SegmentEntity?> = segments.observeSegment(id)
+
     /** A segment's efforts from rides not deleted, fastest first. */
     fun effortsFor(segmentId: String): Flow<List<SegmentEffortWithRide>> = segments.observeEfforts(segmentId)
 

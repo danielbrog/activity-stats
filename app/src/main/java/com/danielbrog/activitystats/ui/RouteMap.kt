@@ -1,4 +1,4 @@
-package com.danielbrog.activitystats.history
+package com.danielbrog.activitystats.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -21,6 +21,7 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.maps.android.compose.CameraPositionState
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
@@ -28,16 +29,26 @@ import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberUpdatedMarkerState
 
-/** Zoom for a ride with a single point: roughly a few city blocks. */
+/** Zoom for a route with a single point: roughly a few city blocks. */
 private const val SINGLE_POINT_ZOOM = 16f
 
 /**
- * A saved ride's whole route, zoomed to fit, with start and finish markers. [route] has one
- * line per stretch between manual pauses, drawn separately so a pause shows as a break.
- * Pan and zoom freely; it doesn't follow anything.
+ * A saved route (a ride, or a segment), zoomed to fit, with pins at its start and end titled
+ * [startTitle] and [endTitle]. [lines] has one line per stretch between manual pauses, drawn
+ * separately so a pause shows as a break. Pan and zoom freely; it doesn't follow anything.
+ *
+ * Pass in a [cameraPositionState] remembered higher up when the map can be thrown away and
+ * rebuilt (in a scrolling list, say): the rebuilt map then opens where it was, keeping any
+ * pan or zoom, instead of fitting the route again.
  */
 @Composable
-fun RideMap(route: List<List<RoutePoint>>, modifier: Modifier = Modifier) {
+fun RouteMap(
+    lines: List<List<RoutePoint>>,
+    modifier: Modifier = Modifier,
+    startTitle: String = "Start",
+    endTitle: String = "Finish",
+    cameraPositionState: CameraPositionState = rememberCameraPositionState(),
+) {
     if (LocalInspectionMode.current) {
         Box(
             modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
@@ -46,16 +57,16 @@ fun RideMap(route: List<List<RoutePoint>>, modifier: Modifier = Modifier) {
         return
     }
 
-    val lines = remember(route) { route.map { line -> line.map { LatLng(it.latitude, it.longitude) } } }
-    val points = remember(lines) { lines.flatten() }
-    val bounds = remember(route) { RouteBounds.of(route.flatten()) }
-    val cameraPositionState = rememberCameraPositionState()
+    val latLngLines = remember(lines) { lines.map { line -> line.map { LatLng(it.latitude, it.longitude) } } }
+    val points = remember(latLngLines) { latLngLines.flatten() }
+    val bounds = remember(lines) { RouteBounds.of(lines.flatten()) }
     var mapLoaded by remember { mutableStateOf(false) }
     val paddingPx = with(LocalDensity.current) { 48.dp.roundToPx() }
 
-    // Fitting to bounds needs the map's size, so wait until it has loaded.
+    // Fitting to bounds needs the map's size, so wait until it has loaded. A camera that has
+    // been placed before (zoomed in from the whole-world view it starts at) is left alone.
     LaunchedEffect(mapLoaded, bounds) {
-        if (!mapLoaded || bounds == null) return@LaunchedEffect
+        if (!mapLoaded || bounds == null || cameraPositionState.position.zoom > 0f) return@LaunchedEffect
         val update = if (bounds.isSinglePoint) {
             CameraUpdateFactory.newLatLngZoom(LatLng(bounds.south, bounds.west), SINGLE_POINT_ZOOM)
         } else {
@@ -73,20 +84,20 @@ fun RideMap(route: List<List<RoutePoint>>, modifier: Modifier = Modifier) {
         uiSettings = MapUiSettings(zoomControlsEnabled = false, mapToolbarEnabled = false),
         onMapLoaded = { mapLoaded = true },
     ) {
-        lines.filter { it.size >= 2 }.forEach { line ->
+        latLngLines.filter { it.size >= 2 }.forEach { line ->
             Polyline(points = line, color = MaterialTheme.colorScheme.primary, width = 14f)
         }
         points.firstOrNull()?.let { start ->
             Marker(
                 state = rememberUpdatedMarkerState(position = start),
-                title = "Start",
+                title = startTitle,
                 icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
             )
         }
         if (points.size >= 2) {
             Marker(
                 state = rememberUpdatedMarkerState(position = points.last()),
-                title = "Finish",
+                title = endTitle,
                 icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED),
             )
         }
