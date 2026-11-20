@@ -84,9 +84,16 @@ class SegmentRepositoryTest {
         assertEquals(setOf("first", "second"), efforts.map { it.activityId }.toSet())
         efforts.forEach { assertEquals(100_000.0, it.elapsedMs.toDouble(), 1_500.0) }
         assertEquals(listOf("Road"), segments.allSegments.first().map { it.name })
+        assertEquals("Road", segments.segment(created.id).first()?.name)
+        assertNull(segments.segment("missing").first())
         val summary = segments.summaries.first().single()
         assertEquals(2, summary.effortCount)
         assertEquals(100_000.0, summary.bestMs!!.toDouble(), 1_500.0)
+
+        // Last, since it hides the segment from everything above: once deleted, it's gone.
+        db.openHelper.writableDatabase.execSQL("UPDATE segments SET deletedAt = 1 WHERE id = '${created.id}'")
+        assertNull(segments.segment(created.id).first())
+        assertTrue(segments.summaries.first().isEmpty())
     }
 
     @Test

@@ -38,7 +38,7 @@ private enum class ProfileTab(val label: String) { History("History"), Segments(
 
 /**
  * The Profile tab: a header with the account and settings, then History, Segments and Stats tabs.
- * Tap a tab or swipe between them; the chosen one is kept while a ride is open on top.
+ * Tap a tab or swipe between them; the chosen one is kept while a ride or segment is open on top.
  * Messages, like "Ride deleted · Undo", are shown here rather than in a tab, so they stay
  * put when you swipe.
  *
@@ -48,6 +48,7 @@ private enum class ProfileTab(val label: String) { History("History"), Segments(
 @Composable
 fun ProfileScreen(
     onOpenRide: (id: String) -> Unit,
+    onOpenSegment: (id: String) -> Unit,
     onOpenAccount: () -> Unit,
     onOpenSettings: () -> Unit,
     deletedRideId: String?,
@@ -68,7 +69,7 @@ fun ProfileScreen(
                 snackbarHostState = snackbarHostState,
             )
         },
-        segments = { SegmentsTab() },
+        segments = { SegmentsTab(onOpenSegment = onOpenSegment) },
         stats = { StatsTab() },
     )
 }
