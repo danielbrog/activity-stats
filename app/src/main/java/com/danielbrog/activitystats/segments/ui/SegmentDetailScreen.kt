@@ -57,8 +57,8 @@ import com.danielbrog.activitystats.segments.EffortSpeed
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.RouteMap
+import com.danielbrog.activitystats.ui.rememberRouteMapState
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
-import com.google.maps.android.compose.rememberCameraPositionState
 
 /**
  * One segment: its line on a map, its distance, best time and number of efforts, then every
@@ -150,13 +150,13 @@ private fun SegmentDetailContent(
 @Composable
 private fun LoadedSegment(state: SegmentDetailState.Loaded, unit: DistanceUnit, onOpenRide: (id: String) -> Unit) {
     val distance = state.segment.distanceMeters
-    val camera = rememberCameraPositionState()
+    val mapState = rememberRouteMapState()
     val best = when {
         state.isFinding -> "…"
         else -> state.efforts.firstOrNull()?.let { Format.clock(it.elapsedMs) } ?: "–"
     }
     LazyColumn(
-        userScrollEnabled = !camera.isMoving,
+        userScrollEnabled = !mapState.camera.isMoving,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -166,7 +166,7 @@ private fun LoadedSegment(state: SegmentDetailState.Loaded, unit: DistanceUnit, 
                 modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(16.dp)),
                 startTitle = "Segment start",
                 endTitle = "Segment end",
-                cameraPositionState = camera,
+                state = mapState,
             )
         }
         item {
