@@ -66,26 +66,30 @@ class SegmentRepositoryTest {
     }
 
     /** 2 km north along a road [eastMeters] east of the origin, a fix every 10 m and every second. */
-    private fun road(startMillis: Long, eastMeters: Double = 0.0) = (0..200).map { i ->
-        GpsData(i + 1, startMillis + i * 1_000L, lat0 + i * 10.0 / perDegLat, lon0 + eastMeters / perDegLon,
-            5f, 10f, FixStatus.Kept)
-    }
+    private fun road(startMillis: Long, eastMeters: Double = 0.0, msPerFix: Long = 1_000L, firstSeq: Int = 1, stretch: Int = 0) =
+        (0..200).map { i ->
+            GpsData(firstSeq + i, startMillis + i * msPerFix, lat0 + i * 10.0 / perDegLat, lon0 + eastMeters / perDegLon,
+                5f, 10f, FixStatus.Kept, stretch = stretch)
+        }
 
-    /** A finished ride along [road], then waits for its matching. */
-    private suspend fun rideAlong(id: String, startMillis: Long, eastMeters: Double = 0.0) {
+    /** A finished ride along [road] ([msPerFix] apart: 500 is twice as fast), then waits for its matching. */
+    private suspend fun rideAlong(id: String, startMillis: Long, eastMeters: Double = 0.0, msPerFix: Long = 1_000L) =
+        finishRide(id, startMillis, road(startMillis, eastMeters, msPerFix))
+
+    private suspend fun finishRide(id: String, startMillis: Long, fixes: List<GpsData>) {
+        val end = fixes.last().timeMillis
         rides.startActivity(id, startMillis)
-        val fixes = road(startMillis, eastMeters)
-        rides.savePoints(id, fixes, ActivityStats(), startMillis + 200_000L)
-        rides.finishActivity(id, startMillis + 200_000L, ActivityStats(distanceMeters = 2_000.0))
+        rides.savePoints(id, fixes, ActivityStats(), end)
+        rides.finishActivity(id, end, ActivityStats(distanceMeters = 2_000.0))
         awaitMatching()
     }
 
     /** Waits for every background match started so far. */
     private suspend fun awaitMatching() = matching.toList().joinAll()
 
-    /** Makes a segment of fixes 50 to 150 of the ride "first" and waits for its efforts. */
-    private suspend fun createAndMatch(name: String): String {
-        val created = requireNotNull(segments.create(name, "first", 50, 150))
+    /** Makes a segment of fixes [from] to [to] (1 km by default) of the ride "first" and waits for its efforts. */
+    private suspend fun createAndMatch(name: String, from: Int = 50, to: Int = 150): String {
+        val created = requireNotNull(segments.create(name, "first", from, to))
         created.matching.join()
         return created.id
     }
@@ -268,5 +272,51 @@ class SegmentRepositoryTest {
         segments.delete(id)
         segments.restore(id)
         assertEquals(SyncState.LOCAL_ONLY, segments.segment(id).first()?.syncState)
+    }
+
+    // --- Segments on a ride
+
+    @Test
+    fun aRidesSegmentsComeInTheOrderItRodeThem() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        createAndMatch("Late", 120, 170)
+        createAndMatch("Early", 20, 70)
+        val efforts = segments.effortsForRide("first").first()
+        assertEquals(listOf("Early", "Late"), efforts.map { it.segmentName })
+        assertTrue(efforts.all { it.isBest }) // the only ride on each
+    }
+
+    @Test
+    fun aSegmentRiddenTwiceInOneRideIsTwoLaps() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        // Up the road, a pause, then up it again.
+        val twice = road(5_000_000L) + road(5_500_000L, firstSeq = 202, stretch = 1)
+        finishRide("twice", 5_000_000L, twice)
+        val efforts = segments.effortsForRide("twice").first()
+        assertEquals(listOf(id, id), efforts.map { it.segmentId })
+        assertEquals(listOf(0, 1), efforts.map { it.occurrence })
+    }
+
+    @Test
+    fun bestMovesToTheFasterRideAndBackWhenItIsDeleted() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        createAndMatch("Road")
+        rideAlong("fast", 5_000_000L, msPerFix = 500L) // twice as fast
+        assertFalse(segments.effortsForRide("first").first().single().isBest)
+        assertTrue(segments.effortsForRide("fast").first().single().isBest)
+
+        rides.delete("fast")
+        assertTrue(segments.effortsForRide("first").first().single().isBest)
+    }
+
+    @Test
+    fun aDeletedSegmentLeavesTheRideAndComesBackWithUndo() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        segments.delete(id)
+        assertTrue(segments.effortsForRide("first").first().isEmpty())
+        segments.restore(id)
+        assertEquals(listOf("Road"), segments.effortsForRide("first").first().map { it.segmentName })
     }
 }

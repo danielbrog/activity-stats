@@ -180,8 +180,8 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                     .collectAsStateWithLifecycle()
                 Opaque {
                     ProfileScreen(
-                        onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
-                        onOpenSegment = { id -> navController.navigate(SegmentDetailRoute(id)) },
+                        onOpenRide = { id -> navController.openRide(id) },
+                        onOpenSegment = { id -> navController.openSegment(id) },
                         onOpenAccount = { navController.navigate(AccountRoute) },
                         onOpenSettings = { navController.navigate(SettingsRoute) },
                         deletedRideId = deletedRideId,
@@ -197,17 +197,24 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                     .collectAsStateWithLifecycle()
                 Opaque {
                     RecordsScreen(
-                        onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                        onOpenRide = { id -> navController.openRide(id) },
                         deletedRideId = deletedRideId,
                         onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
                     )
                 }
             }
-            composable<RideDetailRoute> {
+            composable<RideDetailRoute> { entry ->
+                // Set by the segment screen when a segment opened from this ride is deleted, for Undo.
+                val deletedSegmentId by entry.savedStateHandle
+                    .getStateFlow<String?>(DELETED_SEGMENT_ID, null)
+                    .collectAsStateWithLifecycle()
                 Opaque {
                     RideDetailScreen(
                         onBack = { navController.popBackStack() },
                         onCreateSegment = { id -> navController.navigate(CreateSegmentRoute(id)) },
+                        onOpenSegment = { id -> navController.openSegment(id) },
+                        deletedSegmentId = deletedSegmentId,
+                        onDeletedSegmentHandled = { entry.savedStateHandle[DELETED_SEGMENT_ID] = null },
                         onDeleted = { id ->
                             navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_RIDE_ID, id)
                             navController.popBackStack()
@@ -226,9 +233,9 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                 Opaque {
                     SegmentDetailScreen(
                         onBack = { navController.popBackStack() },
-                        onOpenRide = { id -> navController.navigate(RideDetailRoute(id)) },
+                        onOpenRide = { id -> navController.openRide(id) },
                         onDeleted = { id ->
-                            // Segments open from Profile, whose Segments tab offers Undo.
+                            // Segments open from Profile or a ride; both offer Undo.
                             navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_SEGMENT_ID, id)
                             navController.popBackStack()
                         },
@@ -248,6 +255,24 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
             }
         }
     }
+}
+
+// --- Rides and segments: one screen of each at most ---
+// A ride opens segments and a segment opens rides, so without a rule they could stack up
+// forever (ride → segment → ride → …). Instead there is never more than one ride screen and
+// one segment screen: opening the same one again goes back to it; opening a different one
+// replaces the open one (and anything above it). Back always reaches the tab in two steps.
+
+/** Opens ride [id]: back to it if it's already open, otherwise in place of any open ride. */
+private fun NavHostController.openRide(id: String) {
+    if (popBackStack(RideDetailRoute(id), inclusive = false)) return
+    navigate(RideDetailRoute(id)) { popUpTo<RideDetailRoute> { inclusive = true } }
+}
+
+/** Opens segment [id]: back to it if it's already open, otherwise in place of any open segment. */
+private fun NavHostController.openSegment(id: String) {
+    if (popBackStack(SegmentDetailRoute(id), inclusive = false)) return
+    navigate(SegmentDetailRoute(id)) { popUpTo<SegmentDetailRoute> { inclusive = true } }
 }
 
 /**

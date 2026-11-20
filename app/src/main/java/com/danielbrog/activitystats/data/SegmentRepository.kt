@@ -74,6 +74,9 @@ class SegmentRepository(
     /** One segment, or null when it is missing or deleted. */
     fun segment(id: String): Flow<SegmentEntity?> = segments.observeSegment(id)
 
+    /** One ride's efforts on segments not deleted, in riding order; see [SegmentDao.observeEffortsForRide]. */
+    fun effortsForRide(rideId: String): Flow<List<RideSegmentEffort>> = segments.observeEffortsForRide(rideId)
+
     /** A segment's efforts from rides not deleted, fastest first. */
     fun effortsFor(segmentId: String): Flow<List<SegmentEffortWithRide>> = segments.observeEfforts(segmentId)
 

@@ -27,6 +27,20 @@ data class SegmentSummary(
     val effortCount: Int,
 )
 
+/** One of a ride's efforts, with its segment's name and length, for the ride screen. */
+data class RideSegmentEffort(
+    val segmentId: String,
+    val segmentName: String,
+    /** The segment's length, for average speed. */
+    val distanceMeters: Double,
+    /** 0, 1, 2… for each time this ride covered the segment (laps). */
+    val occurrence: Int,
+    val startedAt: Long,
+    val elapsedMs: Long,
+    /** True when no ride (not deleted) has a faster effort on this segment; ties are both best. */
+    val isBest: Boolean,
+)
+
 /** Queries on `segments` and `segment_efforts`. */
 @Dao
 abstract class SegmentDao {
@@ -126,4 +140,19 @@ abstract class SegmentDao {
             "ORDER BY e.elapsedMs, e.startedAt"
     )
     abstract fun observeEfforts(segmentId: String): Flow<List<SegmentEffortWithRide>>
+
+    /**
+     * One ride's efforts on segments not deleted, in the order it rode them, each marked when
+     * it is that segment's best. Updates itself, including when another ride takes the best.
+     */
+    @Query(
+        "SELECT e.segmentId, s.name AS segmentName, s.distanceMeters, e.occurrence, e.startedAt, e.elapsedMs, " +
+            "e.elapsedMs = (SELECT MIN(b.elapsedMs) FROM segment_efforts b JOIN activities a ON a.id = b.activityId " +
+            "WHERE b.segmentId = e.segmentId AND a.deletedAt IS NULL) AS isBest " +
+            "FROM segment_efforts e JOIN segments s ON s.id = e.segmentId " +
+            "WHERE e.activityId = :rideId AND s.deletedAt IS NULL " +
+            // Name, then id, settle segments that start at the same spot, so rows never swap.
+            "ORDER BY e.startedAt, s.name COLLATE NOCASE, e.segmentId"
+    )
+    abstract fun observeEffortsForRide(rideId: String): Flow<List<RideSegmentEffort>>
 }
