@@ -5,21 +5,6 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/**
- * Sync states from the build guide's data model. LOCAL_ONLY: no account, stays on this phone.
- * PENDING: belongs to an account and is waiting to upload. SYNCED: the cloud has this copy.
- * FAILED: the server refused it; it waits until it is edited or Sync now is pressed.
- */
-object SyncState {
-    const val LOCAL_ONLY = "LOCAL_ONLY"
-    const val PENDING = "PENDING"
-    const val SYNCED = "SYNCED"
-    const val FAILED = "FAILED"
-
-    /** A new ride waits to upload if it has an owner, and stays on the phone if not. */
-    fun forNewRide(userId: String?): String = if (userId == null) LOCAL_ONLY else PENDING
-}
-
 /** Activity types from the build guide. Rides are the default; the others come with editing. */
 object ActivityType {
     const val RIDE = "ride"
@@ -56,7 +41,7 @@ data class ActivityEntity(
     val updatedAt: Long,
     /** Soft delete, so deletions reach other devices. */
     val deletedAt: Long? = null,
-    val syncState: String = SyncState.LOCAL_ONLY,
+    val syncState: SyncState = SyncState.LOCAL_ONLY,
     /**
      * True once the ride's track file is in the cloud. A finished ride's track never changes,
      * so it is uploaded once; later edits only re-send the summary.
@@ -111,9 +96,13 @@ data class TrackPointEntity(
 )
 
 /**
- * A road segment the rider made from part of one of their rides. Rides that cover it get a
- * [SegmentEffortEntity]. The user's own data, with the same sync fields as an activity.
- * Where it is (its ends and area) comes from [path]; see [toPath].
+ * A road segment the rider made from part of one of their rides: your own segments only
+ * (downloaded public ones are [VerifiedSegmentEntity]). Rides of the same [sport] that cover
+ * it get a [SegmentEffortEntity]. The user's own data, with the same sync fields as an
+ * activity. Where it is (its ends and area) comes from [path]; see [toPath].
+ *
+ * The review fields ([status] to [verifiedSegmentId]) are a copy of what the server decided;
+ * on the phone only Submit and Withdraw change them.
  */
 @Entity(tableName = "segments", indices = [Index("deletedAt")])
 data class SegmentEntity(
@@ -128,7 +117,53 @@ data class SegmentEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val deletedAt: Long? = null,
-    val syncState: String = SyncState.LOCAL_ONLY,
+    val syncState: SyncState = SyncState.LOCAL_ONLY,
+    /** An [ActivityType]: only rides of this type are matched. Taken from the ride it was made from. */
+    @ColumnInfo(defaultValue = "'${ActivityType.RIDE}'")
+    val sport: String = ActivityType.RIDE,
+    /** Stored as its name; the default must be [SegmentStatus.PRIVATE]'s (an enum name isn't a constant). */
+    @ColumnInfo(defaultValue = "'PRIVATE'")
+    val status: SegmentStatus = SegmentStatus.PRIVATE,
+    val submittedAt: Long? = null,
+    /** When an admin approved, rejected or unpublished it. */
+    val decidedAt: Long? = null,
+    /** The admin's reason, when rejected or unpublished. */
+    val reviewNote: String? = null,
+    /** The verified copy it became, once approved. */
+    val verifiedSegmentId: String? = null,
+)
+
+/**
+ * A verified public segment, downloaded from the server's catalogue by map tile. Its DAO has
+ * no edit queries: it only saves what the server sent and removes what it no longer lists. Its [path]
+ * never changes for an [id]; an admin can change only its [name] (which bumps [version]).
+ */
+@Entity(tableName = "verified_segments")
+data class VerifiedSegmentEntity(
+    /** The server's id: never the same as a personal segment's. */
+    @PrimaryKey val id: String,
+    val name: String,
+    val path: String,
+    val distanceMeters: Double,
+    /** An [ActivityType]. */
+    val sport: String,
+    /** Its box, for a quick nearby check without decoding [path], and to know its tiles. */
+    val minLat: Double,
+    val maxLat: Double,
+    val minLon: Double,
+    val maxLon: Double,
+    val version: Int,
+    val verifiedAt: Long,
+    val updatedAt: Long,
+    /** When it was last downloaded, for clearing out ones not needed lately. */
+    val cachedAt: Long,
+)
+
+/** A catalogue tile (a 4-character geohash, about 39 × 20 km) and when it was last downloaded. */
+@Entity(tableName = "catalog_tiles")
+data class CatalogTileEntity(
+    @PrimaryKey val tile: String,
+    val fetchedAt: Long,
 )
 
 /**

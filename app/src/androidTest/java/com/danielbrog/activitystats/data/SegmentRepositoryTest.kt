@@ -274,6 +274,38 @@ class SegmentRepositoryTest {
         assertEquals(SyncState.LOCAL_ONLY, segments.segment(id).first()?.syncState)
     }
 
+    // --- Sport
+
+    /** An imported run along the same road as [rideAlong], so only the sport differs. */
+    private suspend fun runAlong(startMillis: Long): String {
+        val track = GpxTrack("A run", ActivityType.RUN, (0..200).map { i ->
+            GpxPoint(lat0 + i * 10.0 / perDegLat, lon0, elevation = null, timeMillis = startMillis + i * 1_000L)
+        })
+        val imported = rides.importTrack(track) as ImportResult.Imported
+        awaitMatching()
+        return imported.id
+    }
+
+    @Test
+    fun aSegmentMadeFromARunIsARunSegmentAndOnlyRunsCount() = runBlocking {
+        val runId = runAlong(1_000_000L)
+        rideAlong("ride", 5_000_000L) // the same road, on a bike
+        val created = requireNotNull(segments.create("Run route", runId, 50, 150))
+        created.matching.join()
+        assertEquals(ActivityType.RUN, segments.segment(created.id).first()?.sport)
+        assertEquals(listOf(runId), segments.effortsFor(created.id).first().map { it.activityId })
+    }
+
+    @Test
+    fun aRunDoesNotCountOnARideSegment() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        assertEquals(ActivityType.RIDE, segments.segment(id).first()?.sport)
+        val runId = runAlong(5_000_000L) // matched automatically on import
+        assertTrue(segments.effortsForRide(runId).first().isEmpty())
+        assertEquals(listOf("first"), segments.effortsFor(id).first().map { it.activityId })
+    }
+
     // --- Segments on a ride
 
     @Test

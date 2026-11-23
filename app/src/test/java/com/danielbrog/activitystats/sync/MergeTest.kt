@@ -14,7 +14,7 @@ class MergeTest {
         deletedAt = deletedAt, syncedAt = 9_000L,
     )
 
-    private fun local(updatedAt: Long, syncState: String = SyncState.SYNCED, deletedAt: Long? = null) =
+    private fun local(updatedAt: Long, syncState: SyncState = SyncState.SYNCED, deletedAt: Long? = null) =
         ActivityEntity(id = "a", startedAt = 1_000L, endedAt = 2_000L, title = "Phone", updatedAt = updatedAt,
             syncState = syncState, deletedAt = deletedAt)
 

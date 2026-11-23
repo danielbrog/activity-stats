@@ -64,7 +64,7 @@ abstract class SegmentDao {
      */
     @Query(
         "UPDATE segments SET name = :name, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
             "ELSE syncState END WHERE id = :id AND name IS NOT :name"
     )
     abstract suspend fun rename(id: String, name: String, now: Long): Int
@@ -72,7 +72,7 @@ abstract class SegmentDao {
     /** Soft delete: the row and its efforts stay, marked with when it was deleted. */
     @Query(
         "UPDATE segments SET deletedAt = :now, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun softDelete(id: String, now: Long)
@@ -80,7 +80,7 @@ abstract class SegmentDao {
     /** Undoes a soft delete; its efforts come back with it. */
     @Query(
         "UPDATE segments SET deletedAt = NULL, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun restore(id: String, now: Long)

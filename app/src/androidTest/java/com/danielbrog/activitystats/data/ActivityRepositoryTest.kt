@@ -176,7 +176,7 @@ class ActivityRepositoryTest {
         assertEquals(SyncState.PENDING, repo.getActivity("synced")!!.syncState)
     }
 
-    private suspend fun insertFinished(id: String, syncState: String, userId: String? = "me", elevation: Double? = 10.0) =
+    private suspend fun insertFinished(id: String, syncState: SyncState, userId: String? = "me", elevation: Double? = 10.0) =
         db.activityDao().insertActivity(
             ActivityEntity(
                 id = id, userId = userId, startedAt = start, endedAt = start + 60_000, title = "Ride",
