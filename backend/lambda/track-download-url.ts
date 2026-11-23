@@ -1,6 +1,6 @@
 import { GetObjectCommand, HeadObjectCommand, NotFound, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { activityIdOf, ApiEvent, ApiResult, error, json, LINK_SECONDS, requireEnv, trackKey, userIdOf } from './shared';
+import { pathIdOf, ApiEvent, ApiResult, error, json, LINK_SECONDS, requireEnv, trackKey, userIdOf } from './shared';
 
 const s3 = new S3Client({});
 
@@ -11,7 +11,7 @@ const s3 = new S3Client({});
 export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   const userId = userIdOf(event);
   if (!userId) return error(401, 'Not signed in');
-  const activityId = activityIdOf(event);
+  const activityId = pathIdOf(event);
   if (!activityId) return error(400, 'Invalid activity id');
 
   const Bucket = requireEnv('BUCKET_NAME');

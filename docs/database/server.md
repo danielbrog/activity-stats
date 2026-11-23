@@ -2,10 +2,11 @@
 
 What the backend stores, and how phones read and write it. Everything is defined in CDK in
 `backend/lib/activity-stats-stack.ts`, in region us-east-2. The phone's own database is in
-[phone.md](phone.md); planned segment tables are in [segments.md](segments.md#server-dynamodb).
+[phone.md](phone.md); the full segments design, including the routes still to come, is in
+[segments.md](segments.md#server-dynamodb).
 
 Source of truth for this page: the stack file above and the Lambdas in `backend/lambda/`
-(`summary.ts` for the stored fields, `shared.ts` for limits and the track key). Update this page
+(`summary.ts` and `segment.ts` for the stored fields, `shared.ts` for limits and the track key). Update this page
 in the same change as either.
 
 ## At a glance
@@ -14,6 +15,9 @@ in the same change as either.
 |---|---|---|---|
 | DynamoDB `Activities` | one item per ride: its summary | `PutActivity` | `ListActivities` |
 | S3 `Tracks` bucket | one file per ride: every GPS fix | the phone, through a short-lived upload link | the phone, through a short-lived download link |
+| DynamoDB `Segments` | personal segments, and (later) their reviews | `PutSegment` | `ListSegments` |
+| DynamoDB `VerifiedSegments` | verified public segments | nothing yet (admin routes later) | nothing yet |
+| DynamoDB `PublicSegmentTiles` | the catalogue, by map tile | nothing yet (admin routes later) | nothing yet |
 
 All requests go through one HTTP API with a Cognito sign-in check. Each Lambda takes the user
 from the verified token, never from the request, so a phone can only ever touch its own
@@ -102,19 +106,80 @@ only: it carries just the kept points, without accuracy or status.
 finished ride's points never change; a phone that downloads a ride without its track yet skips
 it and tries again later.
 
+## DynamoDB `Segments`
+
+On-demand, point-in-time recovery, deletion protection, kept if the stack is removed.
+
+**Key:** `userId` (partition) + `sk` (sort). Each segment has a **segment item**,
+`sk = SEG#<id>`, written only by `PutSegment`; later its **review item**, `sk = SEG#<id>#REVIEW`,
+is written only by the review routes. The two are split by who may write them, so syncing a
+rename can never overwrite a review decision.
+
+Segment item:
+
+| Attribute | Type | Rules (`segment.ts`) |
+|---|---|---|
+| `userId`, `sk` | S | from the token and the path; never the body |
+| `name` | S | 1–60 characters, trimmed |
+| `path` | S | encoded polyline (characters `?`–`~` only), at most 50,000 characters |
+| `distanceMeters` | N | 100 m – 100 km |
+| `sport` | S | an activity type, the same list as rides: `ride` / `run` / `walk` |
+| `createdAt`, `updatedAt` | N | phone time, at most a day ahead of the server's; `updatedAt` decides which copy is newer |
+| `deletedAt` | N | null unless deleted |
+| `syncedAt` | N | server time, stamped on every save |
+
+Indexes:
+
+| Index | Key | Used by |
+|---|---|---|
+| `bySyncedAt` | `userId` + `syncedAt` | `ListSegments`: "what changed since" (both item types) |
+| `reviewQueue` | `queue` + `submittedAt` | the admin queue, later; sparse, so empty for now |
+
+### Rules
+
+- **Saving (`PUT /segments/{id}`):** written only if there's no stored copy, or the stored one's
+  `updatedAt` isn't newer **and** its `path` and `sport` are the same: a segment's line and sport
+  never change. A newer stored copy comes back with a 409; a change of line or sport is refused
+  with a 400. Both carry the stored copy (labelled, as below, and read up to date), so the phone
+  can take it. A newer copy with no `deletedAt` brings a deleted segment back: that's how Undo
+  syncs, as for rides.
+- **Times more than a day ahead are refused,** so a phone with a wildly wrong clock can't stamp
+  a far-future `updatedAt` that would make every later edit look older.
+- **Only the rider's fields are stored:** `parseSegment` drops everything else, including any
+  `status`, `verifiedSegmentId` or `queue`, so a phone can never set its own review state.
+- **Listing (`GET /segments?since=…`):** a query on `bySyncedAt` for `syncedAt > since`, in pages
+  of 100 with `nextCursor`, deleted ones included. Each item is labelled:
+  `{ "kind": "segment", "id": …, …fields }` or `{ "kind": "review", "segmentId": …, …fields }`.
+  Only listed fields are sent (an allow-list in `segment.ts`), so `userId`, `sk`, `queue` and
+  admin-only fields like `decidedBy` never are; an item with any other key shape is skipped.
+
+## DynamoDB `VerifiedSegments` and `PublicSegmentTiles`
+
+Created empty, with the same backups and protection, for the review and catalogue slices:
+`VerifiedSegments` is keyed by `segmentId`; `PublicSegmentTiles` by `tile` + `segmentId`. Their
+fields are in [segments.md](segments.md#server-dynamodb). **No function can read or write them
+yet**; only the admin routes will be able to write them.
+
 ## Who may touch what
 
-| Lambda | Route | `Activities` | `Tracks` |
-|---|---|---|---|
-| `PutActivity` | `PUT /activities/{id}` | read, write | — |
-| `ListActivities` | `GET /activities` | read | — |
-| `TrackUploadUrl` | `POST /activities/{id}/track-upload` | — | put, under `tracks/*` |
-| `TrackDownloadUrl` | `GET /activities/{id}/track` | — | read, under `tracks/*` |
+| Lambda | Route | `Activities` | `Tracks` | `Segments` |
+|---|---|---|---|---|
+| `PutActivity` | `PUT /activities/{id}` | read, write | — | — |
+| `ListActivities` | `GET /activities` | read | — | — |
+| `TrackUploadUrl` | `POST /activities/{id}/track-upload` | — | put, under `tracks/*` | — |
+| `TrackDownloadUrl` | `GET /activities/{id}/track` | — | read, under `tracks/*` | — |
+| `PutSegment` | `PUT /segments/{id}` | — | — | put and get an item only |
+| `ListSegments` | `GET /segments` | — | — | query the `bySyncedAt` index only |
 
 Each Lambda gets only these permissions in CDK, and checks the user from the token itself.
+The segment functions are narrower than the ride ones (no delete, update or scan, and no access
+to the cross-rider `reviewQueue` index), since `Segments` will also hold server-owned review
+items. None has any permission on `VerifiedSegments` or `PublicSegmentTiles`; stack tests check
+all of this.
 
 ## Not stored in the cloud
 
 - `best_efforts` and `segment_efforts`: derived, rebuilt on each phone from the points.
-- `segments`: not synced yet; planned in [segments.md](segments.md).
+- The phone doesn't sync segments yet: the backend routes above exist, and the phone side
+  comes next.
 - Settings (units, speed or pace, auto-pause): stay on the phone.

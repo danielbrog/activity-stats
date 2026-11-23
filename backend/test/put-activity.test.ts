@@ -40,6 +40,13 @@ describe('PUT /activities/{id}', () => {
 
     expect(status(result)).toBe(409);
     expect(body(result)).toEqual({ applied: false, current: { id: RIDE_ID, title: 'Renamed', updatedAt: 9 } });
+    expect(db.commandCalls(GetCommand)[0].args[0].input.ConsistentRead).toBe(true);
+  });
+
+  test('a failed condition with no stored copy is a server error, not an empty reply', async () => {
+    db.on(PutCommand).rejects(new ConditionalCheckFailedException({ message: 'stale', $metadata: {} }));
+    db.on(GetCommand).resolves({});
+    await expect(put(summary())).rejects.toThrow('missing');
   });
 
   test('rejects bad input without touching the table', async () => {

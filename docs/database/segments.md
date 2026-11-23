@@ -96,7 +96,7 @@ Key: `userId` (partition) + `sk` (sort). Two item types per segment, split by wh
 
 | Attribute | Type | Rules |
 |---|---|---|
-| name | S | 1–60 characters, cleaned |
+| name | S | 1–60 characters, trimmed |
 | path | S | at most 50 KB |
 | distanceMeters | N | 100 m – 100 km |
 | sport | S | an activity type: the same list as rides (`ACTIVITY_TYPES` in `backend/lambda/shared.ts`); fixed once created |
@@ -160,10 +160,13 @@ Resubmitting after `UNPUBLISHED` makes a new verified segment if approved.
 
 ## Routes
 
+**Built so far:** `PUT /segments/{id}` and `GET /segments` (see [server.md](server.md)). The rest
+come with the review, admin and catalogue slices.
+
 | Route | Who | Work |
 |---|---|---|
 | `PUT /segments/{id}` | rider | Put `SEG#id` if new or not older than stored; else 409 with the stored copy |
-| `GET /segments?since=T` | rider | Query `bySyncedAt`, `syncedAt > T − 5 min` |
+| `GET /segments?since=T` | rider | Query `bySyncedAt`, `syncedAt > T` (the phone asks from 5 minutes before its cursor) |
 | `POST /segments/{id}/submit` | rider | Transaction: check `SEG#id` exists and isn't deleted; review → `SUBMITTED` with `queue`; run the duplicate check |
 | `POST /segments/{id}/withdraw` | rider | Review `SUBMITTED` → `PRIVATE`, remove `queue` |
 | `GET /admin/reviews` | admin | Query `reviewQueue`, then fetch the `SEG#` items |
@@ -185,7 +188,9 @@ Admin routes check the token's `cognito:groups` for `admins` and refuse with 403
 
 | Lambda | `Segments` | `VerifiedSegments` | `PublicSegmentTiles` |
 |---|---|---|---|
-| put / list segments, submit, withdraw | read and write | — | — |
+| put segment | put and get an item | — | — |
+| list segments | query `bySyncedAt` only | — | — |
+| submit, withdraw | update the review item (later) | — | — |
 | list verified (tiles) | — | — | read |
 | admin routes | read and write | read and write | read and write |
 

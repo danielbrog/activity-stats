@@ -1,7 +1,10 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
-import { ApiEvent, ApiResult, error, json, requireEnv, userIdOf } from './shared';
+import { ApiEvent, ApiResult, decodeCursor, encodeCursor, error, json, requireEnv, userIdOf } from './shared';
 import { toApi } from './summary';
+
+// Kept exported from here too, where the tests already import them.
+export { decodeCursor, encodeCursor } from './shared';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -46,17 +49,3 @@ export const handler = async (event: ApiEvent): Promise<ApiResult> => {
     nextCursor: result.LastEvaluatedKey ? encodeCursor(result.LastEvaluatedKey) : null,
   });
 };
-
-export const encodeCursor = (key: Record<string, unknown>) =>
-  Buffer.from(JSON.stringify(key), 'utf8').toString('base64url');
-
-export function decodeCursor(cursor: string): Record<string, unknown> | undefined {
-  try {
-    const value: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
