@@ -24,6 +24,9 @@ export const SIGN_OUT_CALLBACK = 'com.danielbrog.activitystats://auth/signout';
 /** The index the sync pull reads: a user's rides ordered by when the server last saved them. */
 export const SYNCED_AT_INDEX = 'bySyncedAt';
 
+/** The sparse index of segments waiting for an admin to review them (see docs/database/segments.md). */
+export const REVIEW_QUEUE_INDEX = 'reviewQueue';
+
 /** Monthly spend, in US dollars, above which the budget alert emails. */
 export const MONTHLY_BUDGET_USD = 5;
 
@@ -106,6 +109,43 @@ export class ActivityStatsStack extends Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // --- Segments (docs/database/segments.md) ---
+    // On-demand, backed up and kept like Activities. Only the segment Lambdas below use
+    // Segments; VerifiedSegments and PublicSegmentTiles start empty, for the review and
+    // catalogue slices, and no rider-facing Lambda may write them.
+    const keptTable = (id: string, partitionKey: dynamodb.Attribute, sortKey?: dynamodb.Attribute) =>
+      new dynamodb.Table(this, id, {
+        partitionKey,
+        sortKey,
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+        deletionProtection: true,
+        removalPolicy: RemovalPolicy.RETAIN,
+      });
+    const str = (name: string) => ({ name, type: dynamodb.AttributeType.STRING });
+    const num = (name: string) => ({ name, type: dynamodb.AttributeType.NUMBER });
+
+    // Personal segments and their reviews: SEG#<id> (the rider's) and SEG#<id>#REVIEW (the server's).
+    const segments = keptTable('Segments', str('userId'), str('sk'));
+    segments.addGlobalSecondaryIndex({
+      indexName: SYNCED_AT_INDEX,
+      partitionKey: str('userId'),
+      sortKey: num('syncedAt'),
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+    // Sparse: only review items waiting for a decision carry `queue`.
+    segments.addGlobalSecondaryIndex({
+      indexName: REVIEW_QUEUE_INDEX,
+      partitionKey: str('queue'),
+      sortKey: num('submittedAt'),
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+    // Server-owned copies made on approval, and the search index phones read by map tile.
+    // Nothing uses them yet: the review and catalogue slices will grant their admin Lambdas
+    // write access; rider-facing Lambdas only ever get read access to the tiles.
+    keptTable('VerifiedSegments', str('segmentId'));
+    keptTable('PublicSegmentTiles', str('tile'), str('segmentId'));
+
     // --- Track files ---
     const tracks = new s3.Bucket(this, 'Tracks', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -123,7 +163,7 @@ export class ActivityStatsStack extends Stack {
       // Error stack traces point at the TypeScript source, not the minified bundle.
       NODE_OPTIONS: '--enable-source-maps',
     };
-    const fn = (name: string, file: string, description: string) =>
+    const fn = (name: string, file: string, description: string, extraEnvironment: Record<string, string> = {}) =>
       new NodejsFunction(this, name, {
         entry: path.join(__dirname, '..', 'lambda', file),
         handler: 'handler',
@@ -132,7 +172,7 @@ export class ActivityStatsStack extends Stack {
         architecture: Architecture.ARM_64,
         memorySize: 256,
         timeout: Duration.seconds(10),
-        environment,
+        environment: { ...environment, ...extraEnvironment },
         // Bundle the AWS SDK too, so the code runs against the exact versions it was tested with.
         bundling: { minify: true, sourceMap: true, target: 'node22', externalModules: [] },
         logGroup: new logs.LogGroup(this, `${name}Logs`, {
@@ -145,6 +185,9 @@ export class ActivityStatsStack extends Stack {
     const listActivities = fn('ListActivities', 'list-activities.ts', 'Lists rides saved since a given server time');
     const trackUpload = fn('TrackUploadUrl', 'track-upload-url.ts', 'Hands out a short-lived link to upload a track file');
     const trackDownload = fn('TrackDownloadUrl', 'track-download-url.ts', 'Hands out a short-lived link to download a track file');
+    const segmentEnvironment = { SEGMENTS_TABLE_NAME: segments.tableName };
+    const putSegment = fn('PutSegment', 'put-segment.ts', 'Saves a personal segment if it is newer than the stored one', segmentEnvironment);
+    const listSegments = fn('ListSegments', 'list-segments.ts', 'Lists personal segments and reviews saved since a given server time', segmentEnvironment);
 
     // Each function gets only what it needs. Which user's data it touches is checked in code,
     // from the verified token.
@@ -152,6 +195,15 @@ export class ActivityStatsStack extends Stack {
     table.grantReadData(listActivities);
     tracks.grantPut(trackUpload, 'tracks/*');
     tracks.grantRead(trackDownload, 'tracks/*');
+    // Narrower than grantReadWriteData / grantReadData: Segments will also hold server-owned
+    // review items, so these may only write a segment item and list by the rider's own index.
+    segments.grant(putSegment, 'dynamodb:PutItem', 'dynamodb:GetItem');
+    listSegments.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:Query'],
+        resources: [`${segments.tableArn}/index/${SYNCED_AT_INDEX}`],
+      }),
+    );
 
     // --- API ---
     const authorizer = new HttpUserPoolAuthorizer('CognitoAuthorizer', userPool, {
@@ -172,6 +224,8 @@ export class ActivityStatsStack extends Stack {
     route('/activities', apigw.HttpMethod.GET, listActivities);
     route('/activities/{id}/track-upload', apigw.HttpMethod.POST, trackUpload);
     route('/activities/{id}/track', apigw.HttpMethod.GET, trackDownload);
+    route('/segments/{id}', apigw.HttpMethod.PUT, putSegment);
+    route('/segments', apigw.HttpMethod.GET, listSegments);
 
     // A ceiling on requests, so a bug in the app can't run up a bill.
     const stage = api.defaultStage!.node.defaultChild as apigw.CfnStage;
@@ -228,6 +282,8 @@ export class ActivityStatsStack extends Stack {
       [listActivities, 'Listing changed rides failed'],
       [trackUpload, 'Making a track upload link failed'],
       [trackDownload, 'Making a track download link failed'],
+      [putSegment, 'Saving a segment failed'],
+      [listSegments, 'Listing changed segments failed'],
     ];
     for (const [handler, description] of functions) {
       alarm(`${handler.node.id}Errors`, handler.metricErrors(fiveMinutes), 1, `${description} at least once in 5 minutes`);

@@ -1,6 +1,6 @@
 import { ConditionalCheckFailedException, DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { activityIdOf, ApiEvent, ApiResult, error, json, requireEnv, userIdOf } from './shared';
+import { pathIdOf, ApiEvent, ApiResult, error, json, requireEnv, userIdOf } from './shared';
 import { parseSummary, toApi } from './summary';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -16,7 +16,7 @@ const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   const userId = userIdOf(event);
   if (!userId) return error(401, 'Not signed in');
-  const activityId = activityIdOf(event);
+  const activityId = pathIdOf(event);
   if (!activityId) return error(400, 'Invalid activity id');
   const parsed = parseSummary(event.body, event.isBase64Encoded);
   if (!parsed.ok) return error(400, parsed.message);
@@ -35,7 +35,10 @@ export const handler = async (event: ApiEvent): Promise<ApiResult> => {
     return json(200, { applied: true, syncedAt });
   } catch (e) {
     if (!(e instanceof ConditionalCheckFailedException)) throw e;
-    const stored = await db.send(new GetCommand({ TableName: table, Key: { userId, activityId } }));
-    return json(409, { applied: false, current: stored.Item ? toApi(stored.Item) : null });
+    // An up-to-date read: the copy that just won must come back, not an older one. There are
+    // no hard deletes, so a failed condition always has a stored copy behind it.
+    const stored = (await db.send(new GetCommand({ TableName: table, Key: { userId, activityId }, ConsistentRead: true }))).Item;
+    if (!stored) throw new Error(`Condition failed but ${activityId} is missing`);
+    return json(409, { applied: false, current: toApi(stored) });
   }
 };
