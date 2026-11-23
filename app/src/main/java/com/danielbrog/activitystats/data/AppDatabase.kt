@@ -19,6 +19,9 @@ import androidx.room.migration.AutoMigrationSpec
  *    Automatic, with [RenamePauseSegmentToStretch]: the values are kept.
  * 7. Adds segments and segment_efforts, and each ride's bounding box (activities.minLat and
  *    so on). Automatic: new tables, and nullable columns that rides saved before stay without.
+ * 8. Ready for synced and public segments (docs/database/segments.md): segments gains sport,
+ *    status and review fields; adds verified_segments and catalog_tiles. Automatic: existing
+ *    segments become private ride segments.
  */
 @Database(
     entities = [
@@ -27,8 +30,10 @@ import androidx.room.migration.AutoMigrationSpec
         BestEffortEntity::class,
         SegmentEntity::class,
         SegmentEffortEntity::class,
+        VerifiedSegmentEntity::class,
+        CatalogTileEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -37,6 +42,7 @@ import androidx.room.migration.AutoMigrationSpec
         AutoMigration(from = 4, to = 5),
         AutoMigration(from = 5, to = 6, spec = AppDatabase.RenamePauseSegmentToStretch::class),
         AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 7, to = 8),
     ],
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,6 +50,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun trackPointDao(): TrackPointDao
     abstract fun bestEffortDao(): BestEffortDao
     abstract fun segmentDao(): SegmentDao
+    abstract fun verifiedSegmentDao(): VerifiedSegmentDao
 
     /** Tells the 5 → 6 automatic migration that the column was renamed, not dropped and added. */
     @RenameColumn(tableName = "track_points", fromColumnName = "segment", toColumnName = "stretch")

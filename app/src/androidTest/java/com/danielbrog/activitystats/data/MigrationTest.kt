@@ -59,6 +59,37 @@ class MigrationTest {
     }
 
     @Test
+    fun version7To8KeepsSegmentsAsPrivateRideSegments() {
+        helper.createDatabase(dbName, 7).use { db ->
+            db.execSQL(
+                "INSERT INTO segments (id, userId, name, path, distanceMeters, createdAt, updatedAt, deletedAt, " +
+                    "syncState) VALUES ('seg-1', NULL, 'Bayview climb', '_p~iF~ps|U_ulLnnqC', 1240.0, 1000, 2000, NULL, 'LOCAL_ONLY')"
+            )
+            db.execSQL(
+                "INSERT INTO segment_efforts (segmentId, activityId, occurrence, startedAt, elapsedMs) " +
+                    "VALUES ('seg-1', 'ride-1', 0, 1500, 151000)"
+            )
+        }
+
+        helper.runMigrationsAndValidate(dbName, 8, true).use { db ->
+            db.query("SELECT name, sport, status, submittedAt, verifiedSegmentId FROM segments WHERE id = 'seg-1'").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Bayview climb", c.getString(0))
+                assertEquals("ride", c.getString(1))
+                assertEquals("PRIVATE", c.getString(2))
+                assertTrue(c.isNull(3))
+                assertTrue(c.isNull(4))
+            }
+            db.query("SELECT elapsedMs FROM segment_efforts WHERE segmentId = 'seg-1'").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(151_000L, c.getLong(0))
+            }
+            db.query("SELECT COUNT(*) FROM verified_segments").use { c -> c.moveToFirst(); assertEquals(0, c.getInt(0)) }
+            db.query("SELECT COUNT(*) FROM catalog_tiles").use { c -> c.moveToFirst(); assertEquals(0, c.getInt(0)) }
+        }
+    }
+
+    @Test
     fun everyMigrationFromVersion1KeepsTheRide() {
         helper.createDatabase(dbName, 1).use { db ->
             db.execSQL(
@@ -72,7 +103,7 @@ class MigrationTest {
             )
         }
 
-        helper.runMigrationsAndValidate(dbName, 7, true).use { db ->
+        helper.runMigrationsAndValidate(dbName, 8, true).use { db ->
             db.query("SELECT title, trackUploaded, elevationGainMeters FROM activities WHERE id = 'ride-1'").use { c ->
                 assertTrue(c.moveToFirst())
                 assertEquals("Morning ride", c.getString(0))

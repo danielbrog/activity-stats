@@ -135,12 +135,18 @@ abstract class ActivityDao {
     @Query("UPDATE activities SET minLat = :minLat, maxLat = :maxLat, minLon = :minLon, maxLon = :maxLon WHERE id = :id")
     abstract suspend fun setBounds(id: String, minLat: Double, maxLat: Double, minLon: Double, maxLon: Double)
 
-    /** Finished rides not deleted whose box overlaps the given one. */
+    /** Finished, not-deleted activities of [type] whose box overlaps the given one. */
     @Query(
-        "SELECT id FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL " +
+        "SELECT id FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL AND type = :type " +
             "AND minLat <= :maxLat AND maxLat >= :minLat AND minLon <= :maxLon AND maxLon >= :minLon"
     )
-    abstract suspend fun ridesOverlapping(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double): List<String>
+    abstract suspend fun ridesOverlapping(
+        type: String,
+        minLat: Double,
+        maxLat: Double,
+        minLon: Double,
+        maxLon: Double,
+    ): List<String>
 
     /** A not-deleted activity that started in the same second, or null: used to spot re-imports. */
     @Query(

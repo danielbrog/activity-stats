@@ -98,6 +98,8 @@ class SegmentRepository(
         val path = SegmentPath.fromRide(keptPointsFor(rideId), startIndex, endIndex)
         if (path == null || path.distanceMeters < SegmentSelection.MIN_LENGTH_METERS) return@withContext null
         val owner = ownerId()
+        // A segment is for the sport it was ridden as: a run's segment only matches runs.
+        val sport = activities.getActivity(rideId)?.type ?: ActivityType.RIDE
         val segment = SegmentEntity(
             id = UUID.randomUUID().toString(),
             userId = owner,
@@ -107,6 +109,7 @@ class SegmentRepository(
             createdAt = nowMillis,
             updatedAt = nowMillis,
             syncState = SyncState.forNewRide(owner),
+            sport = sport,
         )
         segments.insertSegment(segment)
         _finding.update { it + segment.id }
@@ -137,7 +140,7 @@ class SegmentRepository(
     private suspend fun findForSegment(segment: SegmentEntity): Int {
         val path = segment.toPath()
         val box = path.bounds.expandedBy(SegmentMatcher.END_RADIUS_METERS)
-        val found = activities.ridesOverlapping(box.south, box.north, box.west, box.east).flatMap { rideId ->
+        val found = activities.ridesOverlapping(segment.sport, box.south, box.north, box.west, box.east).flatMap { rideId ->
             SegmentMatcher.find(path, keptPointsFor(rideId)).map { it.toEntity(segment.id, rideId) }
         }
         segments.replaceForSegment(segment.id, found)
@@ -177,7 +180,9 @@ class SegmentRepository(
             return
         }
         val box = bounds.expandedBy(SegmentMatcher.END_RADIUS_METERS)
+        // Only segments of this ride's sport: a run never counts on a ride segment.
         val nearby = segments.activeSegments()
+            .filter { it.sport == ride.type }
             .map { it to it.toPath() }
             .filter { (_, path) -> path.bounds.overlaps(box) }
         if (nearby.isEmpty()) {
