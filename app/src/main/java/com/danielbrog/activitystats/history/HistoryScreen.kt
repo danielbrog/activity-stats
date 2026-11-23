@@ -10,47 +10,43 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Icon
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.res.painterResource
-import com.danielbrog.activitystats.R
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.danielbrog.activitystats.R
 import com.danielbrog.activitystats.data.ActivityEntity
 import com.danielbrog.activitystats.data.SyncState
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.Format
+import com.danielbrog.activitystats.ui.UndoDeleteEffect
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
+import kotlinx.coroutines.launch
 
 /**
  * The History tab inside Profile: every saved ride, newest first, and Import GPX, which opens
@@ -74,25 +70,13 @@ fun HistoryScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val use24Hour = DateFormat.is24HourFormat(LocalContext.current)
 
-    // Take the id into local state and clear the navigation result first, so the bar is
-    // shown once. Showing it from a separate effect means clearing can't cancel it.
-    var undoRideId by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(deletedRideId) {
-        if (deletedRideId != null) {
-            undoRideId = deletedRideId
-            onDeletedRideHandled()
-        }
-    }
-    LaunchedEffect(undoRideId) {
-        val id = undoRideId ?: return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
-            message = "Ride deleted",
-            actionLabel = "Undo",
-            duration = SnackbarDuration.Long,
-        )
-        if (result == SnackbarResult.ActionPerformed) viewModel.restore(id)
-        undoRideId = null
-    }
+    UndoDeleteEffect(
+        deletedId = deletedRideId,
+        onHandled = onDeletedRideHandled,
+        snackbarHostState = snackbarHostState,
+        message = "Ride deleted",
+        onUndo = viewModel::restore,
+    )
 
     // Import: pick a file, read it, then open the ride or explain what went wrong.
     val importing by viewModel.importing.collectAsStateWithLifecycle()

@@ -16,18 +16,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +35,7 @@ import com.danielbrog.activitystats.history.RideFormat
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.Effort
 import com.danielbrog.activitystats.stats.Format
+import com.danielbrog.activitystats.ui.UndoDeleteEffect
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
@@ -59,24 +54,13 @@ fun RecordsScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Same two-step handling as History, so clearing the result can't cancel the bar.
-    var undoRideId by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(deletedRideId) {
-        if (deletedRideId != null) {
-            undoRideId = deletedRideId
-            onDeletedRideHandled()
-        }
-    }
-    LaunchedEffect(undoRideId) {
-        val id = undoRideId ?: return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
-            message = "Ride deleted",
-            actionLabel = "Undo",
-            duration = SnackbarDuration.Long,
-        )
-        if (result == SnackbarResult.ActionPerformed) viewModel.restore(id)
-        undoRideId = null
-    }
+    UndoDeleteEffect(
+        deletedId = deletedRideId,
+        onHandled = onDeletedRideHandled,
+        snackbarHostState = snackbarHostState,
+        message = "Ride deleted",
+        onUndo = viewModel::restore,
+    )
 
     Box(modifier = modifier.fillMaxSize()) {
         RecordsContent(records, settings, onOpenRide)

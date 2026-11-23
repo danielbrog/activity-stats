@@ -77,7 +77,7 @@ class RideDetailViewModel(
 
     private val repository = (application as ActivityStatsApp).activityRepository
     private val segmentRepository = (application as ActivityStatsApp).segmentRepository
-    val rideId: String = savedStateHandle.toRoute<RideDetailRoute>().id
+    private val rideId: String = savedStateHandle.toRoute<RideDetailRoute>().id
 
     private val track = MutableStateFlow<RideTrack?>(null)
 
@@ -171,11 +171,11 @@ class RideDetailViewModel(
         }
     }
 
-    /** Soft-deletes the ride, then calls [onDeleted] so the screen can close. */
-    fun delete(onDeleted: () -> Unit) {
+    /** Soft-deletes the ride, then calls [onDeleted] with its id so the screen can close. */
+    fun delete(onDeleted: (id: String) -> Unit) {
         viewModelScope.launch {
             repository.delete(rideId)
-            onDeleted()
+            onDeleted(rideId)
         }
     }
 }

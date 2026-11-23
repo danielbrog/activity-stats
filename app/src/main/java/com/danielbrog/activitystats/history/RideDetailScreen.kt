@@ -6,7 +6,6 @@ import android.content.Intent
 import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,24 +19,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -63,7 +53,6 @@ import com.danielbrog.activitystats.data.RideSegmentEffort
 import com.danielbrog.activitystats.data.RideTitle
 import com.danielbrog.activitystats.export.GpxWriter
 import com.danielbrog.activitystats.location.RoutePoint
-import com.danielbrog.activitystats.segments.EffortSpeed
 import com.danielbrog.activitystats.segments.Laps
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.DistanceUnit
@@ -72,8 +61,11 @@ import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.stats.SpeedDisplay
 import com.danielbrog.activitystats.stats.SpeedSample
 import com.danielbrog.activitystats.stats.Split
-import com.danielbrog.activitystats.ui.BestLabel
+import com.danielbrog.activitystats.ui.ConfirmDeleteDialog
+import com.danielbrog.activitystats.ui.EffortCard
+import com.danielbrog.activitystats.ui.RenameDialog
 import com.danielbrog.activitystats.ui.RouteMap
+import com.danielbrog.activitystats.ui.UndoDeleteEffect
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
@@ -101,24 +93,13 @@ fun RideDetailScreen(
     val segmentEfforts by viewModel.segmentEfforts.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Same two-step handling as History, so clearing the result can't cancel the bar.
-    var undoSegmentId by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(deletedSegmentId) {
-        if (deletedSegmentId != null) {
-            undoSegmentId = deletedSegmentId
-            onDeletedSegmentHandled()
-        }
-    }
-    LaunchedEffect(undoSegmentId) {
-        val id = undoSegmentId ?: return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
-            message = "Segment deleted",
-            actionLabel = "Undo",
-            duration = SnackbarDuration.Long,
-        )
-        if (result == SnackbarResult.ActionPerformed) viewModel.restoreSegment(id)
-        undoSegmentId = null
-    }
+    UndoDeleteEffect(
+        deletedId = deletedSegmentId,
+        onHandled = onDeletedSegmentHandled,
+        snackbarHostState = snackbarHostState,
+        message = "Segment deleted",
+        onUndo = viewModel::restoreSegment,
+    )
     val context = LocalContext.current
     val use24Hour = DateFormat.is24HourFormat(context)
     var showEdit by rememberSaveable { mutableStateOf(false) }
@@ -138,7 +119,7 @@ fun RideDetailScreen(
                     onError = { Toast.makeText(context, "Couldn't export this ride", Toast.LENGTH_SHORT).show() },
                 )
             },
-            onCreateSegment = { onCreateSegment(viewModel.rideId) },
+            onCreateSegment = { ride?.let { onCreateSegment(it.id) } },
             onEdit = { showEdit = true },
             onDelete = { showDelete = true },
             onToggleSplits = viewModel::setShowSplits,
@@ -148,8 +129,11 @@ fun RideDetailScreen(
     }
 
     if (showEdit && ride != null) {
-        EditRideDialog(
-            currentTitle = ride.title,
+        RenameDialog(
+            title = "Edit ride",
+            currentName = ride.title,
+            maxLength = RideTitle.MAX_LENGTH,
+            clean = RideTitle::clean,
             onSave = { name ->
                 viewModel.rename(name)
                 showEdit = false
@@ -158,11 +142,11 @@ fun RideDetailScreen(
         )
     }
     if (showDelete && ride != null) {
-        DeleteRideDialog(
-            title = ride.title,
+        ConfirmDeleteDialog(
+            name = ride.title,
             onConfirm = {
                 showDelete = false
-                viewModel.delete { onDeleted(viewModel.rideId) }
+                viewModel.delete(onDeleted)
             },
             onDismiss = { showDelete = false },
         )
@@ -336,61 +320,16 @@ private fun SegmentsOnRide(efforts: List<RideSegmentEffort>, unit: DistanceUnit,
     Spacer(Modifier.height(8.dp))
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         efforts.forEachIndexed { i, effort ->
-            SegmentEffortRow(
-                effort,
-                lap = laps[i],
+            EffortCard(
+                title = effort.segmentName,
+                subtitle = laps[i]?.let { "Lap $it" },
+                isBest = effort.isBest,
+                elapsedMs = effort.elapsedMs,
+                distanceMeters = effort.distanceMeters,
                 unit = unit,
+                onClickLabel = "Open segment",
                 onClick = { onOpenSegment(effort.segmentId) },
             )
-        }
-    }
-}
-
-@Composable
-private fun SegmentEffortRow(effort: RideSegmentEffort, lap: Int?, unit: DistanceUnit, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            // Clip first, so the tap ripple follows the card's rounded corners.
-            .clip(CardDefaults.shape)
-            .clickable(onClickLabel = "Open segment", role = Role.Button, onClick = onClick),
-    ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        effort.segmentName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (effort.isBest) {
-                        Spacer(Modifier.width(8.dp))
-                        BestLabel()
-                    }
-                }
-                if (lap != null) {
-                    Text(
-                        "Lap $lap",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    Format.clock(effort.elapsedMs),
-                    style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    Format.speed(EffortSpeed.averageMps(effort.distanceMeters, effort.elapsedMs), unit),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
@@ -444,51 +383,6 @@ private fun RideMenu(onExport: () -> Unit, onCreateSegment: () -> Unit, onEdit: 
             )
         }
     }
-}
-
-/** Rename dialog. Save stays off while the name is blank; names are capped in length. */
-@Composable
-private fun EditRideDialog(currentTitle: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by rememberSaveable { mutableStateOf(currentTitle) }
-    val cleaned = RideTitle.clean(text)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit ride") },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it.take(RideTitle.MAX_LENGTH) },
-                label = { Text("Name") },
-                singleLine = true,
-                isError = cleaned == null,
-                supportingText = {
-                    Text(
-                        if (cleaned == null) "Name can't be blank"
-                        else "${text.length} / ${RideTitle.MAX_LENGTH}"
-                    )
-                },
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { cleaned?.let(onSave) }, enabled = cleaned != null) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-@Composable
-private fun DeleteRideDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Delete \"$title\"?") },
-        text = { Text("It will be removed from this phone.") },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Delete", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
 }
 
 @Composable
