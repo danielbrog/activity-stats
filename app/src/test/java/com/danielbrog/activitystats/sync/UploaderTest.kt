@@ -22,7 +22,7 @@ class UploaderTest {
         trackUploaded: Boolean = false,
         deletedAt: Long? = null,
         userId: String? = user,
-        syncState: String = SyncState.PENDING,
+        syncState: SyncState = SyncState.PENDING,
         updatedAt: Long = startedAt + 60_000L,
         elevationGainMeters: Double? = 12.0,
     ) = ActivityEntity(

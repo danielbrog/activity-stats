@@ -33,7 +33,7 @@ abstract class ActivityDao {
 
     @Query(
         "UPDATE activities SET title = :title, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun rename(id: String, title: String, now: Long)
@@ -41,7 +41,7 @@ abstract class ActivityDao {
     /** Soft delete: the row stays, marked with when it was deleted. */
     @Query(
         "UPDATE activities SET deletedAt = :now, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun softDelete(id: String, now: Long)
@@ -49,7 +49,7 @@ abstract class ActivityDao {
     /** Undoes a soft delete. */
     @Query(
         "UPDATE activities SET deletedAt = NULL, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN ('${SyncState.SYNCED}', '${SyncState.FAILED}') THEN '${SyncState.PENDING}' " +
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
             "ELSE syncState END WHERE id = :id"
     )
     abstract suspend fun restore(id: String, now: Long)
@@ -58,7 +58,7 @@ abstract class ActivityDao {
      * Gives every activity with no owner to [userId] and marks it waiting to upload. Leaves
      * updatedAt alone: the ride itself hasn't changed. Returns how many were claimed.
      */
-    @Query("UPDATE activities SET userId = :userId, syncState = '${SyncState.PENDING}' WHERE userId IS NULL")
+    @Query("UPDATE activities SET userId = :userId, syncState = ${SyncStateSql.PENDING} WHERE userId IS NULL")
     abstract suspend fun claimUnowned(userId: String): Int
 
     // --- Cloud sync ---
@@ -70,7 +70,7 @@ abstract class ActivityDao {
      * so it wouldn't be re-sent.
      */
     @Query(
-        "SELECT * FROM activities WHERE userId = :userId AND syncState = '${SyncState.PENDING}' " +
+        "SELECT * FROM activities WHERE userId = :userId AND syncState = ${SyncStateSql.PENDING} " +
             "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL ORDER BY startedAt"
     )
     abstract suspend fun pendingUploads(userId: String): List<ActivityEntity>
@@ -84,13 +84,13 @@ abstract class ActivityDao {
      * edit, which may be the fix, goes up next time.
      */
     @Query(
-        "UPDATE activities SET syncState = '${SyncState.FAILED}' " +
-            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = '${SyncState.PENDING}'"
+        "UPDATE activities SET syncState = ${SyncStateSql.FAILED} " +
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
     )
     abstract suspend fun markFailed(id: String, sentUpdatedAt: Long)
 
     /** Puts [userId]'s refused rides back in the queue, for Sync now. */
-    @Query("UPDATE activities SET syncState = '${SyncState.PENDING}' WHERE userId = :userId AND syncState = '${SyncState.FAILED}'")
+    @Query("UPDATE activities SET syncState = ${SyncStateSql.PENDING} WHERE userId = :userId AND syncState = ${SyncStateSql.FAILED}")
     abstract suspend fun retryFailed(userId: String)
 
     /**
@@ -99,13 +99,13 @@ abstract class ActivityDao {
      * Updates itself.
      */
     @Query(
-        "SELECT COUNT(*) FROM activities WHERE userId = :userId AND syncState = '${SyncState.PENDING}' " +
+        "SELECT COUNT(*) FROM activities WHERE userId = :userId AND syncState = ${SyncStateSql.PENDING} " +
             "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL"
     )
     abstract fun waitingCount(userId: String): Flow<Int>
 
     /** How many of [userId]'s rides the server refused. Updates itself. */
-    @Query("SELECT COUNT(*) FROM activities WHERE userId = :userId AND syncState = '${SyncState.FAILED}'")
+    @Query("SELECT COUNT(*) FROM activities WHERE userId = :userId AND syncState = ${SyncStateSql.FAILED}")
     abstract fun failedCount(userId: String): Flow<Int>
 
     /**
@@ -113,8 +113,8 @@ abstract class ActivityDao {
      * sent. A rename made during the upload keeps it PENDING, so the rename goes up next time.
      */
     @Query(
-        "UPDATE activities SET syncState = '${SyncState.SYNCED}' " +
-            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = '${SyncState.PENDING}'"
+        "UPDATE activities SET syncState = ${SyncStateSql.SYNCED} " +
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
     )
     abstract suspend fun markSynced(id: String, sentUpdatedAt: Long): Int
 
@@ -126,7 +126,7 @@ abstract class ActivityDao {
      */
     @Query(
         "UPDATE activities SET title = :title, deletedAt = :deletedAt, updatedAt = :updatedAt, " +
-            "syncState = '${SyncState.SYNCED}' WHERE id = :id AND updatedAt < :updatedAt"
+            "syncState = ${SyncStateSql.SYNCED} WHERE id = :id AND updatedAt < :updatedAt"
     )
     abstract suspend fun applyCloudCopy(id: String, title: String, deletedAt: Long?, updatedAt: Long): Int
 

@@ -5,35 +5,6 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/**
- * Sync states from the build guide's data model. LOCAL_ONLY: no account, stays on this phone.
- * PENDING: belongs to an account and is waiting to upload. SYNCED: the cloud has this copy.
- * FAILED: the server refused it; it waits until it is edited or Sync now is pressed.
- */
-object SyncState {
-    const val LOCAL_ONLY = "LOCAL_ONLY"
-    const val PENDING = "PENDING"
-    const val SYNCED = "SYNCED"
-    const val FAILED = "FAILED"
-
-    /** A new ride waits to upload if it has an owner, and stays on the phone if not. */
-    fun forNewRide(userId: String?): String = if (userId == null) LOCAL_ONLY else PENDING
-}
-
-/**
- * Where a personal segment is in review (see docs/database/segments.md). PRIVATE: only yours.
- * SUBMITTED: waiting for an admin. PUBLIC: approved; a verified copy exists. REJECTED: refused,
- * with a note. UNPUBLISHED: was public, taken down by an admin. Only the server decides PUBLIC,
- * REJECTED and UNPUBLISHED; the phone only submits and withdraws.
- */
-object SegmentStatus {
-    const val PRIVATE = "PRIVATE"
-    const val SUBMITTED = "SUBMITTED"
-    const val PUBLIC = "PUBLIC"
-    const val REJECTED = "REJECTED"
-    const val UNPUBLISHED = "UNPUBLISHED"
-}
-
 /** Activity types from the build guide. Rides are the default; the others come with editing. */
 object ActivityType {
     const val RIDE = "ride"
@@ -70,7 +41,7 @@ data class ActivityEntity(
     val updatedAt: Long,
     /** Soft delete, so deletions reach other devices. */
     val deletedAt: Long? = null,
-    val syncState: String = SyncState.LOCAL_ONLY,
+    val syncState: SyncState = SyncState.LOCAL_ONLY,
     /**
      * True once the ride's track file is in the cloud. A finished ride's track never changes,
      * so it is uploaded once; later edits only re-send the summary.
@@ -146,13 +117,13 @@ data class SegmentEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val deletedAt: Long? = null,
-    val syncState: String = SyncState.LOCAL_ONLY,
+    val syncState: SyncState = SyncState.LOCAL_ONLY,
     /** An [ActivityType]: only rides of this type are matched. Taken from the ride it was made from. */
     @ColumnInfo(defaultValue = "'${ActivityType.RIDE}'")
     val sport: String = ActivityType.RIDE,
-    /** A [SegmentStatus]. */
-    @ColumnInfo(defaultValue = "'${SegmentStatus.PRIVATE}'")
-    val status: String = SegmentStatus.PRIVATE,
+    /** Stored as its name; the default must be [SegmentStatus.PRIVATE]'s (an enum name isn't a constant). */
+    @ColumnInfo(defaultValue = "'PRIVATE'")
+    val status: SegmentStatus = SegmentStatus.PRIVATE,
     val submittedAt: Long? = null,
     /** When an admin approved, rejected or unpublished it. */
     val decidedAt: Long? = null,

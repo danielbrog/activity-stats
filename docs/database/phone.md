@@ -7,7 +7,8 @@ Every screen reads from it; the cloud is a copy kept in step by sync (see [serve
 them, slice by slice, is in [segments.md](segments.md).
 
 Source of truth for this page:
-`app/src/main/java/com/danielbrog/activitystats/data/Entities.kt` (tables),
+`app/src/main/java/com/danielbrog/activitystats/data/Entities.kt` (tables), `SyncState.kt` and
+`SegmentStatus.kt` (enums, stored as their names),
 `AppDatabase.kt` (version and migrations), the DAOs next to them, and the exported schemas in
 `app/schemas/com.danielbrog.activitystats.data.AppDatabase/<version>.json`. Update this page in
 the same change as any of those.

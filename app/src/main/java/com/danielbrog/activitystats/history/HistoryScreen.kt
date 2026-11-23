@@ -203,12 +203,12 @@ private fun RideCard(
  * Nothing for a ride recorded while signed out, which stays on this phone.
  */
 @Composable
-private fun SyncIcon(syncState: String) {
+private fun SyncIcon(syncState: SyncState) {
     val (icon, description) = when (syncState) {
         SyncState.SYNCED -> R.drawable.ic_cloud_done to "Synced"
         SyncState.PENDING -> R.drawable.ic_cloud_upload to "Waiting to sync"
         SyncState.FAILED -> R.drawable.ic_cloud_off to "Couldn't sync"
-        else -> return
+        SyncState.LOCAL_ONLY -> return
     }
     Icon(
         painterResource(icon),
