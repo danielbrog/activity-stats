@@ -18,10 +18,10 @@ Where Activity Stats keeps its data, and how the phone and the cloud stay in ste
  │     ├──< best_efforts     (derived)      │ <───── │                               │
  │     └──< segment_efforts  (derived)      │        │ S3  Tracks                    │
  │              │                           │        │   one gzipped file per ride   │
- │ segments ────┤   (user data, phone only  │        │                               │
- │              │    for now)               │        │ planned: segments tables      │
- │ verified_segments (cache, empty for now) │        │                               │
- │ catalog_tiles     (cache, empty for now) │        │                               │
+ │ segments ────┘   (user data)             │        │ DynamoDB  Segments            │
+ │                                          │        │   your segments (and reviews) │
+ │ verified_segments (cache, empty for now) │        │ VerifiedSegments, Public-     │
+ │ catalog_tiles     (cache, empty for now) │        │   SegmentTiles (empty for now)│
  └──────────────────────────────────────────┘        └───────────────────────────────┘
 ```
 
@@ -38,11 +38,14 @@ Where Activity Stats keeps its data, and how the phone and the cloud stay in ste
 2. **Down:** the phone asks for rides the server has saved since its last look (by the server's
    own `syncedAt` clock), saves new ones with their tracks, and takes newer cloud copies of ones
    it has.
-3. Deletions are soft (`deletedAt`), so they travel like any other edit.
+3. **Then segments, the same way:** your waiting segments go up, and segments and their review
+   results changed in the cloud come down, from their own cursor. A downloaded segment is
+   matched against every ride; a review result always takes the server's word.
+4. Deletions are soft (`deletedAt`), so they travel like any other edit.
 
 Sync runs when the app opens, after a change, and on Sync now, in the background with
-WorkManager. While signed out nothing is sent; rides recorded then are claimed by the account at
-the next sign-in.
+WorkManager. While signed out nothing is sent; rides and segments made then are claimed by the
+account at the next sign-in.
 
 ## Conventions everywhere
 

@@ -20,10 +20,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * Syncs rides in the background with WorkManager, which runs it once there is a network,
- * retries it with growing waits when it fails, and keeps it through the app closing. Uploads
- * this phone's waiting rides, then downloads rides changed in the cloud. Does nothing while
- * signed out: the rides wait, and signing in starts a sync.
+ * Syncs rides and segments in the background with WorkManager, which runs it once there is a
+ * network, retries it with growing waits when it fails, and keeps it through the app closing.
+ * Uploads this phone's waiting rides, downloads rides changed in the cloud, then does the same
+ * for segments. Does nothing while signed out: everything waits, and signing in starts a sync.
  */
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -59,8 +59,25 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 Log.i(TAG, "Downloaded ${down.downloaded} rides, updated ${down.updated}")
             }
             if (down.skipped.isNotEmpty()) Log.w(TAG, "Couldn't get the tracks of ${down.skipped}")
+
+            // Then segments, the same way, within the same time budget.
+            val segmentsUp = SegmentUploader(app.segmentRepository, api).uploadPending(session.userId, stillSignedIn)
+            if (segmentsUp.synced > 0) Log.i(TAG, "Uploaded ${segmentsUp.synced} segments")
+            if (segmentsUp.rejected.isNotEmpty()) Log.w(TAG, "Server refused segments ${segmentsUp.rejected}")
+            val segmentsDown = SegmentDownloader(app.segmentRepository, api, SegmentSyncCursorStore(app))
+                .downloadChanges(session.userId, stillSignedIn, deadline)
+            if (segmentsDown.downloaded > 0 || segmentsDown.updated > 0 || segmentsDown.reviews > 0) {
+                Log.i(
+                    TAG,
+                    "Downloaded ${segmentsDown.downloaded} segments, updated ${segmentsDown.updated}, " +
+                        "applied ${segmentsDown.reviews} reviews",
+                )
+            }
+            // Downloaded segments find their efforts in the background: wait, so the app isn't
+            // stopped halfway through (nothing would find them again).
+            app.segmentRepository.awaitSegmentMatching()
             when {
-                down.more -> Sync.request(app)
+                down.more || segmentsDown.more -> Sync.request(app)
                 // Only a run that got to the end counts, not one cut short by a sign-out.
                 stillSignedIn() -> cursorStore.setLastSynced(session.userId, System.currentTimeMillis())
             }

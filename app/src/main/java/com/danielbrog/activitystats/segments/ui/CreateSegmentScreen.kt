@@ -292,6 +292,8 @@ private fun Readout(distanceMeters: Double, check: SelectionCheck?, unit: Distan
         SelectionCheck.CrossesPause -> "This part crosses a pause. Pick a part you rode without pausing." to true
         is SelectionCheck.TooShort ->
             "$distance · A segment must be at least ${Format.distance(SegmentSelection.MIN_LENGTH_METERS, unit)}" to true
+        is SelectionCheck.TooLong ->
+            "$distance · A segment can be at most ${Format.distance(SegmentSelection.MAX_LENGTH_METERS, unit)}" to true
         is SelectionCheck.Ready -> when {
             check.yourTimeMs != null -> "$distance · Your time ${Format.clock(check.yourTimeMs)}" to false
             check.stoppedInside -> "$distance · You stopped inside this part, so this ride won't count on it." to false

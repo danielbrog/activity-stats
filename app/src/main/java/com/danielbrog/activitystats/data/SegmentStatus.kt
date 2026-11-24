@@ -5,8 +5,8 @@ package com.danielbrog.activitystats.data
  * name (TEXT). Only the server decides [PUBLIC], [REJECTED] and [UNPUBLISHED]; the phone only
  * submits and withdraws.
  *
- * When statuses start coming from the server (segment sync), read them with a mapping that
- * tolerates names this version doesn't know yet, rather than [valueOf], which throws.
+ * Statuses from the server are read with [fromServer], which tolerates names this version
+ * doesn't know yet, rather than [valueOf], which throws.
  */
 enum class SegmentStatus {
     /** Only yours. */
@@ -22,5 +22,15 @@ enum class SegmentStatus {
     REJECTED,
 
     /** Was public; an admin took it down. */
-    UNPUBLISHED,
+    UNPUBLISHED;
+
+    companion object {
+        /**
+         * The status the server sent, or null for one this version doesn't know (a newer server
+         * may add some): the caller then keeps what it has until the app is updated, when the
+         * segment listing is read again (see `SEGMENT_LISTING_VERSION`). Unlike [valueOf], never
+         * throws.
+         */
+        fun fromServer(name: String?): SegmentStatus? = entries.firstOrNull { it.name == name }
+    }
 }

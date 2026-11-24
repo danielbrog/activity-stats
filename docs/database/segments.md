@@ -160,8 +160,9 @@ Resubmitting after `UNPUBLISHED` makes a new verified segment if approved.
 
 ## Routes
 
-**Built so far:** `PUT /segments/{id}` and `GET /segments` (see [server.md](server.md)). The rest
-come with the review, admin and catalogue slices.
+**Built so far:** `PUT /segments/{id}` and `GET /segments` (see [server.md](server.md)), and the
+phone syncs personal segments and their review results with them. The rest come with the
+review, admin and catalogue slices.
 
 | Route | Who | Work |
 |---|---|---|

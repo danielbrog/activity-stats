@@ -106,7 +106,11 @@ worked out (the app fills those in at start-up).
 
 ## `segments`: road segments the rider made
 
-User data: your own segments only. Not synced yet (planned: see [segments.md](segments.md)).
+User data: your own segments only. Synced like rides (to DynamoDB `Segments`, see
+[server.md](server.md)): edits upload, and segments and their review results download, with
+their own cursor. Segments deleted in the cloud are downloaded too (deleted), so their review
+results apply and a restore finds them. Sync now puts refused segments back in the queue, as
+it does rides. A segment is 100 m to 100 km long, the server's limits.
 
 | Column | Type | Null? | Default | Meaning |
 |---|---|---|---|---|

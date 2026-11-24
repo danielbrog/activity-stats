@@ -1,6 +1,7 @@
 package com.danielbrog.activitystats.data
 
 import android.util.Log
+import androidx.room.withTransaction
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.location.RouteBounds
 import com.danielbrog.activitystats.segments.Polyline
@@ -8,16 +9,20 @@ import com.danielbrog.activitystats.segments.SegmentEffort
 import com.danielbrog.activitystats.segments.SegmentMatcher
 import com.danielbrog.activitystats.segments.SegmentPath
 import com.danielbrog.activitystats.segments.SegmentSelection
+import com.danielbrog.activitystats.sync.CloudReview
+import com.danielbrog.activitystats.sync.CloudSegment
+import com.danielbrog.activitystats.sync.SegmentSyncStore
+import com.danielbrog.activitystats.sync.mergeLineChange
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,6 +34,9 @@ import kotlinx.coroutines.withContext
  * are few and small, so they are all loaded and compared with a ride's box in Kotlin.
  *
  * [ownerId] gives the signed-in account, as for rides, so a new segment belongs to it.
+ * [onChanged] is called after a change that should reach the cloud (a segment made, renamed,
+ * deleted or restored); the app starts a sync from it. The repository is also the store
+ * segment sync reads and writes ([SegmentSyncStore]).
  * [background] is where matching runs, for a new segment's efforts and a newly saved ride's:
  * a scope that outlives screens (the app's), so leaving a screen doesn't stop it.
  *
@@ -37,10 +45,11 @@ import kotlinx.coroutines.withContext
  * effort the other had just written.
  */
 class SegmentRepository(
-    db: AppDatabase,
+    private val db: AppDatabase,
     private val background: CoroutineScope,
     private val ownerId: () -> String? = { null },
-) {
+    private val onChanged: () -> Unit = {},
+) : SegmentSyncStore {
     private val segments = db.segmentDao()
     private val activities = db.activityDao()
     private val points = db.trackPointDao()
@@ -53,8 +62,17 @@ class SegmentRepository(
     val summaries: Flow<List<SegmentSummary>> = segments.observeSummaries()
 
     private val _finding = MutableStateFlow<Set<String>>(emptySet())
-    /** The ids of new segments whose efforts are still being found, for "Finding efforts…". */
+    /**
+     * The ids of segments whose efforts are still being found, for "Finding efforts…": new ones,
+     * and ones downloaded, brought back or given a new line by sync.
+     */
     val finding: StateFlow<Set<String>> = _finding.asStateFlow()
+
+    // Guards the two below. A segment can be matched twice at once (made, then given the
+    // cloud's line), so each id counts its jobs and leaves [finding] when the last one ends.
+    private val findingLock = Any()
+    private val findingCounts = mutableMapOf<String, Int>()
+    private val segmentJobs = mutableSetOf<Job>()
 
     /**
      * Saves a new name. False (and nothing saved) if it is blank after cleaning, the same as
@@ -62,14 +80,22 @@ class SegmentRepository(
      */
     suspend fun rename(id: String, name: String, nowMillis: Long = System.currentTimeMillis()): Boolean {
         val clean = SegmentName.clean(name) ?: return false
-        return segments.rename(id, clean, nowMillis) > 0
+        val renamed = segments.rename(id, clean, nowMillis) > 0
+        if (renamed) onChanged()
+        return renamed
     }
 
     /** Soft-deletes a segment: it disappears everywhere, but [restore] brings it back as it was. */
-    suspend fun delete(id: String, nowMillis: Long = System.currentTimeMillis()) = segments.softDelete(id, nowMillis)
+    suspend fun delete(id: String, nowMillis: Long = System.currentTimeMillis()) {
+        segments.softDelete(id, nowMillis)
+        onChanged()
+    }
 
     /** Undoes [delete]. */
-    suspend fun restore(id: String, nowMillis: Long = System.currentTimeMillis()) = segments.restore(id, nowMillis)
+    suspend fun restore(id: String, nowMillis: Long = System.currentTimeMillis()) {
+        segments.restore(id, nowMillis)
+        onChanged()
+    }
 
     /** One segment, or null when it is missing or deleted. */
     fun segment(id: String): Flow<SegmentEntity?> = segments.observeSegment(id)
@@ -85,7 +111,8 @@ class SegmentRepository(
      * [endIndex], as the map draws them. Saving is one quick write; the efforts every ride made
      * on it are then found in [background], and [CreatedSegment.matching] finishes when they
      * are saved. Returns null if the name is blank or that part can't be a segment: see
-     * [SegmentPath.fromRide], and it must be at least [SegmentSelection.MIN_LENGTH_METERS].
+     * [SegmentPath.fromRide], and it must be from [SegmentSelection.MIN_LENGTH_METERS] to
+     * [SegmentSelection.MAX_LENGTH_METERS] long.
      */
     suspend fun create(
         name: String,
@@ -96,7 +123,7 @@ class SegmentRepository(
     ): CreatedSegment? = withContext(Dispatchers.Default) {
         val cleanName = SegmentName.clean(name) ?: return@withContext null
         val path = SegmentPath.fromRide(keptPointsFor(rideId), startIndex, endIndex)
-        if (path == null || path.distanceMeters < SegmentSelection.MIN_LENGTH_METERS) return@withContext null
+        if (path == null || !SegmentSelection.isAllowedLength(path.distanceMeters)) return@withContext null
         val owner = ownerId()
         // A segment is for the sport it was ridden as: a run's segment only matches runs.
         val sport = activities.getActivity(rideId)?.type ?: ActivityType.RIDE
@@ -112,22 +139,104 @@ class SegmentRepository(
             sport = sport,
         )
         segments.insertSegment(segment)
-        _finding.update { it + segment.id }
+        onChanged()
+        CreatedSegment(segment.id, matchSegmentInBackground(segment))
+    }
+
+    /**
+     * Finds every ride's efforts on [segment] in [background], showing "Finding efforts…" while
+     * it runs. For a segment just made, downloaded, or brought back. A failure is logged, not
+     * thrown: the segment stays, with no efforts until the next recompute.
+     */
+    private fun matchSegmentInBackground(segment: SegmentEntity): Job {
+        val id = segment.id
+        synchronized(findingLock) {
+            findingCounts[id] = (findingCounts[id] ?: 0) + 1
+            _finding.value = findingCounts.keys.toSet()
+        }
         val job = background.launch {
             try {
                 recomputeForSegment(segment)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // A database or decoding error: the segment stays, with no efforts until the
-                // next recompute. Not worth crashing the app for.
-                Log.e("SegmentRepository", "Finding efforts for a new segment failed", e)
-            } finally {
-                _finding.update { it - segment.id }
+                Log.e("SegmentRepository", "Finding efforts for a segment failed", e)
             }
         }
-        CreatedSegment(segment.id, job)
+        synchronized(findingLock) { segmentJobs += job }
+        // Runs however the job ends, even cancelled before it started.
+        job.invokeOnCompletion {
+            synchronized(findingLock) {
+                segmentJobs -= job
+                val left = (findingCounts[id] ?: 1) - 1
+                if (left > 0) findingCounts[id] = left else findingCounts.remove(id)
+                _finding.value = findingCounts.keys.toSet()
+            }
+        }
+        return job
     }
+
+    /**
+     * Waits for every segment's efforts being found now. Sync calls it before it finishes, so
+     * the app isn't left to be stopped halfway through a download's matching: nothing would
+     * find those efforts again.
+     */
+    suspend fun awaitSegmentMatching() {
+        synchronized(findingLock) { segmentJobs.toList() }.joinAll()
+    }
+
+    // --- SegmentSyncStore: what segment sync reads and writes ---
+
+    override suspend fun pendingSegmentUploads(userId: String): List<SegmentEntity> = segments.pendingUploads(userId)
+
+    override suspend fun markSegmentSynced(id: String, sentUpdatedAt: Long) {
+        segments.markSynced(id, sentUpdatedAt)
+    }
+
+    override suspend fun markSegmentFailed(id: String, sentUpdatedAt: Long) = segments.markFailed(id, sentUpdatedAt)
+
+    override suspend fun getSegment(id: String): SegmentEntity? = segments.getSegment(id)
+
+    /** Takes the cloud's newer name and deleted state; a segment brought back gets its efforts again. */
+    override suspend fun applyCloudSegment(cloud: CloudSegment): Boolean {
+        val before = segments.getSegment(cloud.id)
+        val taken = segments.applyCloudCopy(cloud.id, cloud.name, cloud.deletedAt, cloud.updatedAt) == 1
+        if (taken && before?.deletedAt != null && cloud.deletedAt == null) {
+            segments.getSegment(cloud.id)?.let { matchSegmentInBackground(it) }
+        }
+        return taken
+    }
+
+    /**
+     * The cloud's line, and the newer copy's name and deleted state ([mergeLineChange]), keeping
+     * this phone's review fields; then matched again on the new line. Read and written in one
+     * transaction, so an edit made meanwhile isn't overwritten.
+     */
+    override suspend fun replaceWithCloudSegment(cloud: CloudSegment): Boolean {
+        val merged = db.withTransaction {
+            segments.getSegment(cloud.id)?.let { local ->
+                mergeLineChange(local, cloud).also { segments.replaceSegment(it) }
+            }
+        } ?: return false
+        if (merged.deletedAt == null) matchSegmentInBackground(merged)
+        return merged.syncState == SyncState.SYNCED
+    }
+
+    /** A segment new to this phone: saved (if it still is new) and matched against every ride. */
+    override suspend fun saveDownloadedSegment(segment: SegmentEntity) {
+        val inserted = segments.insertIfNew(segment) != -1L
+        if (inserted && segment.deletedAt == null) matchSegmentInBackground(segment)
+    }
+
+    override suspend fun applyReview(review: CloudReview, status: SegmentStatus): Boolean =
+        segments.applyReview(
+            id = review.segmentId,
+            status = status.name,
+            submittedAt = review.submittedAt,
+            decidedAt = review.decidedAt,
+            reviewNote = review.reviewNote,
+            verifiedSegmentId = review.verifiedSegmentId,
+        ) > 0
 
     /**
      * Finds the efforts every ride near [segment] made on it, replacing what was there.
