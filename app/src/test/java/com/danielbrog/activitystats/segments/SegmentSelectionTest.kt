@@ -109,6 +109,23 @@ class SegmentSelectionTest {
     }
 
     @Test
+    fun aPartOver100kmIsTooLong() {
+        // 10,102 fixes 10 m apart: just over 101 km.
+        val check = SegmentSelection(ride(count = 10_102)).check(0..10_101)
+        assertTrue(check is SelectionCheck.TooLong)
+    }
+
+    @Test
+    fun theLengthLimitsAreTheServers() {
+        // The backend's MIN_DISTANCE_METERS and MAX_DISTANCE_METERS: a segment outside them is never backed up.
+        assertEquals(100.0, SegmentSelection.MIN_LENGTH_METERS, 0.0)
+        assertEquals(100_000.0, SegmentSelection.MAX_LENGTH_METERS, 0.0)
+        assertTrue(SegmentSelection.isAllowedLength(100_000.0))
+        assertFalse(SegmentSelection.isAllowedLength(100_000.1))
+        assertFalse(SegmentSelection.isAllowedLength(99.9))
+    }
+
+    @Test
     fun aPartUnder100mIsTooShort() {
         val check = SegmentSelection(ride()).check(50..55)
         assertTrue(check is SelectionCheck.TooShort)

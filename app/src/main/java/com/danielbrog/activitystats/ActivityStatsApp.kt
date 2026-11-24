@@ -34,7 +34,12 @@ class ActivityStatsApp : Application() {
     }
     val recordingWriter: RecordingWriter by lazy { RecordingWriter(activityRepository, appScope) }
     val segmentRepository: SegmentRepository by lazy {
-        SegmentRepository(database, background = appScope, ownerId = { authRepository.signedInUserId })
+        SegmentRepository(
+            database,
+            background = appScope,
+            ownerId = { authRepository.signedInUserId },
+            onChanged = { authRepository.requestSyncIfSignedIn() },
+        )
     }
     val authRepository: AuthRepository by lazy {
         AuthRepository(this, AuthConfig.current, AuthStateStore(this), { activityRepository }, appScope)

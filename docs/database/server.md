@@ -180,6 +180,4 @@ all of this.
 ## Not stored in the cloud
 
 - `best_efforts` and `segment_efforts`: derived, rebuilt on each phone from the points.
-- The phone doesn't sync segments yet: the backend routes above exist, and the phone side
-  comes next.
 - Settings (units, speed or pace, auto-pause): stay on the phone.

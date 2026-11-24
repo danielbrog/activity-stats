@@ -15,6 +15,9 @@ sealed interface SelectionCheck {
     /** Shorter than [SegmentSelection.MIN_LENGTH_METERS]. */
     data class TooShort(val distanceMeters: Double) : SelectionCheck
 
+    /** Longer than [SegmentSelection.MAX_LENGTH_METERS]. */
+    data class TooLong(val distanceMeters: Double) : SelectionCheck
+
     /**
      * Can be a segment. [yourTimeMs] is this ride's time on it, or null when this ride wouldn't
      * count on it; [stoppedInside] then says whether a stop inside is why.
@@ -132,6 +135,7 @@ class SegmentSelection(fixes: List<GpsData>) {
         if ((first..last).any { kept[it].stretch != kept[first].stretch }) return SelectionCheck.CrossesPause
         val path = SegmentPath.fromRide(kept, first, last)
         if (path == null || path.distanceMeters < MIN_LENGTH_METERS) return SelectionCheck.TooShort(distanceMeters(range))
+        if (path.distanceMeters > MAX_LENGTH_METERS) return SelectionCheck.TooLong(path.distanceMeters)
 
         // This ride's effort is the one that starts here: at the first fix, or when the rider
         // moved off it after a wait.
@@ -149,6 +153,15 @@ class SegmentSelection(fixes: List<GpsData>) {
          * [SegmentMatcher.END_RADIUS_METERS], so anything shorter mostly measures GPS error.
          */
         const val MIN_LENGTH_METERS = 100.0
+
+        /**
+         * The longest segment that can be made: the server refuses longer ones (the backend's
+         * `MAX_DISTANCE_METERS`), so one would never be backed up.
+         */
+        const val MAX_LENGTH_METERS = 100_000.0
+
+        /** Whether a segment this long can be made and synced. */
+        fun isAllowedLength(distanceMeters: Double) = distanceMeters in MIN_LENGTH_METERS..MAX_LENGTH_METERS
 
         /** The fewest fixes the zoomed slider shows either side of the part (about 20 s of riding). */
         const val MIN_WINDOW_MARGIN = 20

@@ -9,6 +9,8 @@ import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.sync.CloudCopy
+import com.danielbrog.activitystats.sync.CloudSegment
+import com.danielbrog.activitystats.sync.CloudReview
 import kotlin.math.cos
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +39,9 @@ class SegmentRepositoryTest {
 
     /** Every ride the repository reported as saved, and the matching started for it, as the app wires it. */
     private val savedRides = mutableListOf<String>()
+
+    /** How many times the repository asked for a sync, as the app wires it. */
+    private var changes = 0
     private val matching = mutableListOf<Job>()
 
     private val lat0 = 43.65
@@ -50,7 +55,7 @@ class SegmentRepositoryTest {
     @Before
     fun setUp() {
         db = Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java).build()
-        segments = SegmentRepository(db, background = background)
+        segments = SegmentRepository(db, background = background, onChanged = { changes++ })
         rides = ActivityRepository(db, onRideSaved = { id ->
             savedRides += id
             matching += segments.matchRideInBackground(id)
@@ -351,4 +356,116 @@ class SegmentRepositoryTest {
         segments.restore(id)
         assertEquals(listOf("Road"), segments.effortsForRide("first").first().map { it.segmentName })
     }
+
+    // --- Sync
+
+    @Test
+    fun editsAskForASync() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        segments.rename(id, "Hill climb")
+        segments.delete(id)
+        segments.restore(id)
+        assertEquals(4, changes) // made, renamed, deleted, restored
+    }
+
+    @Test
+    fun onlyAnUnchangedSegmentIsMarkedSynced() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val sql = db.openHelper.writableDatabase
+        val id = createAndMatch("Road")
+        sql.execSQL("UPDATE segments SET userId = 'me', syncState = 'PENDING', updatedAt = 5 WHERE id = '$id'")
+        assertEquals(listOf(id), segments.pendingSegmentUploads("me").map { it.id })
+
+        segments.markSegmentSynced(id, sentUpdatedAt = 4) // edited since that copy was sent
+        assertEquals(SyncState.PENDING, segments.getSegment(id)?.syncState)
+        segments.markSegmentSynced(id, sentUpdatedAt = 5)
+        assertEquals(SyncState.SYNCED, segments.getSegment(id)?.syncState)
+        assertTrue(segments.pendingSegmentUploads("me").isEmpty())
+    }
+
+    @Test
+    fun aReviewChangesOnlyTheReviewFields() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        val before = checkNotNull(segments.getSegment(id))
+        val review = CloudReview(id, "REJECTED", submittedAt = 10L, decidedAt = 20L, reviewNote = "Too short", syncedAt = 30L)
+        assertTrue(segments.applyReview(review, SegmentStatus.REJECTED))
+        val after = checkNotNull(segments.getSegment(id))
+        assertEquals(SegmentStatus.REJECTED, after.status)
+        assertEquals("Too short", after.reviewNote)
+        assertEquals(before.updatedAt, after.updatedAt) // not an edit to upload
+        assertEquals(before.syncState, after.syncState)
+        assertFalse(segments.applyReview(review.copy(segmentId = "missing"), SegmentStatus.REJECTED))
+    }
+
+    @Test
+    fun aDownloadedSegmentIsSavedOnceAndGetsItsEfforts() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        rideAlong("second", 5_000_000L)
+        // The same road as "first" fixes 50 to 150, as another phone would have uploaded it.
+        val made = checkNotNull(segments.getSegment(createAndMatch("Mine")))
+        val fromCloud = CloudSegment(
+            id = "from-cloud", name = "From the cloud", path = made.path, distanceMeters = made.distanceMeters,
+            sport = "ride", createdAt = 1L, updatedAt = 2L, syncedAt = 3L,
+        )
+        segments.saveDownloadedSegment(fromCloud.toEntity("me"))
+        segments.saveDownloadedSegment(fromCloud.toEntity("me").copy(name = "Again")) // already here: ignored
+        awaitSegmentMatching()
+        assertEquals("From the cloud", segments.getSegment("from-cloud")?.name)
+        assertEquals(setOf("first", "second"), segments.effortsFor("from-cloud").first().map { it.activityId }.toSet())
+    }
+
+    @Test
+    fun aSegmentRestoredInTheCloudComesBackWithItsEfforts() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        segments.delete(id, nowMillis = 10L)
+        val restored = checkNotNull(segments.getSegment(id)).let {
+            CloudSegment(id, it.name, it.path, it.distanceMeters, it.sport, it.createdAt, updatedAt = 20L, deletedAt = null, syncedAt = 30L)
+        }
+        assertTrue(segments.applyCloudSegment(restored))
+        awaitSegmentMatching()
+        assertNull(segments.getSegment(id)?.deletedAt)
+        assertEquals(SyncState.SYNCED, segments.getSegment(id)?.syncState)
+        assertEquals(listOf("first"), segments.effortsFor(id).first().map { it.activityId })
+    }
+
+    @Test
+    fun signingInClaimsSegmentsMadeWhileSignedOut() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road") // no owner: made signed out
+        assertEquals(SyncState.LOCAL_ONLY, segments.getSegment(id)?.syncState)
+        rides.claimUnowned("me")
+        val claimed = checkNotNull(segments.getSegment(id))
+        assertEquals("me", claimed.userId)
+        assertEquals(SyncState.PENDING, claimed.syncState)
+    }
+
+    @Test
+    fun aLineChangeKeepsANewerRenameOnThePhone() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        segments.rename(id, "Hill climb", nowMillis = 5_000L)
+        val made = checkNotNull(segments.getSegment(id))
+        val older = CloudSegment(id, "Old name", made.path, made.distanceMeters, made.sport, made.createdAt, updatedAt = 4_000L, syncedAt = 30L)
+        assertFalse(segments.replaceWithCloudSegment(older)) // still has an edit to upload
+        awaitSegmentMatching()
+        val after = checkNotNull(segments.getSegment(id))
+        assertEquals("Hill climb", after.name)
+        assertEquals(5_000L, after.updatedAt)
+        assertEquals(listOf("first"), segments.effortsFor(id).first().map { it.activityId })
+    }
+
+    @Test
+    fun syncNowRetriesRefusedSegments() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        db.openHelper.writableDatabase.execSQL("UPDATE segments SET userId = 'me', syncState = 'FAILED' WHERE id = '$id'")
+        rides.retryFailed("me")
+        assertEquals(SyncState.PENDING, segments.getSegment(id)?.syncState)
+    }
+
+    /** Waits for any segment matching started in the background (downloads, restores). */
+    private suspend fun awaitSegmentMatching() = segments.awaitSegmentMatching()
 }

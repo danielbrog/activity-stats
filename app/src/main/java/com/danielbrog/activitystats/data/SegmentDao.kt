@@ -48,6 +48,71 @@ abstract class SegmentDao {
     @Insert
     abstract suspend fun insertSegment(segment: SegmentEntity)
 
+    // --- Sync (the same guards as rides: see ActivityDao) ---
+
+    /** A segment from the cloud, saved only if it isn't on this phone already. -1 if it was. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertIfNew(segment: SegmentEntity): Long
+
+    /** A whole segment replaced by the cloud's copy (its line included), keeping its id. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun replaceSegment(segment: SegmentEntity)
+
+    /** [userId]'s segments waiting to upload, oldest edit first. */
+    @Query("SELECT * FROM segments WHERE userId = :userId AND syncState = ${SyncStateSql.PENDING} ORDER BY updatedAt")
+    abstract suspend fun pendingUploads(userId: String): List<SegmentEntity>
+
+    /** Synced, unless it was edited after the copy that was sent ([sentUpdatedAt]). */
+    @Query(
+        "UPDATE segments SET syncState = ${SyncStateSql.SYNCED} " +
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
+    )
+    abstract suspend fun markSynced(id: String, sentUpdatedAt: Long): Int
+
+    /** Failed (refused by the server), unless it was edited after the copy that was sent. */
+    @Query(
+        "UPDATE segments SET syncState = ${SyncStateSql.FAILED} " +
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
+    )
+    abstract suspend fun markFailed(id: String, sentUpdatedAt: Long)
+
+    /** Puts [userId]'s refused segments back in the queue, for Sync now. */
+    @Query("UPDATE segments SET syncState = ${SyncStateSql.PENDING} WHERE userId = :userId AND syncState = ${SyncStateSql.FAILED}")
+    abstract suspend fun retryFailed(userId: String)
+
+    /**
+     * The cloud's name and deleted state, but only if its copy is newer than the phone's. An
+     * edit made on the phone after the upload began is newer still, so it is kept and goes up
+     * next time. Returns 1 if the cloud's copy was taken, 0 if not.
+     */
+    @Query(
+        "UPDATE segments SET name = :name, deletedAt = :deletedAt, updatedAt = :updatedAt, " +
+            "syncState = ${SyncStateSql.SYNCED} WHERE id = :id AND updatedAt < :updatedAt"
+    )
+    abstract suspend fun applyCloudCopy(id: String, name: String, deletedAt: Long?, updatedAt: Long): Int
+
+    /**
+     * The server's review decision. The server always wins; updatedAt and syncState are left
+     * alone, since this isn't an edit to upload. [status] is a SegmentStatus name. Returns 0 if
+     * the segment isn't on this phone.
+     */
+    @Query(
+        "UPDATE segments SET status = :status, submittedAt = :submittedAt, decidedAt = :decidedAt, " +
+            "reviewNote = :reviewNote, verifiedSegmentId = :verifiedSegmentId WHERE id = :id"
+    )
+    abstract suspend fun applyReview(
+        id: String,
+        status: String,
+        submittedAt: Long?,
+        decidedAt: Long?,
+        reviewNote: String?,
+        verifiedSegmentId: String?,
+    ): Int
+
+    /** Gives every segment with no owner (made signed out) to [userId], waiting to upload. */
+    @Query("UPDATE segments SET userId = :userId, syncState = ${SyncStateSql.PENDING} WHERE userId IS NULL")
+    abstract suspend fun claimUnowned(userId: String): Int
+
     @Query("SELECT * FROM segments WHERE id = :id")
     abstract suspend fun getSegment(id: String): SegmentEntity?
 

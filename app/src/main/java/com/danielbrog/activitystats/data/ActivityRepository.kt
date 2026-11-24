@@ -213,7 +213,14 @@ class ActivityRepository(
     }
 
     /** Files every ride with no owner under [userId], on sign-in. Returns how many. */
-    suspend fun claimUnowned(userId: String): Int = activities.claimUnowned(userId)
+    /**
+     * Gives everything made while signed out to [userId], waiting to upload: rides and segments,
+     * together. Returns how many rides were claimed.
+     */
+    suspend fun claimUnowned(userId: String): Int = db.withTransaction {
+        db.segmentDao().claimUnowned(userId)
+        activities.claimUnowned(userId)
+    }
 
     override suspend fun getActivity(id: String): ActivityEntity? = activities.getActivity(id)
 
@@ -248,8 +255,11 @@ class ActivityRepository(
 
     override suspend fun markFailed(id: String, sentUpdatedAt: Long) = activities.markFailed(id, sentUpdatedAt)
 
-    /** Puts [userId]'s refused rides back in the queue, for Sync now. */
-    suspend fun retryFailed(userId: String) = activities.retryFailed(userId)
+    /** Puts [userId]'s refused rides and segments back in the queue, for Sync now. */
+    suspend fun retryFailed(userId: String) = db.withTransaction {
+        db.segmentDao().retryFailed(userId)
+        activities.retryFailed(userId)
+    }
 
     fun waitingCount(userId: String): Flow<Int> = activities.waitingCount(userId)
 

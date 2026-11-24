@@ -61,7 +61,7 @@ class Uploader(private val store: SyncStore, private val api: SyncApi) {
 
         /** Notes a ride not sent; parks it as failed only if the server clearly refused it. */
         suspend fun notSent(ride: ActivityEntity, code: Int?) {
-            if (code != null && refusesTheRide(code)) store.markFailed(ride.id, ride.updatedAt)
+            if (code != null && refusesTheUpload(code)) store.markFailed(ride.id, ride.updatedAt)
             rejected += ride.id
         }
 
@@ -92,13 +92,12 @@ class Uploader(private val store: SyncStore, private val api: SyncApi) {
         }
         return Report(synced, rejected)
     }
-
-    private companion object {
-        /**
-         * A reply that refuses this ride itself, so retrying unchanged won't help: a 4xx other
-         * than 404, which here means a missing route (a setup problem), not a missing ride.
-         * Redirects and the retried codes (401, 403, 408, 429) never mark a ride failed.
-         */
-        fun refusesTheRide(code: Int) = code in 400..499 && code != 404
-    }
 }
+
+/**
+ * A reply that refuses the ride or segment itself, so retrying it unchanged won't help: a 4xx
+ * other than 404, which here means a missing route (a setup problem), not a missing item.
+ * Redirects and the retried codes (401, 403, 408, 429) never mark anything failed. Shared by
+ * the ride and segment uploads, so the two can't drift apart.
+ */
+internal fun refusesTheUpload(code: Int) = code in 400..499 && code != 404

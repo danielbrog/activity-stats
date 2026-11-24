@@ -74,3 +74,37 @@ class SyncCursorStore(context: Context) : SyncCursor {
         val LAST_SYNCED_USER = stringPreferencesKey("last_synced_user")
     }
 }
+
+/**
+ * Where the segment download picks up from: the `syncedAt` of the last segment item handled,
+ * kept apart from the ride cursor (the two listings run on their own clocks), and saved with
+ * its account like the ride cursor, so another account starts from 0.
+ *
+ * Like the ride cursor, it is saved with the listing version this app read
+ * ([SEGMENT_LISTING_VERSION]): items of a kind or status an older version skipped are read again
+ * from 0 once the app is updated. Segments already on the phone just come out as "keep".
+ */
+class SegmentSyncCursorStore(context: Context) : SyncCursor {
+
+    private val store = context.applicationContext.syncStore
+
+    override suspend fun get(userId: String): Long {
+        val prefs = store.data.first()
+        val readerUpToDate = (prefs[READER] ?: 1) >= SEGMENT_LISTING_VERSION
+        return if (prefs[USER] == userId && readerUpToDate) prefs[SYNCED_AT] ?: 0L else 0L
+    }
+
+    override suspend fun set(userId: String, syncedAt: Long) {
+        store.edit {
+            it[USER] = userId
+            it[SYNCED_AT] = syncedAt
+            it[READER] = SEGMENT_LISTING_VERSION
+        }
+    }
+
+    private companion object {
+        val USER = stringPreferencesKey("segment_cursor_user")
+        val SYNCED_AT = longPreferencesKey("segment_cursor_synced_at")
+        val READER = intPreferencesKey("segment_cursor_listing_version")
+    }
+}

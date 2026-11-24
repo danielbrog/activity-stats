@@ -22,6 +22,24 @@ sealed interface PutResult {
     data class Rejected(val code: Int) : PutResult
 }
 
+/** What happened to a segment sent with `PUT /segments/{id}`. */
+sealed interface SegmentPutResult {
+    /** Saved: the cloud now has this copy. */
+    data object Applied : SegmentPutResult
+
+    /** The cloud's copy is newer (a 409), so it was kept; here it is. */
+    data class Newer(val cloud: CloudSegment) : SegmentPutResult
+
+    /**
+     * The cloud's copy has a different line or sport (a 400 with the copy). A line never changes
+     * on a phone, so this means the two disagree; the cloud's copy is taken whole.
+     */
+    data class LineChanged(val cloud: CloudSegment) : SegmentPutResult
+
+    /** The server refused this segment; retrying won't help. */
+    data class Rejected(val code: Int) : SegmentPutResult
+}
+
 /** A short-lived link to upload one track file to, with the headers the upload must send. */
 data class UploadLink(val url: String, val headers: Map<String, String>)
 
@@ -55,6 +73,25 @@ internal fun outcomeOf(code: Int, fromS3: Boolean = false): Outcome = when {
     else -> Outcome.Skip
 }
 
+/** The exception for a reply worth retrying: a new sign-in for a 401, a plain HTTP error otherwise. */
+internal fun retryFor(code: Int): IOException = if (code == 401) SignInRejectedException() else HttpException(code)
+
+/**
+ * What a reply to `PUT /segments/{id}` means. Plain Kotlin, unit-tested. A 409 carrying the
+ * stored copy means the cloud's is newer; a 400 carrying it means its line or sport differs.
+ * Either without a copy, like any other 4xx, is a refusal. Throws an [IOException] for a reply
+ * worth retrying.
+ */
+internal fun segmentPutResultOf(code: Int, body: String): SegmentPutResult {
+    if (code == 409) return parseSegmentConflict(body)?.let { SegmentPutResult.Newer(it) } ?: SegmentPutResult.Rejected(code)
+    if (code == 400) parseSegmentConflict(body)?.let { return SegmentPutResult.LineChanged(it) }
+    return when (outcomeOf(code)) {
+        Outcome.Ok -> SegmentPutResult.Applied
+        Outcome.Retry -> throw retryFor(code)
+        Outcome.Skip -> SegmentPutResult.Rejected(code)
+    }
+}
+
 /** The sync API calls the upload and download need. An interface, so tests can use a fake server. */
 interface SyncApi {
     suspend fun putActivity(id: String, summary: RideSummary): PutResult
@@ -75,11 +112,23 @@ interface SyncApi {
     suspend fun downloadTrack(url: String): ByteArray
 }
 
+/** The segment sync calls. Separate from [SyncApi], so the ride tests' fakes don't need them. */
+interface SegmentSyncApi {
+    suspend fun putSegment(id: String, segment: SegmentUpload): SegmentPutResult
+
+    /**
+     * One page of the segment and review items saved after [since] (server time), oldest first.
+     * [page] is the previous page's `nextCursor`, or null for the first; [since] stays the same.
+     */
+    suspend fun listSegments(since: Long, page: String?): CloudSegmentPage
+}
+
 /**
- * [SyncApi] over HTTPS with [HttpURLConnection], like [com.danielbrog.activitystats.account.AccountHttp].
- * [accessToken] must be fresh: it lasts an hour, longer than one sync takes.
+ * [SyncApi] and [SegmentSyncApi] over HTTPS with [HttpURLConnection], like
+ * [com.danielbrog.activitystats.account.AccountHttp]. [accessToken] must be fresh: it lasts an
+ * hour, longer than one sync takes.
  */
-class HttpSyncApi(private val apiUrl: String, private val accessToken: String) : SyncApi {
+class HttpSyncApi(private val apiUrl: String, private val accessToken: String) : SyncApi, SegmentSyncApi {
 
     override suspend fun putActivity(id: String, summary: RideSummary): PutResult {
         val (code, reply) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)
@@ -126,6 +175,18 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
         return body
     }
 
+    override suspend fun putSegment(id: String, segment: SegmentUpload): SegmentPutResult {
+        val (code, reply) = request("PUT", "$apiUrl/segments/$id", segment.toJson().toByteArray(), JSON_HEADERS)
+        return segmentPutResultOf(code, reply.decodeToString())
+    }
+
+    override suspend fun listSegments(since: Long, page: String?): CloudSegmentPage {
+        val cursor = page?.let { "&cursor=" + URLEncoder.encode(it, Charsets.UTF_8.name()) } ?: ""
+        val (code, body) = request("GET", "$apiUrl/segments?since=$since$cursor", null, emptyMap())
+        throwUnlessOk(code)
+        return parseSegmentPage(body.decodeToString())
+    }
+
     /**
      * Sends one request and returns the status code and the reply's bytes. Only sends a body
      * when there is one: opening one at all turns a GET into a POST in [HttpURLConnection].
@@ -165,8 +226,6 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
             Outcome.Skip -> throw RejectedException(code)
         }
     }
-
-    private fun retryFor(code: Int): IOException = if (code == 401) SignInRejectedException() else HttpException(code)
 
     @Serializable
     private data class LinkJson(val url: String, val headers: Map<String, String> = emptyMap())

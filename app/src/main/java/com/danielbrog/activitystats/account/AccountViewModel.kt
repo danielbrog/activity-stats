@@ -81,7 +81,7 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /**
-     * Puts refused rides back in the queue, then starts a sync at once: it replaces one waiting
+     * Puts refused rides and segments back in the queue, then starts a sync at once: it replaces one waiting
      * out a retry. The button is off while a sync runs, so this never cuts one short.
      */
     fun syncNow() {
