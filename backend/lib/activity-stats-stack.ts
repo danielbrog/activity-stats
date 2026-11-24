@@ -55,7 +55,12 @@ export class ActivityStatsStack extends Stack {
     super(scope, id, props);
 
     // --- Accounts ---
-    const userPool = new cognito.UserPool(this, 'Users', {
+    // 'UsersV2': the original pool ('Users') was deleted outside CDK, and a new id is what
+    // makes CloudFormation create a fresh one. Never rename it or move it into another
+    // construct: either changes its logical id and makes yet another pool, with new accounts
+    // and user ids.
+    const userPool = new cognito.UserPool(this, 'UsersV2', {
+      userPoolName: 'activity-stats-users',
       selfSignUpEnabled: true,
       signInAliases: { email: true },
       autoVerify: { email: true },
@@ -67,9 +72,10 @@ export class ActivityStatsStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    // Cognito's hosted sign-in page. The prefix must be unique across AWS; the account id makes it so.
+    // Cognito's hosted sign-in page. The prefix must be unique across AWS, and riders see it in
+    // the address bar, so it names the app rather than the AWS account.
     const domain = userPool.addDomain('SignInDomain', {
-      cognitoDomain: { domainPrefix: `activity-stats-${this.account}` },
+      cognitoDomain: { domainPrefix: 'activity-stats-auth' },
     });
 
     // The Android app: a public client (no secret, since an app can't keep one), signing in

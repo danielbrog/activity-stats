@@ -97,6 +97,24 @@ describe('ActivityStatsStack', () => {
     });
   });
 
+  test('there is one user pool, with one app client and one sign-in domain', () => {
+    template.resourceCountIs('AWS::Cognito::UserPool', 1);
+    template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
+    template.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
+    template.hasResourceProperties('AWS::Cognito::UserPool', { UserPoolName: 'activity-stats-users' });
+    // Riders see the sign-in address, so it names the app, not the AWS account.
+    template.hasResourceProperties('AWS::Cognito::UserPoolDomain', { Domain: 'activity-stats-auth' });
+  });
+
+  test('the pool and its client keep their logical ids, so a refactor cannot make a new, empty pool', () => {
+    expect(Object.keys(template.findResources('AWS::Cognito::UserPool'))).toEqual([
+      expect.stringMatching(/^UsersV2[0-9A-F]{8}$/),
+    ]);
+    expect(Object.keys(template.findResources('AWS::Cognito::UserPoolClient'))).toEqual([
+      expect.stringMatching(/^UsersV2AndroidApp[0-9A-F]{8}$/),
+    ]);
+  });
+
   test('the six functions run Node 22 on ARM with short timeouts', () => {
     const functions = template.findResources('AWS::Lambda::Function', {
       Properties: { Runtime: 'nodejs22.x' },
