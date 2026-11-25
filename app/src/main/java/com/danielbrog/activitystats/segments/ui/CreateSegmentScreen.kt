@@ -192,11 +192,10 @@ private fun Picker(state: CreateSegmentState.Picking, unit: DistanceUnit, saving
             Row(verticalAlignment = Alignment.CenterVertically) {
                 NudgeButtons(end = "start", onNudge = { forward -> actions.onNudge(true, forward) })
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    val from = Format.distance(state.windowStartMeters, unit)
+                    val to = Format.distance(state.windowEndMeters, unit)
                     Text(
-                        "${Format.distance(
-                            state.windowStartMeters,
-                            unit,
-                        )} → ${Format.distance(state.windowEndMeters, unit)}",
+                        "$from → $to",
                         style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -292,11 +291,14 @@ private fun Readout(distanceMeters: Double, check: SelectionCheck?, unit: Distan
     val (text, isProblem) = when (check) {
         null -> "$distance · Checking…" to false
         SelectionCheck.CrossesPause -> "This part crosses a pause. Pick a part you rode without pausing." to true
-        is SelectionCheck.TooShort ->
-            "$distance · A segment must be at least ${Format.distance(SegmentSelection.MIN_LENGTH_METERS, unit)}" to
-                true
-        is SelectionCheck.TooLong ->
-            "$distance · A segment can be at most ${Format.distance(SegmentSelection.MAX_LENGTH_METERS, unit)}" to true
+        is SelectionCheck.TooShort -> {
+            val min = Format.distance(SegmentSelection.MIN_LENGTH_METERS, unit)
+            "$distance · A segment must be at least $min" to true
+        }
+        is SelectionCheck.TooLong -> {
+            val max = Format.distance(SegmentSelection.MAX_LENGTH_METERS, unit)
+            "$distance · A segment can be at most $max" to true
+        }
         is SelectionCheck.Ready -> when {
             check.yourTimeMs != null -> "$distance · Your time ${Format.clock(check.yourTimeMs)}" to false
             check.stoppedInside -> "$distance · You stopped inside this part, so this ride won't count on it." to false

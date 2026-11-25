@@ -11,7 +11,11 @@ plugins {
 // Formatting: the rules are in .editorconfig at the project root, which Android Studio reads too.
 // `ktlintCheck` reports, `ktlintFormat` fixes what it can.
 ktlint {
-    version.set(libs.versions.ktlint.get())
+    version = libs.versions.ktlint
+    // The root build.gradle.kts and settings.gradle.kts too, not only this module's script.
+    kotlinScriptAdditionalPaths {
+        include(fileTree(rootDir) { include("*.kts") })
+    }
 }
 
 secrets {

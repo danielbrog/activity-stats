@@ -166,8 +166,7 @@ class DownloaderTest {
         val store = FakeStore()
         val cursor = FakeCursor()
         val api = FakeApi(listOf(listOf(cloud("a", clock - 1_000), cloud("b", clock - 1_000)))).apply {
-            missingTracks +=
-                "b"
+            missingTracks += "b"
         }
         try {
             run(store, api, cursor)
@@ -193,8 +192,7 @@ class DownloaderTest {
     fun aNetworkFailureKeepsTheProgressMadeSoFar() {
         val store = FakeStore()
         val api = FakeApi(listOf(listOf(cloud("a", 10), cloud("b", 20)), listOf(cloud("c", 30)))).apply {
-            failListingAt =
-                1
+            failListingAt = 1
         }
         val cursor = FakeCursor()
         try {

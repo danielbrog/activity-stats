@@ -356,20 +356,15 @@ private fun LiveContent(
             )
         }
         Spacer(Modifier.height(12.dp))
+        // Whichever time isn't the big one goes here.
+        val otherTime = if (settings.autoPause) {
+            "Elapsed ${Format.clock(elapsedMs)}"
+        } else {
+            "Moving ${Format.clock(stats.movingMs)}"
+        }
+        val top = if (display == SpeedDisplay.Speed) "Max" else "Best"
         Text(
-            // Whichever time isn't the big one goes here.
-            text =
-                (
-                    if (settings.autoPause) {
-                        "Elapsed ${Format.clock(
-                            elapsedMs,
-                        )}"
-                    } else {
-                        "Moving ${Format.clock(stats.movingMs)}"
-                    }
-                    ) +
-                    " · " + (if (display == SpeedDisplay.Speed) "Max " else "Best ") +
-                    Format.speedOrPace(stats.maxSpeedMps, unit, display),
+            text = "$otherTime · $top ${Format.speedOrPace(stats.maxSpeedMps, unit, display)}",
             style = MaterialTheme.typography.bodyLarge.withTabularDigits(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

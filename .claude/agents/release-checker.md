@@ -1,6 +1,6 @@
 ---
 name: release-checker
-description: Checks a feature branch is ready for a pull request. Builds, runs the unit tests and lint one at a time, scans the branch for secrets, and drafts the PR description. Use before opening a pull request.
+description: Checks a feature branch is ready for a pull request. Builds, runs the unit tests, ktlint and lint one at a time, scans the branch for secrets, and drafts the PR description. Use before opening a pull request.
 tools: Bash, PowerShell, Read, Grep, Glob
 model: sonnet
 ---
@@ -14,13 +14,14 @@ change anything on GitHub or AWS.
 - Report the branch name, the commits it adds, and any uncommitted changes (ignore `.idea/`).
 - If the branch is `main`, or has no commits beyond `main`, stop and say so.
 
-## 2. Build, tests and lint, one at a time
+## 2. Build, tests, formatting and lint, one at a time
 The PC has little memory, so run each Gradle step on its own, in PowerShell, from the
 project root, and wait for it to finish before the next:
 
 ```
 $env:JAVA_HOME="E:\Android\Android Studio\jbr"; .\gradlew.bat assembleDebug --no-daemon -q
 $env:JAVA_HOME="E:\Android\Android Studio\jbr"; .\gradlew.bat testDebugUnitTest --no-daemon -q
+$env:JAVA_HOME="E:\Android\Android Studio\jbr"; .\gradlew.bat ktlintCheck --no-daemon --max-workers=1 -q
 $env:JAVA_HOME="E:\Android\Android Studio\jbr"; .\gradlew.bat lintDebug --no-daemon -q
 ```
 
@@ -29,6 +30,10 @@ $env:JAVA_HOME="E:\Android\Android Studio\jbr"; .\gradlew.bat lintDebug --no-dae
   created in the project root, then retry that step once.
 - Tests: count `tests` and `failures` across `app/build/test-results/testDebugUnitTest/*.xml`.
   For any failure, give the test name and its message.
+- Formatting: `ktlintCheck` fails if any Kotlin file breaks the house style in `.editorconfig`.
+  Report each file and rule from `app/build/reports/ktlint/*/*.txt`; `ktlintFormat` fixes
+  most of them, so say so rather than suggesting hand edits. `--max-workers=1` keeps it to
+  one worker process: several at once can run the PC out of memory.
 - Lint: read `app/build/reports/lint-results-debug.txt`. Ignore warnings that mention
   `colors.xml`, `RedundantLabel` or `compose-bom`; they are known. Report anything else.
 
@@ -53,9 +58,9 @@ the git-ignored `local.properties` and `backend/cdk.context.json`. It prints onl
 ## 4. Report
 Reply with:
 1. **Verdict**: ready, or not ready and why.
-2. **Checks**: build, tests (`N passing, M failing`), lint, secret scan.
+2. **Checks**: build, tests (`N passing, M failing`), ktlint, lint, secret scan.
 3. **Draft PR description** in Markdown: what the change does and why, the files touched, and
-   a checklist with build, tests and lint ticked as they came out, and "Tried on the Pixel 7"
+   a checklist with build, tests, ktlint and lint ticked as they came out, and "Tried on the Pixel 7"
    left unticked. End it with:
    `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 

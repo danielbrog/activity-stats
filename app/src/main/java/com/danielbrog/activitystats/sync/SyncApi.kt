@@ -83,9 +83,7 @@ internal fun retryFor(code: Int): IOException = if (code == 401) SignInRejectedE
  * worth retrying.
  */
 internal fun segmentPutResultOf(code: Int, body: String): SegmentPutResult {
-    if (code ==
-        409
-    ) {
+    if (code == 409) {
         return parseSegmentConflict(body)?.let { SegmentPutResult.Newer(it) } ?: SegmentPutResult.Rejected(code)
     }
     if (code == 400) parseSegmentConflict(body)?.let { return SegmentPutResult.LineChanged(it) }

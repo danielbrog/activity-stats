@@ -89,7 +89,7 @@ The upload, download and merge logic is plain Kotlin, tested against a fake serv
 
 ## Tests
 
-- 230+ unit tests in `app/src/test`. They cover the stats, the GPS filter, splits, best efforts, GPX, and sync. They run on the computer, no phone needed.
+- 340+ unit tests in `app/src/test`. They cover the stats, the GPS filter, splits, best efforts, GPX, segments and sync. They run on the computer, no phone needed.
 - Tests in `app/src/androidTest` that run against the real database on a phone.
 - Tests in `backend/test` that check the AWS setup, for example that every API route needs sign-in, plus the Lambda functions.
 
@@ -97,6 +97,13 @@ The upload, download and merge logic is plain Kotlin, tested against a fake serv
 ./gradlew testDebugUnitTest            # unit tests
 ./gradlew connectedDebugAndroidTest    # on-device tests (phone or emulator connected)
 cd backend && npm test                 # backend tests
+```
+
+The Kotlin code is formatted with [ktlint](https://pinterest.github.io/ktlint/), using the rules in [`.editorconfig`](.editorconfig) (which Android Studio follows too):
+
+```bash
+./gradlew ktlintCheck                  # report anything off-style
+./gradlew ktlintFormat                 # fix what it can
 ```
 
 ## Running it yourself

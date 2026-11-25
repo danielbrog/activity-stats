@@ -124,9 +124,7 @@ class SegmentMatcherTest {
     fun droppedFixesAreIgnored() {
         val fixes = ride(road).mapIndexed { i, f ->
             // Every tenth fix is a wild one 400 m away that the filter dropped.
-            if (i % 10 ==
-                5
-            ) {
+            if (i % 10 == 5) {
                 f.copy(longitude = f.longitude + 400 / metersPerDegLon, status = FixStatus.DroppedAccuracy)
             } else {
                 f
@@ -146,8 +144,7 @@ class SegmentMatcherTest {
         val after = ride(
             line(0.0 to 1_010.0, 0.0 to 2_000.0),
             startSecond = before.size + 300,
-            firstSeq =
-                before.size + 1,
+            firstSeq = before.size + 1,
             stretch = 1,
         )
         assertTrue(SegmentMatcher.find(segment, before + after).isEmpty())
@@ -159,8 +156,7 @@ class SegmentMatcherTest {
         val after = ride(
             line(0.0 to 1_610.0, 0.0 to 2_000.0),
             startSecond = before.size + 300,
-            firstSeq =
-                before.size + 1,
+            firstSeq = before.size + 1,
             stretch = 1,
         )
         assertEquals(1, SegmentMatcher.find(segment, before + after).size)
@@ -327,9 +323,7 @@ class SegmentMatcherTest {
         // 300 m with fixes every 50 m: one of the five inside is 26 m off, so only 80% are on it.
         val short = SegmentPath(line(0.0 to 500.0, 0.0 to 800.0).map { at(it.first, it.second) }, 300.0)
         val points = line(0.0 to 0.0, 0.0 to 2_000.0, step = 50.0).map { (e, n) ->
-            if (n ==
-                650.0
-            ) {
+            if (n == 650.0) {
                 (e + 26.0) to n
             } else {
                 e to n

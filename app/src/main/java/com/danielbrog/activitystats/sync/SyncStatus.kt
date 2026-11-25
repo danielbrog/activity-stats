@@ -35,9 +35,7 @@ data class SyncStatus(
         val time = Instant.ofEpochMilli(millis).atZone(zone)
         val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
         val clock = DateTimeFormatter.ofPattern(if (use24Hour) "H:mm" else "h:mm a", Locale.US).format(time)
-        return if (time.toLocalDate() ==
-            today
-        ) {
+        return if (time.toLocalDate() == today) {
             clock
         } else {
             "${DateTimeFormatter.ofPattern("d MMM", Locale.US).format(time)}, $clock"

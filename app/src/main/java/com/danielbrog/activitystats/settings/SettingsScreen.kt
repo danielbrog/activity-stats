@@ -81,9 +81,7 @@ private fun SettingsContent(
         SectionTitle("Units")
         Setting(
             label = "Distance",
-            explanation = if (settings.unit ==
-                DistanceUnit.Km
-            ) {
+            explanation = if (settings.unit == DistanceUnit.Km) {
                 "Kilometres, km/h and metres"
             } else {
                 "Miles, mph and feet"

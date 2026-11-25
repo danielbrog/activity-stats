@@ -125,13 +125,9 @@ private fun FixRow(fix: GpsData, settings: DisplaySettings) {
         Text("lat  %.6f".format(Locale.US, fix.latitude), style = mono)
         Text("long %.6f".format(Locale.US, fix.longitude), style = mono)
         Row(verticalAlignment = Alignment.CenterVertically) {
+            val accuracy = fix.accuracyMeters?.let { Format.shortLength(it.toDouble(), unit, decimals = 1) } ?: "—"
             Text(
-                text =
-                    "acc  " + (
-                        fix.accuracyMeters?.let {
-                            Format.shortLength(it.toDouble(), unit, decimals = 1)
-                        } ?: "—"
-                        ),
+                text = "acc  $accuracy",
                 style = mono,
                 modifier = Modifier.weight(1f),
             )

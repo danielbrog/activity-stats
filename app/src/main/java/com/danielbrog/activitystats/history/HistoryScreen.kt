@@ -215,9 +215,7 @@ private fun SyncIcon(syncState: SyncState) {
     Icon(
         painterResource(icon),
         contentDescription = description,
-        tint = if (syncState ==
-            SyncState.FAILED
-        ) {
+        tint = if (syncState == SyncState.FAILED) {
             MaterialTheme.colorScheme.error
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
