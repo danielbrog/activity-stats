@@ -7,11 +7,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -29,7 +27,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -51,6 +48,7 @@ import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.ui.ConfirmDeleteDialog
 import com.danielbrog.activitystats.ui.EffortCard
+import com.danielbrog.activitystats.ui.MapWithDetailsSheet
 import com.danielbrog.activitystats.ui.RenameDialog
 import com.danielbrog.activitystats.ui.RouteMap
 import com.danielbrog.activitystats.ui.UndoDeleteEffect
@@ -210,32 +208,48 @@ private fun SegmentDetailContent(
 }
 
 /**
- * Scrolls: map, stats, then the efforts. The list can grow long, so it is lazy; the map's
- * camera is kept out here, so scrolling the map away and back doesn't reset it, and the list
- * holds still while the map is being moved, so dragging on the map moves the map.
+ * The segment's map in its own window, with the stats and its efforts in a sheet over it (see
+ * [MapWithDetailsSheet]). The efforts can be many, so they are a lazy list inside the sheet.
  */
 @Composable
 private fun LoadedSegment(state: SegmentDetailState.Loaded, unit: DistanceUnit, onOpenRide: (id: String) -> Unit) {
-    val distance = state.segment.distanceMeters
     val mapState = rememberRouteMapState()
     val best = when {
         state.isFinding -> "…"
         else -> state.efforts.firstOrNull()?.let { Format.clock(it.elapsedMs) } ?: "–"
     }
-    LazyColumn(
-        userScrollEnabled = !mapState.camera.isMoving,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item(key = "map") {
+    MapWithDetailsSheet(
+        map = { padding, onMapTouch ->
             RouteMap(
                 lines = listOf(state.line),
-                modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(16.dp)),
+                modifier = Modifier.fillMaxSize(),
                 startTitle = "Segment start",
                 endTitle = "Segment end",
                 state = mapState,
+                contentPadding = padding,
+                onMapTouch = onMapTouch,
             )
-        }
+        },
+    ) { area ->
+        SegmentDetails(state, unit, best, onOpenRide, area)
+    }
+}
+
+/** The stats, then every effort, fastest first, in a lazy list. */
+@Composable
+private fun SegmentDetails(
+    state: SegmentDetailState.Loaded,
+    unit: DistanceUnit,
+    best: String,
+    onOpenRide: (id: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val distance = state.segment.distanceMeters
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         item {
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Stat("Distance", Format.distance(distance, unit), Modifier.weight(1f))
