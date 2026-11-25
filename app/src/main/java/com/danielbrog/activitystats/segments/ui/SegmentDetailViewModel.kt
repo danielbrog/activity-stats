@@ -50,10 +50,13 @@ class SegmentDetailViewModel(
     private val rides = (application as ActivityStatsApp).activityRepository
     private val segmentId: String = savedStateHandle.toRoute<SegmentDetailRoute>().id
 
-    /** The segment with its line decoded once, not on every change to its efforts. */
+    /**
+     * The segment with its line decoded once, not on every change to its efforts. A line that
+     * can't be read shows as none, so the screen still opens and the segment can be deleted.
+     */
     private val segmentWithLine = repository.segment(segmentId)
         .distinctUntilChanged()
-        .map { segment -> segment?.let { it to Polyline.decode(it.path) } }
+        .map { segment -> segment?.let { it to (Polyline.decodeOrNull(it.path) ?: emptyList()) } }
         .flowOn(Dispatchers.Default)
 
     val state: StateFlow<SegmentDetailState> =

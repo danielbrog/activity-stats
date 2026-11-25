@@ -71,6 +71,10 @@ object SegmentMatcher {
         val toStart = DoubleArray(kept.size) { ride.distanceTo(it, segment.start) }
         val toEnd = DoubleArray(kept.size) { ride.distanceTo(it, segment.end) }
         val match = Match(segment)
+        // A loop: its ends are within reach of each other, so one lap can end where the next starts.
+        val endsMeet = Geo.distanceMeters(
+            segment.start.latitude, segment.start.longitude, segment.end.latitude, segment.end.longitude,
+        ) <= 2 * END_RADIUS_METERS
 
         val efforts = mutableListOf<SegmentEffort>()
         var i = 0
@@ -92,7 +96,11 @@ object SegmentMatcher {
                 startedAtMillis = start.timeMillis.roundToLong(),
                 elapsedMs = (end.timeMillis - start.timeMillis).roundToLong(),
             )
-            i = end.toIndex + 1
+            // On a loop the next lap starts at the crossing where this one ended, which can lie
+            // between end.fromIndex and end.toIndex, so look again from there (always moving
+            // on). Anything else carries on after the effort: restarting inside it could find
+            // its own start again where fixes are far apart, and count it twice.
+            i = if (endsMeet) maxOf(end.fromIndex, i + 1) else end.toIndex + 1
         }
         return efforts
     }

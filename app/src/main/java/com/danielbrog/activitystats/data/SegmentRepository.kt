@@ -91,10 +91,14 @@ class SegmentRepository(
         onChanged()
     }
 
-    /** Undoes [delete]. */
+    /**
+     * Undoes [delete], then finds its efforts again: rides saved while it was deleted were
+     * never matched against it, and sync may have changed its line meanwhile.
+     */
     suspend fun restore(id: String, nowMillis: Long = System.currentTimeMillis()) {
         segments.restore(id, nowMillis)
         onChanged()
+        matchSegmentInBackground(id)
     }
 
     /** One segment, or null when it is missing or deleted. */
@@ -140,23 +144,22 @@ class SegmentRepository(
         )
         segments.insertSegment(segment)
         onChanged()
-        CreatedSegment(segment.id, matchSegmentInBackground(segment))
+        CreatedSegment(segment.id, matchSegmentInBackground(segment.id))
     }
 
     /**
-     * Finds every ride's efforts on [segment] in [background], showing "Finding efforts…" while
+     * Finds every ride's efforts on segment [id] in [background], showing "Finding efforts…" while
      * it runs. For a segment just made, downloaded, or brought back. A failure is logged, not
      * thrown: the segment stays, with no efforts until the next recompute.
      */
-    private fun matchSegmentInBackground(segment: SegmentEntity): Job {
-        val id = segment.id
+    private fun matchSegmentInBackground(id: String): Job {
         synchronized(findingLock) {
             findingCounts[id] = (findingCounts[id] ?: 0) + 1
             _finding.value = findingCounts.keys.toSet()
         }
         val job = background.launch {
             try {
-                recomputeForSegment(segment)
+                recomputeForSegment(id)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -202,7 +205,7 @@ class SegmentRepository(
         val before = segments.getSegment(cloud.id)
         val taken = segments.applyCloudCopy(cloud.id, cloud.name, cloud.deletedAt, cloud.updatedAt) == 1
         if (taken && before?.deletedAt != null && cloud.deletedAt == null) {
-            segments.getSegment(cloud.id)?.let { matchSegmentInBackground(it) }
+            matchSegmentInBackground(cloud.id)
         }
         return taken
     }
@@ -218,14 +221,14 @@ class SegmentRepository(
                 mergeLineChange(local, cloud).also { segments.replaceSegment(it) }
             }
         } ?: return false
-        if (merged.deletedAt == null) matchSegmentInBackground(merged)
+        if (merged.deletedAt == null) matchSegmentInBackground(merged.id)
         return merged.syncState == SyncState.SYNCED
     }
 
     /** A segment new to this phone: saved (if it still is new) and matched against every ride. */
     override suspend fun saveDownloadedSegment(segment: SegmentEntity) {
         val inserted = segments.insertIfNew(segment) != -1L
-        if (inserted && segment.deletedAt == null) matchSegmentInBackground(segment)
+        if (inserted && segment.deletedAt == null) matchSegmentInBackground(segment.id)
     }
 
     override suspend fun applyReview(review: CloudReview, status: SegmentStatus): Boolean =
@@ -239,15 +242,24 @@ class SegmentRepository(
         ) > 0
 
     /**
-     * Finds the efforts every ride near [segment] made on it, replacing what was there.
-     * Returns how many there are.
+     * Finds the efforts every ride near segment [id] made on it, replacing what was there.
+     * Returns how many there are. The segment is read inside the lock, so a job that waited
+     * behind others matches its current line, not the one it was started for. A segment that
+     * is missing or deleted by then is left alone.
      */
-    suspend fun recomputeForSegment(segment: SegmentEntity): Int = matching.withLock {
+    suspend fun recomputeForSegment(id: String): Int = matching.withLock {
+        val segment = segments.getSegment(id)?.takeIf { it.deletedAt == null } ?: return@withLock 0
         withContext(Dispatchers.Default) { findForSegment(segment) }
     }
 
     private suspend fun findForSegment(segment: SegmentEntity): Int {
-        val path = segment.toPath()
+        val path = segment.toPathOrNull()
+        if (path == null) {
+            // A line that doesn't decode can't be matched; it has no efforts.
+            Log.w("SegmentRepository", "Segment ${segment.id} has a line that can't be read")
+            segments.replaceForSegment(segment.id, emptyList())
+            return 0
+        }
         val box = path.bounds.expandedBy(SegmentMatcher.END_RADIUS_METERS)
         val found = activities.ridesOverlapping(segment.sport, box.south, box.north, box.west, box.east).flatMap { rideId ->
             SegmentMatcher.find(path, keptPointsFor(rideId)).map { it.toEntity(segment.id, rideId) }
@@ -289,10 +301,11 @@ class SegmentRepository(
             return
         }
         val box = bounds.expandedBy(SegmentMatcher.END_RADIUS_METERS)
-        // Only segments of this ride's sport: a run never counts on a ride segment.
+        // Only segments of this ride's sport: a run never counts on a ride segment. One whose
+        // line can't be read is left out, so it can't stop the others matching.
         val nearby = segments.activeSegments()
             .filter { it.sport == ride.type }
-            .map { it to it.toPath() }
+            .mapNotNull { segment -> segment.toPathOrNull()?.let { segment to it } }
             .filter { (_, path) -> path.bounds.overlaps(box) }
         if (nearby.isEmpty()) {
             segments.replaceForRide(rideId, emptyList())
@@ -311,8 +324,14 @@ class SegmentRepository(
 /** A segment just made, and the background work finding its efforts. */
 class CreatedSegment(val id: String, val matching: Job)
 
-/** The segment's line and length, as the matcher takes it. */
-fun SegmentEntity.toPath(): SegmentPath = SegmentPath(Polyline.decode(path), distanceMeters)
+/**
+ * The segment's line and length, as the matcher takes it; null if the stored line can't be
+ * one (it doesn't decode, or has fewer than two points). Only a bad upload or a server bug
+ * could store such a line, but one must never stop matching or crash a screen.
+ */
+fun SegmentEntity.toPathOrNull(): SegmentPath? = Polyline.decodeOrNull(path)
+    ?.takeIf { it.size >= 2 }
+    ?.let { SegmentPath(it, distanceMeters) }
 
 private fun ActivityEntity.boundsOrNull(): RouteBounds? {
     val south = minLat ?: return null

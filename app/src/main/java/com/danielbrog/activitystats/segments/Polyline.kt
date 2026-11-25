@@ -62,4 +62,12 @@ object Polyline {
         }
         append((v.toInt() + 63).toChar())
     }
+
+    /** [decode], or null if [encoded] isn't a whole polyline. */
+    fun decodeOrNull(encoded: String): List<RoutePoint>? =
+        try {
+            decode(encoded)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
 }

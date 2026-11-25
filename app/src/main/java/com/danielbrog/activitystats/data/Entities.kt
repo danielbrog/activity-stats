@@ -99,7 +99,7 @@ data class TrackPointEntity(
  * A road segment the rider made from part of one of their rides: your own segments only
  * (downloaded public ones are [VerifiedSegmentEntity]). Rides of the same [sport] that cover
  * it get a [SegmentEffortEntity]. The user's own data, with the same sync fields as an
- * activity. Where it is (its ends and area) comes from [path]; see [toPath].
+ * activity. Where it is (its ends and area) comes from [path]; see [toPathOrNull].
  *
  * The review fields ([status] to [verifiedSegmentId]) are a copy of what the server decided;
  * on the phone only Submit and Withdraw change them.

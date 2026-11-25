@@ -341,7 +341,7 @@ class SegmentSyncTest {
         val page = parseSegmentPage(
             """
             {"items":[
-              {"kind":"segment","id":"a","name":"Hill","path":"_p~iF","distanceMeters":1240,"sport":"ride",
+              {"kind":"segment","id":"a","name":"Hill","path":"_p~iF~ps|U_ulLnnqC","distanceMeters":1240,"sport":"ride",
                "createdAt":1,"updatedAt":2,"deletedAt":null,"syncedAt":10},
               {"kind":"review","segmentId":"a","status":"SUBMITTED","submittedAt":3,"syncedAt":11},
               {"kind":"leaderboard","segmentId":"a","syncedAt":12}
