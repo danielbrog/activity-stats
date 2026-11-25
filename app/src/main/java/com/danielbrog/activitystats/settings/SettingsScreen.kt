@@ -175,7 +175,12 @@ private fun Setting(label: String, explanation: String, control: @Composable () 
 @Composable
 private fun SettingsPreview() {
     ActivityStatsTheme {
-        SettingsContent(DisplaySettings(), onBack = {
-        }, onUnitChange = {}, onSpeedDisplayChange = {}, onAutoPauseChange = {})
+        SettingsContent(
+            DisplaySettings(),
+            onBack = {},
+            onUnitChange = {},
+            onSpeedDisplayChange = {},
+            onAutoPauseChange = {},
+        )
     }
 }
