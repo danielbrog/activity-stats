@@ -212,7 +212,6 @@ class ActivityRepository(
         return open.size
     }
 
-    /** Files every ride with no owner under [userId], on sign-in. Returns how many. */
     /**
      * Gives everything made while signed out to [userId], waiting to upload: rides and segments,
      * together. Returns how many rides were claimed.

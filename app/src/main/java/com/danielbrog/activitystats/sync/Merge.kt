@@ -1,3 +1,6 @@
+// Named for what it does (the sync merge rules), not after its one class, Decision.
+@file:Suppress("ktlint:standard:filename")
+
 package com.danielbrog.activitystats.sync
 
 import com.danielbrog.activitystats.data.ActivityEntity
