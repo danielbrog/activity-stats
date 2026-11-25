@@ -22,7 +22,9 @@ enum class SegmentStatus {
     REJECTED,
 
     /** Was public; an admin took it down. */
-    UNPUBLISHED;
+    UNPUBLISHED,
+
+    ;
 
     companion object {
         /**

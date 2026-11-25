@@ -75,7 +75,7 @@ class GpxReaderTest {
                 <trkpt lat="43.66" lon="-79.38"><time>2026-11-07T14:03:15Z</time></trkpt>
               </trkseg></trk>
             </gpx>
-            """.trimIndent()
+            """.trimIndent(),
         )
         assertEquals("Old file", track.name)
         assertEquals(ActivityType.RUN, track.type)
@@ -101,7 +101,7 @@ class GpxReaderTest {
               <trkpt lat="43.61" lon="-79.38"><time>2026-11-07T14:00:01Z</time></trkpt>
               <trkpt lat="43.99" lon="-79.38"><time>2026-11-07T14:00:01Z</time></trkpt>
             </trkseg></trk></gpx>
-            """.trimIndent()
+            """.trimIndent(),
         )
         assertEquals(listOf(43.60, 43.61, 43.62), track.points.map { it.latitude })
     }
@@ -116,7 +116,7 @@ class GpxReaderTest {
                   <rte><rtept lat="43.65" lon="-79.38"/><rtept lat="43.66" lon="-79.38"/></rte>
                   <trk><trkseg><trkpt lat="43.65" lon="-79.38"/><trkpt lat="43.66" lon="-79.38"/></trkseg></trk>
                 </gpx>
-                """.trimIndent()
+                """.trimIndent(),
             ),
         )
     }
@@ -136,8 +136,14 @@ class GpxReaderTest {
     fun readsBackThisAppsOwnExport() {
         var seq = 0
         fun fix(second: Int, lat: Double, alt: Double?) = GpsData(
-            seq = ++seq, timeMillis = 1_794_060_185_000L + second * 1_000L, latitude = lat, longitude = -79.38,
-            accuracyMeters = 5f, speedMps = 5f, status = FixStatus.Kept, altitudeMeters = alt,
+            seq = ++seq,
+            timeMillis = 1_794_060_185_000L + second * 1_000L,
+            latitude = lat,
+            longitude = -79.38,
+            accuracyMeters = 5f,
+            speedMps = 5f,
+            status = FixStatus.Kept,
+            altitudeMeters = alt,
         )
         val fixes = listOf(fix(0, 43.65, 100.0), fix(1, 43.6501, null), fix(2, 43.6502, 102.5))
         val gpx = GpxWriter.toGpx("Tom & Jo's ride", ActivityType.RIDE, fixes.first().timeMillis, fixes)

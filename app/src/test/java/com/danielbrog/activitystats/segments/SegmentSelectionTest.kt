@@ -30,8 +30,16 @@ class SegmentSelectionTest {
         return (0 until count).map { i ->
             extraSeconds += waits[i] ?: 0
             val p = at(0.0, i * 10.0)
-            GpsData(i + 1, (i + extraSeconds) * 1_000L, p.latitude, p.longitude, 5f, 10f, FixStatus.Kept,
-                stretch = if (i >= stretchFrom) 1 else 0)
+            GpsData(
+                i + 1,
+                (i + extraSeconds) * 1_000L,
+                p.latitude,
+                p.longitude,
+                5f,
+                10f,
+                FixStatus.Kept,
+                stretch = if (i >= stretchFrom) 1 else 0,
+            )
         }
     }
 

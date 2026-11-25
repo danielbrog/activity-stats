@@ -3,10 +3,6 @@ package com.danielbrog.activitystats.export
 import com.danielbrog.activitystats.data.ActivityType
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
-import org.xml.sax.Attributes
-import org.xml.sax.InputSource
-import org.xml.sax.SAXException
-import org.xml.sax.helpers.DefaultHandler
 import java.io.InputStream
 import java.io.StringReader
 import java.time.LocalDateTime
@@ -14,6 +10,10 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 import javax.xml.parsers.SAXParserFactory
+import org.xml.sax.Attributes
+import org.xml.sax.InputSource
+import org.xml.sax.SAXException
+import org.xml.sax.helpers.DefaultHandler
 
 /**
  * One track point from a GPX file. [stretch] numbers the file's track segments (`<trkseg>`)
@@ -54,8 +54,10 @@ class GpxImportException(val reason: Reason) : Exception(reason.name) {
     enum class Reason {
         /** Not XML, or XML that isn't GPX. */
         NotGpx,
+
         /** Points but no times: a planned route, not a recorded ride. */
         NoTimes,
+
         /** A GPX file with no track points at all. */
         NoPoints,
     }
@@ -89,7 +91,7 @@ object GpxReader {
         if (timed.size < 2) {
             val anyPoints = handler.untimedPoints > 0 || handler.points.isNotEmpty() || handler.routePoints > 0
             throw GpxImportException(
-                if (anyPoints) GpxImportException.Reason.NoTimes else GpxImportException.Reason.NoPoints
+                if (anyPoints) GpxImportException.Reason.NoTimes else GpxImportException.Reason.NoPoints,
             )
         }
         return GpxTrack(
@@ -157,12 +159,12 @@ object GpxReader {
         private var lon: Double? = null
         private var ele: Double? = null
         private var time: Long? = null
+
         /** The stretch of the current track segment; -1 before the first. */
         private var stretch = -1
         private var depthInForeign = 0
 
-        private fun isGpxNamespace(uri: String) =
-            uri.isEmpty() || uri.startsWith("http://www.topografix.com/GPX/")
+        private fun isGpxNamespace(uri: String) = uri.isEmpty() || uri.startsWith("http://www.topografix.com/GPX/")
 
         override fun resolveEntity(publicId: String?, systemId: String?): InputSource =
             InputSource(StringReader("")) // never load external entities or DTDs

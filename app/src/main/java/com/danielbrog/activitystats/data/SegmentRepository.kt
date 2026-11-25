@@ -18,11 +18,11 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -62,6 +62,7 @@ class SegmentRepository(
     val summaries: Flow<List<SegmentSummary>> = segments.observeSummaries()
 
     private val _finding = MutableStateFlow<Set<String>>(emptySet())
+
     /**
      * The ids of segments whose efforts are still being found, for "Finding efforts…": new ones,
      * and ones downloaded, brought back or given a new line by sync.
@@ -231,15 +232,14 @@ class SegmentRepository(
         if (inserted && segment.deletedAt == null) matchSegmentInBackground(segment.id)
     }
 
-    override suspend fun applyReview(review: CloudReview, status: SegmentStatus): Boolean =
-        segments.applyReview(
-            id = review.segmentId,
-            status = status.name,
-            submittedAt = review.submittedAt,
-            decidedAt = review.decidedAt,
-            reviewNote = review.reviewNote,
-            verifiedSegmentId = review.verifiedSegmentId,
-        ) > 0
+    override suspend fun applyReview(review: CloudReview, status: SegmentStatus): Boolean = segments.applyReview(
+        id = review.segmentId,
+        status = status.name,
+        submittedAt = review.submittedAt,
+        decidedAt = review.decidedAt,
+        reviewNote = review.reviewNote,
+        verifiedSegmentId = review.verifiedSegmentId,
+    ) > 0
 
     /**
      * Finds the efforts every ride near segment [id] made on it, replacing what was there.
@@ -261,7 +261,13 @@ class SegmentRepository(
             return 0
         }
         val box = path.bounds.expandedBy(SegmentMatcher.END_RADIUS_METERS)
-        val found = activities.ridesOverlapping(segment.sport, box.south, box.north, box.west, box.east).flatMap { rideId ->
+        val found = activities.ridesOverlapping(
+            segment.sport,
+            box.south,
+            box.north,
+            box.west,
+            box.east,
+        ).flatMap { rideId ->
             SegmentMatcher.find(path, keptPointsFor(rideId)).map { it.toEntity(segment.id, rideId) }
         }
         segments.replaceForSegment(segment.id, found)
@@ -318,7 +324,9 @@ class SegmentRepository(
         segments.replaceForRide(rideId, found)
     }
 
-    private suspend fun keptPointsFor(rideId: String): List<GpsData> = points.keptPointsFor(rideId).map { it.toGpsData() }
+    private suspend fun keptPointsFor(rideId: String): List<GpsData> = points.keptPointsFor(rideId).map {
+        it.toGpsData()
+    }
 }
 
 /** A segment just made, and the background work finding its efforts. */

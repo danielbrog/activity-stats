@@ -58,7 +58,7 @@ class ElevationGainTest {
                     d <= 2_000 -> 140.0 - (d - 1_000) * 0.03
                     else -> 110.0 + (d - 2_000) * 0.05
                 }
-            }
+            },
         )
         assertEquals(90.0, gain, 3.0)
     }

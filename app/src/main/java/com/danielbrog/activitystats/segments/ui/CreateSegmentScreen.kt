@@ -40,8 +40,8 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -143,7 +143,10 @@ private fun CreateSegmentContent(
             CreateSegmentState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            CreateSegmentState.NoRoute -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            CreateSegmentState.NoRoute -> Box(
+                Modifier.fillMaxSize().padding(32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
                     "This ride has no route to make a segment from.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -160,85 +163,84 @@ private fun CreateSegmentContent(
  * says, so the map doesn't jump about.
  */
 @Composable
-private fun Picker(
-    state: CreateSegmentState.Picking,
-    unit: DistanceUnit,
-    saving: Boolean,
-    actions: PickerActions,
-) = Column(Modifier.fillMaxSize()) {
-    SegmentPickerMap(
-        points = state.points,
-        stretches = state.stretches,
-        picked = state.picked,
-        start = state.start,
-        end = state.end,
-        focus = state.window,
-        onTap = actions.onMapTap,
-        modifier = Modifier.weight(1f).fillMaxWidth(),
-    )
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        // The slider covers [window]: the whole ride, or zoomed in around the part once you
-        // let go of it, so shorter parts move in finer steps.
-        RangeSlider(
-            value = state.range.first.toFloat()..state.range.last.toFloat(),
-            onValueChange = { actions.onRangeChange(it.start.roundToInt(), it.endInclusive.roundToInt()) },
-            onValueChangeFinished = actions.onSliderReleased,
-            valueRange = state.window.first.toFloat()..state.window.last.toFloat(),
-            // The values are point numbers, which mean nothing read aloud; say the distance.
-            modifier = Modifier.semantics {
-                contentDescription = "Segment start and end"
-                stateDescription = Format.distance(state.distanceMeters, unit)
-            },
+private fun Picker(state: CreateSegmentState.Picking, unit: DistanceUnit, saving: Boolean, actions: PickerActions) =
+    Column(Modifier.fillMaxSize()) {
+        SegmentPickerMap(
+            points = state.points,
+            stretches = state.stretches,
+            picked = state.picked,
+            start = state.start,
+            end = state.end,
+            focus = state.window,
+            onTap = actions.onMapTap,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            NudgeButtons(end = "start", onNudge = { forward -> actions.onNudge(true, forward) })
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "${Format.distance(state.windowStartMeters, unit)} → ${Format.distance(state.windowEndMeters, unit)}",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                // Always there (greyed out over the whole ride), so the controls keep their height.
-                TextButton(onClick = actions.onShowWholeRide, enabled = !state.isWholeRide) { Text("Whole ride") }
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            // The slider covers [window]: the whole ride, or zoomed in around the part once you
+            // let go of it, so shorter parts move in finer steps.
+            RangeSlider(
+                value = state.range.first.toFloat()..state.range.last.toFloat(),
+                onValueChange = { actions.onRangeChange(it.start.roundToInt(), it.endInclusive.roundToInt()) },
+                onValueChangeFinished = actions.onSliderReleased,
+                valueRange = state.window.first.toFloat()..state.window.last.toFloat(),
+                // The values are point numbers, which mean nothing read aloud; say the distance.
+                modifier = Modifier.semantics {
+                    contentDescription = "Segment start and end"
+                    stateDescription = Format.distance(state.distanceMeters, unit)
+                },
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NudgeButtons(end = "start", onNudge = { forward -> actions.onNudge(true, forward) })
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "${Format.distance(
+                            state.windowStartMeters,
+                            unit,
+                        )} → ${Format.distance(state.windowEndMeters, unit)}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // Always there (greyed out over the whole ride), so the controls keep their height.
+                    TextButton(onClick = actions.onShowWholeRide, enabled = !state.isWholeRide) { Text("Whole ride") }
+                }
+                NudgeButtons(end = "end", onNudge = { forward -> actions.onNudge(false, forward) })
             }
-            NudgeButtons(end = "end", onNudge = { forward -> actions.onNudge(false, forward) })
-        }
-        Text(
-            "Drag the ends, tap the map near the route, or use ‹ › to move an end a point at a time.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        Readout(state.distanceMeters, state.check, unit)
-        Spacer(Modifier.height(8.dp))
+            Text(
+                "Drag the ends, tap the map near the route, or use ‹ › to move an end a point at a time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Readout(state.distanceMeters, state.check, unit)
+            Spacer(Modifier.height(8.dp))
 
-        var name by rememberSaveable { mutableStateOf("") }
-        val cleaned = SegmentName.clean(name)
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it.take(SegmentName.MAX_LENGTH) },
-            label = { Text("Name") },
-            singleLine = true,
-            supportingText = { Text("${name.length} / ${SegmentName.MAX_LENGTH}") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = { cleaned?.let(actions.onCreate) },
-            enabled = cleaned != null && state.check is SelectionCheck.Ready && !saving,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            if (saving) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp).semantics { contentDescription = "Saving" },
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Text("Create")
+            var name by rememberSaveable { mutableStateOf("") }
+            val cleaned = SegmentName.clean(name)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(SegmentName.MAX_LENGTH) },
+                label = { Text("Name") },
+                singleLine = true,
+                supportingText = { Text("${name.length} / ${SegmentName.MAX_LENGTH}") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { cleaned?.let(actions.onCreate) },
+                enabled = cleaned != null && state.check is SelectionCheck.Ready && !saving,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp).semantics { contentDescription = "Saving" },
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text("Create")
+                }
             }
         }
     }
-}
 
 /** ‹ and › for one [end] of the part ("start" or "end"): one point a tap, repeating while held. */
 @Composable
@@ -291,7 +293,8 @@ private fun Readout(distanceMeters: Double, check: SelectionCheck?, unit: Distan
         null -> "$distance · Checking…" to false
         SelectionCheck.CrossesPause -> "This part crosses a pause. Pick a part you rode without pausing." to true
         is SelectionCheck.TooShort ->
-            "$distance · A segment must be at least ${Format.distance(SegmentSelection.MIN_LENGTH_METERS, unit)}" to true
+            "$distance · A segment must be at least ${Format.distance(SegmentSelection.MIN_LENGTH_METERS, unit)}" to
+                true
         is SelectionCheck.TooLong ->
             "$distance · A segment can be at most ${Format.distance(SegmentSelection.MAX_LENGTH_METERS, unit)}" to true
         is SelectionCheck.Ready -> when {

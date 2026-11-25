@@ -13,11 +13,7 @@ class GpsFilterTest {
 
     private var seq = 0
 
-    private fun fix(
-        northMeters: Double = 0.0,
-        accuracy: Float? = 5f,
-        speed: Float? = 0f,
-    ) = GpsData(
+    private fun fix(northMeters: Double = 0.0, accuracy: Float? = 5f, speed: Float? = 0f) = GpsData(
         seq = ++seq,
         timeMillis = seq * 1_000L,
         latitude = baseLat + northMeters / metresPerDegreeLat,

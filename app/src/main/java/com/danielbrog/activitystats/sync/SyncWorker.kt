@@ -14,10 +14,10 @@ import androidx.work.WorkerParameters
 import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.account.AuthConfig
 import java.io.IOException
-import kotlinx.serialization.SerializationException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.SerializationException
 
 /**
  * Syncs rides and segments in the background with WorkManager, which runs it once there is a

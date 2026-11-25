@@ -64,10 +64,9 @@ object Polyline {
     }
 
     /** [decode], or null if [encoded] isn't a whole polyline. */
-    fun decodeOrNull(encoded: String): List<RoutePoint>? =
-        try {
-            decode(encoded)
-        } catch (e: IllegalArgumentException) {
-            null
-        }
+    fun decodeOrNull(encoded: String): List<RoutePoint>? = try {
+        decode(encoded)
+    } catch (e: IllegalArgumentException) {
+        null
+    }
 }

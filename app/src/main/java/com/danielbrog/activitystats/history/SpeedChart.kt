@@ -36,12 +36,7 @@ import kotlin.math.abs
  * Touch and drag to read the exact distance and speed under your finger.
  */
 @Composable
-fun SpeedChart(
-    samples: List<SpeedSample>,
-    avgSpeedMps: Double,
-    unit: DistanceUnit,
-    modifier: Modifier = Modifier,
-) {
+fun SpeedChart(samples: List<SpeedSample>, avgSpeedMps: Double, unit: DistanceUnit, modifier: Modifier = Modifier) {
     // Always speed, even with pace chosen: a pace chart reads upside down and runs off the scale at every stop.
     val points = remember(samples, unit) {
         samples.map { Format.distanceValue(it.distanceMeters, unit) to Format.speedValue(it.speedMps, unit) }
@@ -63,11 +58,7 @@ fun SpeedChart(
  * range so hills stand out. Metres with km, feet with miles.
  */
 @Composable
-fun ElevationChart(
-    samples: List<ElevationSample>,
-    unit: DistanceUnit,
-    modifier: Modifier = Modifier,
-) {
+fun ElevationChart(samples: List<ElevationSample>, unit: DistanceUnit, modifier: Modifier = Modifier) {
     val points = remember(samples, unit) {
         samples.map { Format.distanceValue(it.distanceMeters, unit) to Format.elevationValue(it.altitudeMeters, unit) }
     }

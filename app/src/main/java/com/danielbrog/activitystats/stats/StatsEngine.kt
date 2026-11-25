@@ -88,10 +88,13 @@ class StatsEngine(
     private var movingMs = 0L
     private var paused = false
     private var lastPauseCheckMillis: Long? = null
+
     /** Time of the first slow fix in the current slow spell, or null while moving. */
     private var slowSinceMillis: Long? = null
+
     /** Slow time not yet counted: kept if you speed up again, dropped if you pause. */
     private var pendingMs = 0L
+
     /** The stretch of the fixes seen so far; a fix from another one means a manual pause ended. */
     private var stretch: Int? = null
 

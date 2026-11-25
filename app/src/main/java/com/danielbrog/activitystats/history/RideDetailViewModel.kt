@@ -40,6 +40,7 @@ import kotlinx.coroutines.withContext
 sealed interface RideDetailState {
     data object Loading : RideDetailState
     data object NotFound : RideDetailState
+
     /** [route] and [speedSamples] use only the kept fixes, so they skip GPS noise. */
     data class Loaded(
         val ride: ActivityEntity,
@@ -70,10 +71,8 @@ private data class RideTrack(
  * One saved ride and its route, by the id in the navigation route. The ride is watched,
  * so a rename shows up at once; the route is loaded once, since it never changes.
  */
-class RideDetailViewModel(
-    application: Application,
-    savedStateHandle: SavedStateHandle,
-) : AndroidViewModel(application) {
+class RideDetailViewModel(application: Application, savedStateHandle: SavedStateHandle) :
+    AndroidViewModel(application) {
 
     private val repository = (application as ActivityStatsApp).activityRepository
     private val segmentRepository = (application as ActivityStatsApp).segmentRepository
@@ -87,8 +86,12 @@ class RideDetailViewModel(
                 ride == null || ride.deletedAt != null -> RideDetailState.NotFound
                 loaded == null -> RideDetailState.Loading
                 else -> RideDetailState.Loaded(
-                    ride, loaded.route, loaded.speedSamples, loaded.elevationSamples,
-                    loaded.kmSplits, loaded.miSplits,
+                    ride,
+                    loaded.route,
+                    loaded.speedSamples,
+                    loaded.elevationSamples,
+                    loaded.kmSplits,
+                    loaded.miSplits,
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), RideDetailState.Loading)

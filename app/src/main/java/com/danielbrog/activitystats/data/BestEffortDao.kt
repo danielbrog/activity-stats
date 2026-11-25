@@ -31,7 +31,7 @@ abstract class BestEffortDao {
     /** Finished rides whose efforts haven't been worked out yet, like those saved before this table. */
     @Query(
         "SELECT id FROM activities WHERE endedAt IS NOT NULL " +
-            "AND id NOT IN (SELECT DISTINCT activityId FROM best_efforts)"
+            "AND id NOT IN (SELECT DISTINCT activityId FROM best_efforts)",
     )
     abstract suspend fun finishedWithoutEfforts(): List<String>
 }

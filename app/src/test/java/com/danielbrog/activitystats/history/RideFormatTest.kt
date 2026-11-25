@@ -1,10 +1,10 @@
 package com.danielbrog.activitystats.history
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.Locale
+import org.junit.Assert.assertEquals
+import org.junit.Test
 
 class RideFormatTest {
 

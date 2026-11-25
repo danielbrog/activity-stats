@@ -47,10 +47,13 @@ data class GpsPreview(
 sealed interface GpsStatus {
     /** Location is switched off on the phone. */
     data object Off : GpsStatus
+
     /** No position yet, or the signal was lost. */
     data object Finding : GpsStatus
+
     /** A position, but too rough for recording yet; null when the provider gave no accuracy. */
     data class Weak(val accuracyMeters: Float?) : GpsStatus
+
     /** Accurate enough that recording would keep the fixes. */
     data class Ready(val accuracyMeters: Float) : GpsStatus
 
@@ -121,7 +124,7 @@ object LocationPreview {
                             accuracyMeters = if (location.hasAccuracy()) location.accuracy else null,
                         ),
                         available = true,
-                    )
+                    ),
                 )
             }
 

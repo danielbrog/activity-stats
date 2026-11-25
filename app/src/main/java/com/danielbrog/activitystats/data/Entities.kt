@@ -161,10 +161,7 @@ data class VerifiedSegmentEntity(
 
 /** A catalogue tile (a 4-character geohash, about 39 × 20 km) and when it was last downloaded. */
 @Entity(tableName = "catalog_tiles")
-data class CatalogTileEntity(
-    @PrimaryKey val tile: String,
-    val fetchedAt: Long,
-)
+data class CatalogTileEntity(@PrimaryKey val tile: String, val fetchedAt: Long)
 
 /**
  * One time a ride covered a segment. Derived data, like [BestEffortEntity]: rebuilt from the

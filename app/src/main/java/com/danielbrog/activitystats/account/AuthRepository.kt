@@ -1,10 +1,10 @@
 package com.danielbrog.activitystats.account
 
 import android.content.Context
-import androidx.core.net.toUri
 import android.util.Log
-import com.danielbrog.activitystats.data.ActivityRepository
+import androidx.core.net.toUri
 import androidx.work.ExistingWorkPolicy
+import com.danielbrog.activitystats.data.ActivityRepository
 import com.danielbrog.activitystats.sync.Sync
 import java.io.IOException
 import kotlin.coroutines.resume
@@ -32,6 +32,7 @@ import net.openid.appauth.TokenResponse
 sealed interface AccountState {
     /** This build has no backend settings (see secrets.defaults.properties). */
     data object NotConfigured : AccountState
+
     /** Reading the saved sign-in at start-up. */
     data object Loading : AccountState
     data object SignedOut : AccountState
@@ -76,22 +77,29 @@ class AuthRepository(
         (state.first { it != AccountState.Loading } as? AccountState.SignedIn)?.userId
 
     init {
-        if (config != null) scope.launch {
-            mutex.withLock {
-                authState = store.load()
-                    ?.let { runCatching { AuthState.jsonDeserialize(it) }.getOrNull() }
-                    ?.takeIf { it.refreshToken != null }
-                _state.value = stateOf(authState)
+        if (config != null) {
+            scope.launch {
+                mutex.withLock {
+                    authState = store.load()
+                        ?.let { runCatching { AuthState.jsonDeserialize(it) }.getOrNull() }
+                        ?.takeIf { it.refreshToken != null }
+                    _state.value = stateOf(authState)
+                }
+                // Rides started before the saved sign-in finished loading still belong to this account.
+                claimRides()
             }
-            // Rides started before the saved sign-in finished loading still belong to this account.
-            claimRides()
         }
     }
 
     /** What to send the user to Cognito's sign-in page with. */
     fun authorizationRequest(): AuthorizationRequest {
         val c = config ?: throw SignInException("Sign-in isn't set up in this build.")
-        return AuthorizationRequest.Builder(serviceConfiguration(c), c.clientId, ResponseTypeValues.CODE, AuthConfig.REDIRECT.toUri())
+        return AuthorizationRequest.Builder(
+            serviceConfiguration(c),
+            c.clientId,
+            ResponseTypeValues.CODE,
+            AuthConfig.REDIRECT.toUri(),
+        )
             .setScopes(AuthConfig.SCOPES)
             // PKCE and state already protect the code flow. Without a nonce, AppAuth's ID token
             // check can't trip on refreshed tokens, which Cognito may issue with or without one.
@@ -120,14 +128,24 @@ class AuthRepository(
      */
     suspend fun completeSignIn(response: AuthorizationResponse?, error: AuthorizationException?): Int? {
         if (response == null) {
-            if (error == null || error.code == AuthorizationException.GeneralErrors.USER_CANCELED_AUTH_FLOW.code) return null
+            if (error == null ||
+                error.code == AuthorizationException.GeneralErrors.USER_CANCELED_AUTH_FLOW.code
+            ) {
+                return null
+            }
             throw SignInException(messageFor(error), error)
         }
         val tokens: TokenResponse = try {
             withService { service ->
                 suspendCancellableCoroutine<TokenResponse> { cont ->
                     service.performTokenRequest(response.createTokenExchangeRequest()) { result, ex ->
-                        if (result != null) cont.resume(result) else cont.resumeWithException(ex ?: IOException("No tokens"))
+                        if (result !=
+                            null
+                        ) {
+                            cont.resume(result)
+                        } else {
+                            cont.resumeWithException(ex ?: IOException("No tokens"))
+                        }
                     }
                 }
             }
@@ -187,7 +205,13 @@ class AuthRepository(
             val token = withService { service ->
                 suspendCancellableCoroutine<String> { cont ->
                     current.performActionWithFreshTokens(service) { accessToken, _, ex ->
-                        if (accessToken != null) cont.resume(accessToken) else cont.resumeWithException(ex ?: IOException("No token"))
+                        if (accessToken !=
+                            null
+                        ) {
+                            cont.resume(accessToken)
+                        } else {
+                            cont.resumeWithException(ex ?: IOException("No token"))
+                        }
                     }
                 }
             }
@@ -281,8 +305,11 @@ class AuthRepository(
 
         fun messageFor(e: AuthorizationException): String = when (e.type) {
             AuthorizationException.TYPE_GENERAL_ERROR ->
-                if (e.code == AuthorizationException.GeneralErrors.NETWORK_ERROR.code) NETWORK_MESSAGE
-                else "Sign-in didn't finish. Please try again."
+                if (e.code == AuthorizationException.GeneralErrors.NETWORK_ERROR.code) {
+                    NETWORK_MESSAGE
+                } else {
+                    "Sign-in didn't finish. Please try again."
+                }
             else -> "Sign-in didn't finish (${e.error ?: "error ${e.code}"}). Please try again."
         }
     }

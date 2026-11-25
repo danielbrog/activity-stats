@@ -390,8 +390,11 @@ private fun StatRow(left: Pair<String, String>, right: Pair<String, String>?) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         StatTile(left.first, left.second, Modifier.weight(1f))
         Spacer(Modifier.width(12.dp))
-        if (right != null) StatTile(right.first, right.second, Modifier.weight(1f))
-        else Spacer(Modifier.weight(1f))
+        if (right != null) {
+            StatTile(right.first, right.second, Modifier.weight(1f))
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 

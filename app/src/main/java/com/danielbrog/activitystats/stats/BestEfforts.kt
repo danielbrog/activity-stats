@@ -15,7 +15,8 @@ enum class Effort(val key: String, val meters: Double, val unit: DistanceUnit, v
     Km40("40km", 40_000.0, DistanceUnit.Km, "40 km"),
     Mi5("5mi", 5 * Format.METERS_PER_MILE, DistanceUnit.Mi, "5 mi"),
     Mi10("10mi", 10 * Format.METERS_PER_MILE, DistanceUnit.Mi, "10 mi"),
-    Mi25("25mi", 25 * Format.METERS_PER_MILE, DistanceUnit.Mi, "25 mi");
+    Mi25("25mi", 25 * Format.METERS_PER_MILE, DistanceUnit.Mi, "25 mi"),
+    ;
 
     companion object {
         fun fromKey(key: String): Effort? = entries.firstOrNull { it.key == key }

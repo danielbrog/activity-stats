@@ -95,7 +95,10 @@ fun SegmentDetailScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         SegmentDetailContent(
-            state, unit, onBack, onOpenRide,
+            state,
+            unit,
+            onBack,
+            onOpenRide,
             onEdit = { showEdit = true },
             onDelete = { showDelete = true },
         )
@@ -195,7 +198,10 @@ private fun SegmentDetailContent(
             SegmentDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            SegmentDetailState.NotFound -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            SegmentDetailState.NotFound -> Box(
+                Modifier.fillMaxSize().padding(32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text("This segment is no longer on this phone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             is SegmentDetailState.Loaded -> LoadedSegment(state, unit, onOpenRide)
@@ -243,8 +249,11 @@ private fun LoadedSegment(state: SegmentDetailState.Loaded, unit: DistanceUnit, 
         if (state.efforts.isEmpty()) {
             item {
                 Text(
-                    if (state.isFinding) "Finding efforts…"
-                    else "No efforts yet. Rides that cover this segment will show up here.",
+                    if (state.isFinding) {
+                        "Finding efforts…"
+                    } else {
+                        "No efforts yet. Rides that cover this segment will show up here."
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -293,8 +302,12 @@ private fun SegmentDetailPreview() {
         SegmentDetailContent(
             state = SegmentDetailState.Loaded(
                 segment = SegmentEntity(
-                    id = "s", name = "Bayview climb", path = "", distanceMeters = 1_240.0,
-                    createdAt = now, updatedAt = now,
+                    id = "s",
+                    name = "Bayview climb",
+                    path = "",
+                    distanceMeters = 1_240.0,
+                    createdAt = now,
+                    updatedAt = now,
                 ),
                 line = listOf(RoutePoint(43.65, -79.38), RoutePoint(43.66, -79.37)),
                 efforts = listOf(

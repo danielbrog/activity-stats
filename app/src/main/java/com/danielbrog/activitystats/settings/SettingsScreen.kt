@@ -43,11 +43,7 @@ import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
  * auto-pause. The only place they are changed; the whole app follows them.
  */
 @Composable
-fun SettingsScreen(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: SettingsViewModel = viewModel(),
-) {
+fun SettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     SettingsContent(
         settings = settings,
@@ -85,7 +81,13 @@ private fun SettingsContent(
         SectionTitle("Units")
         Setting(
             label = "Distance",
-            explanation = if (settings.unit == DistanceUnit.Km) "Kilometres, km/h and metres" else "Miles, mph and feet",
+            explanation = if (settings.unit ==
+                DistanceUnit.Km
+            ) {
+                "Kilometres, km/h and metres"
+            } else {
+                "Miles, mph and feet"
+            },
         ) {
             // TalkBack reads the spoken name, not the bare abbreviation.
             val units = listOf(
@@ -163,7 +165,11 @@ private fun Setting(label: String, explanation: String, control: @Composable () 
         Spacer(Modifier.height(8.dp))
         control()
         Spacer(Modifier.height(4.dp))
-        Text(explanation, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            explanation,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -171,6 +177,7 @@ private fun Setting(label: String, explanation: String, control: @Composable () 
 @Composable
 private fun SettingsPreview() {
     ActivityStatsTheme {
-        SettingsContent(DisplaySettings(), onBack = {}, onUnitChange = {}, onSpeedDisplayChange = {}, onAutoPauseChange = {})
+        SettingsContent(DisplaySettings(), onBack = {
+        }, onUnitChange = {}, onSpeedDisplayChange = {}, onAutoPauseChange = {})
     }
 }

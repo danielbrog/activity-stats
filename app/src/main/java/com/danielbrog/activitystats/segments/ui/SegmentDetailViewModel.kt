@@ -41,10 +41,8 @@ sealed interface SegmentDetailState {
 }
 
 /** One segment and its efforts, by the id in the navigation route. Updates itself. */
-class SegmentDetailViewModel(
-    application: Application,
-    savedStateHandle: SavedStateHandle,
-) : AndroidViewModel(application) {
+class SegmentDetailViewModel(application: Application, savedStateHandle: SavedStateHandle) :
+    AndroidViewModel(application) {
 
     private val repository = (application as ActivityStatsApp).segmentRepository
     private val rides = (application as ActivityStatsApp).activityRepository

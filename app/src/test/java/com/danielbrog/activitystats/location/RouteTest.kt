@@ -96,8 +96,11 @@ class RouteTest {
     @Test
     fun aSavedRideSplitsIntoOneLinePerStretch() {
         val fixes = listOf(
-            fix(1), fix(2), fix(3, FixStatus.DroppedAccuracy),
-            fix(4, stretch = 1), fix(5, stretch = 1),
+            fix(1),
+            fix(2),
+            fix(3, FixStatus.DroppedAccuracy),
+            fix(4, stretch = 1),
+            fix(5, stretch = 1),
             fix(6, stretch = 2),
         )
         assertEquals(

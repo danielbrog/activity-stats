@@ -32,12 +32,12 @@ class MigrationTest {
                 "INSERT INTO activities (id, userId, type, startedAt, endedAt, distanceMeters, movingTimeMs, " +
                     "elapsedTimeMs, avgSpeedMps, maxSpeedMps, elevationGainMeters, title, updatedAt, deletedAt, " +
                     "syncState, trackUploaded) VALUES ('ride-1', NULL, 'ride', 1000, 2000, 1234.5, 900, 1000, " +
-                    "1.37, 4.1, 12.0, 'Morning ride', 2000, NULL, 'LOCAL_ONLY', 0)"
+                    "1.37, 4.1, 12.0, 'Morning ride', 2000, NULL, 'LOCAL_ONLY', 0)",
             )
             db.execSQL(
                 "INSERT INTO track_points (activityId, seq, timestamp, latitude, longitude, altitude, " +
                     "accuracyMeters, speedMps, status, stretch) VALUES ('ride-1', 1, 1000, 43.65, -79.38, " +
-                    "100.0, 5.0, 3.0, 'Kept', 1)"
+                    "100.0, 5.0, 3.0, 'Kept', 1)",
             )
         }
 
@@ -53,8 +53,14 @@ class MigrationTest {
                 assertTrue(c.moveToFirst())
                 assertEquals(1, c.getInt(0))
             }
-            db.query("SELECT COUNT(*) FROM segments").use { c -> c.moveToFirst(); assertEquals(0, c.getInt(0)) }
-            db.query("SELECT COUNT(*) FROM segment_efforts").use { c -> c.moveToFirst(); assertEquals(0, c.getInt(0)) }
+            db.query("SELECT COUNT(*) FROM segments").use { c ->
+                c.moveToFirst()
+                assertEquals(0, c.getInt(0))
+            }
+            db.query("SELECT COUNT(*) FROM segment_efforts").use { c ->
+                c.moveToFirst()
+                assertEquals(0, c.getInt(0))
+            }
         }
     }
 
@@ -63,16 +69,18 @@ class MigrationTest {
         helper.createDatabase(dbName, 7).use { db ->
             db.execSQL(
                 "INSERT INTO segments (id, userId, name, path, distanceMeters, createdAt, updatedAt, deletedAt, " +
-                    "syncState) VALUES ('seg-1', NULL, 'Bayview climb', '_p~iF~ps|U_ulLnnqC', 1240.0, 1000, 2000, NULL, 'LOCAL_ONLY')"
+                    "syncState) VALUES ('seg-1', NULL, 'Bayview climb', '_p~iF~ps|U_ulLnnqC', 1240.0, 1000, 2000, NULL, 'LOCAL_ONLY')",
             )
             db.execSQL(
                 "INSERT INTO segment_efforts (segmentId, activityId, occurrence, startedAt, elapsedMs) " +
-                    "VALUES ('seg-1', 'ride-1', 0, 1500, 151000)"
+                    "VALUES ('seg-1', 'ride-1', 0, 1500, 151000)",
             )
         }
 
         helper.runMigrationsAndValidate(dbName, 8, true).use { db ->
-            db.query("SELECT name, sport, status, submittedAt, verifiedSegmentId FROM segments WHERE id = 'seg-1'").use { c ->
+            db.query(
+                "SELECT name, sport, status, submittedAt, verifiedSegmentId FROM segments WHERE id = 'seg-1'",
+            ).use { c ->
                 assertTrue(c.moveToFirst())
                 assertEquals("Bayview climb", c.getString(0))
                 assertEquals("ride", c.getString(1))
@@ -84,8 +92,14 @@ class MigrationTest {
                 assertTrue(c.moveToFirst())
                 assertEquals(151_000L, c.getLong(0))
             }
-            db.query("SELECT COUNT(*) FROM verified_segments").use { c -> c.moveToFirst(); assertEquals(0, c.getInt(0)) }
-            db.query("SELECT COUNT(*) FROM catalog_tiles").use { c -> c.moveToFirst(); assertEquals(0, c.getInt(0)) }
+            db.query("SELECT COUNT(*) FROM verified_segments").use { c ->
+                c.moveToFirst()
+                assertEquals(0, c.getInt(0))
+            }
+            db.query("SELECT COUNT(*) FROM catalog_tiles").use { c ->
+                c.moveToFirst()
+                assertEquals(0, c.getInt(0))
+            }
         }
     }
 
@@ -95,11 +109,11 @@ class MigrationTest {
             db.execSQL(
                 "INSERT INTO activities (id, userId, type, startedAt, endedAt, distanceMeters, movingTimeMs, " +
                     "elapsedTimeMs, avgSpeedMps, maxSpeedMps, title, updatedAt, deletedAt, syncState) VALUES " +
-                    "('ride-1', NULL, 'ride', 1000, 2000, 1234.5, 900, 1000, 1.37, 4.1, 'Morning ride', 2000, NULL, 'LOCAL_ONLY')"
+                    "('ride-1', NULL, 'ride', 1000, 2000, 1234.5, 900, 1000, 1.37, 4.1, 'Morning ride', 2000, NULL, 'LOCAL_ONLY')",
             )
             db.execSQL(
                 "INSERT INTO track_points (activityId, seq, timestamp, latitude, longitude, altitude, " +
-                    "accuracyMeters, speedMps, status) VALUES ('ride-1', 1, 1000, 43.65, -79.38, 100.0, 5.0, 3.0, 'Kept')"
+                    "accuracyMeters, speedMps, status) VALUES ('ride-1', 1, 1000, 43.65, -79.38, 100.0, 5.0, 3.0, 'Kept')",
             )
         }
 

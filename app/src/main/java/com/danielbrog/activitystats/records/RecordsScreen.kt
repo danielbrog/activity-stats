@@ -102,11 +102,7 @@ private fun RecordsContent(
 }
 
 @Composable
-private fun RecordList(
-    records: PersonalRecords,
-    settings: DisplaySettings,
-    onOpenRide: (id: String) -> Unit,
-) = Column(
+private fun RecordList(records: PersonalRecords, settings: DisplaySettings, onOpenRide: (id: String) -> Unit) = Column(
     modifier = Modifier
         .fillMaxSize()
         .verticalScroll(rememberScrollState())

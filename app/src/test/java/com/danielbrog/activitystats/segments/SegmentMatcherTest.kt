@@ -39,7 +39,16 @@ class SegmentMatcherTest {
     private fun ride(points: List<Pair<Double, Double>>, startSecond: Int = 0, firstSeq: Int = 1, stretch: Int = 0) =
         points.mapIndexed { i, (e, n) ->
             val p = at(e, n)
-            GpsData(firstSeq + i, (startSecond + i) * 1_000L, p.latitude, p.longitude, 5f, 10f, FixStatus.Kept, stretch = stretch)
+            GpsData(
+                firstSeq + i,
+                (startSecond + i) * 1_000L,
+                p.latitude,
+                p.longitude,
+                5f,
+                10f,
+                FixStatus.Kept,
+                stretch = stretch,
+            )
         }
 
     /** The segment: 1 km of the road, from 500 m to 1,500 m north. */
@@ -115,7 +124,13 @@ class SegmentMatcherTest {
     fun droppedFixesAreIgnored() {
         val fixes = ride(road).mapIndexed { i, f ->
             // Every tenth fix is a wild one 400 m away that the filter dropped.
-            if (i % 10 == 5) f.copy(longitude = f.longitude + 400 / metersPerDegLon, status = FixStatus.DroppedAccuracy) else f
+            if (i % 10 ==
+                5
+            ) {
+                f.copy(longitude = f.longitude + 400 / metersPerDegLon, status = FixStatus.DroppedAccuracy)
+            } else {
+                f
+            }
         }
         assertEquals(1, SegmentMatcher.find(segment, fixes).size)
     }
@@ -128,14 +143,26 @@ class SegmentMatcherTest {
     fun aManualPauseInsideDoesNotCount() {
         // Riding to 1,000 m, a 5-minute pause, then on: the pause falls inside the segment.
         val before = ride(line(0.0 to 0.0, 0.0 to 1_000.0))
-        val after = ride(line(0.0 to 1_010.0, 0.0 to 2_000.0), startSecond = before.size + 300, firstSeq = before.size + 1, stretch = 1)
+        val after = ride(
+            line(0.0 to 1_010.0, 0.0 to 2_000.0),
+            startSecond = before.size + 300,
+            firstSeq =
+                before.size + 1,
+            stretch = 1,
+        )
         assertTrue(SegmentMatcher.find(segment, before + after).isEmpty())
     }
 
     @Test
     fun aManualPauseOutsideStillCounts() {
         val before = ride(line(0.0 to 0.0, 0.0 to 1_600.0))
-        val after = ride(line(0.0 to 1_610.0, 0.0 to 2_000.0), startSecond = before.size + 300, firstSeq = before.size + 1, stretch = 1)
+        val after = ride(
+            line(0.0 to 1_610.0, 0.0 to 2_000.0),
+            startSecond = before.size + 300,
+            firstSeq =
+                before.size + 1,
+            stretch = 1,
+        )
         assertEquals(1, SegmentMatcher.find(segment, before + after).size)
     }
 
@@ -192,7 +219,13 @@ class SegmentMatcherTest {
 
     /** Round the 500 m square, starting and ending [startNorth] m up its west side. */
     private fun loopFrom(startNorth: Double, step: Double) = line(
-        0.0 to startNorth, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0, 0.0 to startNorth, step = step,
+        0.0 to startNorth,
+        0.0 to 500.0,
+        500.0 to 500.0,
+        500.0 to 0.0,
+        0.0 to 0.0,
+        0.0 to startNorth,
+        step = step,
     )
 
     @Test
@@ -201,7 +234,8 @@ class SegmentMatcherTest {
         // lap must start at that crossing, not at the fix after it (half a second late).
         val loop = SegmentPath(loopFrom(5.0, 10.0).map { at(it.first, it.second) }, 2_000.0)
         val lap = line(0.0 to 0.0, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0)
-        val twoLaps = line(0.0 to -100.0, 0.0 to 0.0) + lap.drop(1) + lap.drop(1) + line(0.0 to 0.0, 0.0 to 50.0).drop(1)
+        val twoLaps =
+            line(0.0 to -100.0, 0.0 to 0.0) + lap.drop(1) + lap.drop(1) + line(0.0 to 0.0, 0.0 to 50.0).drop(1)
         val efforts = SegmentMatcher.find(loop, ride(twoLaps))
         assertEquals(listOf(0, 1), efforts.map { it.occurrence })
         // 2,000 m at 10 m a second, each lap.
@@ -239,7 +273,8 @@ class SegmentMatcherTest {
     @Test
     fun twoLapsCountWhenALoopsEndIsJustPastItsStart() {
         val lap = line(0.0 to 0.0, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0)
-        val twoLaps = line(0.0 to -100.0, 0.0 to 0.0) + lap.drop(1) + lap.drop(1) + line(0.0 to 0.0, 0.0 to 100.0).drop(1)
+        val twoLaps =
+            line(0.0 to -100.0, 0.0 to 0.0) + lap.drop(1) + lap.drop(1) + line(0.0 to 0.0, 0.0 to 100.0).drop(1)
         // Made from a ride, a loop's ends are never exactly the same point.
         assertEquals(2, SegmentMatcher.find(nearLoop(20.0, 25.0), ride(twoLaps)).size)
         assertEquals(2, SegmentMatcher.find(nearLoop(25.0, 20.0), ride(twoLaps)).size)
@@ -291,7 +326,15 @@ class SegmentMatcherTest {
     fun oneStrayFixOnAShortSegmentIsForgiven() {
         // 300 m with fixes every 50 m: one of the five inside is 26 m off, so only 80% are on it.
         val short = SegmentPath(line(0.0 to 500.0, 0.0 to 800.0).map { at(it.first, it.second) }, 300.0)
-        val points = line(0.0 to 0.0, 0.0 to 2_000.0, step = 50.0).map { (e, n) -> if (n == 650.0) (e + 26.0) to n else e to n }
+        val points = line(0.0 to 0.0, 0.0 to 2_000.0, step = 50.0).map { (e, n) ->
+            if (n ==
+                650.0
+            ) {
+                (e + 26.0) to n
+            } else {
+                e to n
+            }
+        }
         assertEquals(1, SegmentMatcher.find(short, ride(points)).size)
     }
 }

@@ -5,12 +5,12 @@ import android.app.Application
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
-import com.danielbrog.activitystats.ActivityStatsApp
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
 /** What the live screen shows about saved activities. */

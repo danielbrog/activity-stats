@@ -29,6 +29,7 @@ object Splits {
 
     /** Rides shorter than this get no splits. */
     const val MIN_RIDE_METERS = 100.0
+
     /** A last piece shorter than this is too small for its own row and joins the split before. */
     const val MIN_LAST_METERS = 10.0
 

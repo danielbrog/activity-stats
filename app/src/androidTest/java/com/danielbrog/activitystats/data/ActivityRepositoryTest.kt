@@ -80,8 +80,11 @@ class ActivityRepositoryTest {
     fun finishingSetsEndTimeAndStats() = runBlocking {
         repo.startActivity("ride-1", start)
         val stats = ActivityStats(
-            distanceMeters = 1_234.0, elapsedMs = 600_000, movingMs = 540_000,
-            avgSpeedMps = 2.3, maxSpeedMps = 4.1,
+            distanceMeters = 1_234.0,
+            elapsedMs = 600_000,
+            movingMs = 540_000,
+            avgSpeedMps = 2.3,
+            maxSpeedMps = 4.1,
         )
         repo.finishActivity("ride-1", start + 600_000, stats)
 
@@ -124,9 +127,13 @@ class ActivityRepositoryTest {
         // Soft-deleted: not in history.
         db.activityDao().insertActivity(
             ActivityEntity(
-                id = "deleted", startedAt = start + 1_800_000, endedAt = start + 1_860_000,
-                title = "Gone", updatedAt = start, deletedAt = start + 2_000_000,
-            )
+                id = "deleted",
+                startedAt = start + 1_800_000,
+                endedAt = start + 1_860_000,
+                title = "Gone",
+                updatedAt = start,
+                deletedAt = start + 2_000_000,
+            ),
         )
 
         assertEquals(listOf("newer", "older"), repo.finishedActivities.first().map { it.id })
@@ -168,21 +175,35 @@ class ActivityRepositoryTest {
     fun editingASyncedRideMarksItPending() = runBlocking {
         db.activityDao().insertActivity(
             ActivityEntity(
-                id = "synced", startedAt = start, endedAt = start + 60_000, title = "Ride",
-                updatedAt = start, syncState = SyncState.SYNCED,
-            )
+                id = "synced",
+                startedAt = start,
+                endedAt = start + 60_000,
+                title = "Ride",
+                updatedAt = start,
+                syncState = SyncState.SYNCED,
+            ),
         )
         repo.rename("synced", "Renamed", nowMillis = start + 1)
         assertEquals(SyncState.PENDING, repo.getActivity("synced")!!.syncState)
     }
 
-    private suspend fun insertFinished(id: String, syncState: SyncState, userId: String? = "me", elevation: Double? = 10.0) =
-        db.activityDao().insertActivity(
-            ActivityEntity(
-                id = id, userId = userId, startedAt = start, endedAt = start + 60_000, title = "Ride",
-                updatedAt = start, syncState = syncState, elevationGainMeters = elevation,
-            )
-        )
+    private suspend fun insertFinished(
+        id: String,
+        syncState: SyncState,
+        userId: String? = "me",
+        elevation: Double? = 10.0,
+    ) = db.activityDao().insertActivity(
+        ActivityEntity(
+            id = id,
+            userId = userId,
+            startedAt = start,
+            endedAt = start + 60_000,
+            title = "Ride",
+            updatedAt = start,
+            syncState = syncState,
+            elevationGainMeters = elevation,
+        ),
+    )
 
     @Test
     fun editingAFailedRideMarksItPending() = runBlocking {

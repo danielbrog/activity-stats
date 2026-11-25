@@ -82,7 +82,7 @@ class AuthStateStore(context: Context) {
                     .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .setKeySize(256)
-                    .build()
+                    .build(),
             )
         }
         .generateKey()

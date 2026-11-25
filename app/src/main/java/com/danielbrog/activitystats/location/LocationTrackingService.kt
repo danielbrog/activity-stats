@@ -21,18 +21,15 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
+import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.MainActivity
 import com.danielbrog.activitystats.R
-import com.danielbrog.activitystats.ActivityStatsApp
 import com.danielbrog.activitystats.data.RecordingWriter
-import com.danielbrog.activitystats.stats.ActivityStats
-import com.danielbrog.activitystats.stats.StatsEngine
 import com.danielbrog.activitystats.settings.DisplaySettingsRepository
+import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import com.danielbrog.activitystats.stats.StatsEngine
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -40,6 +37,9 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * Foreground service of type `location` that owns GPS updates while recording, so tracking
@@ -74,6 +74,7 @@ class LocationTrackingService : Service() {
 
     // Auto-pause setting, kept in step with what the user picked in Settings.
     private var autoPause = true
+
     // The distance unit for the notification, from Settings like everything else.
     private var unit = DistanceUnit.Km
     private var settingsJob: Job? = null
@@ -143,7 +144,7 @@ class LocationTrackingService : Service() {
                 .setName("Tracking")
                 .setDescription("Shown while an activity is being recorded")
                 .setShowBadge(false)
-                .build()
+                .build(),
         )
     }
 
@@ -336,28 +337,32 @@ class LocationTrackingService : Service() {
             .setContentText(notificationText(stats.distanceMeters, unit, kept, total))
         when {
             // Paused: stop the timer and show the time reached so far.
-            paused -> builder
-                .setContentTitle("Paused · ${Format.clock(timerMs(stats))}")
-                .setShowWhen(false)
-                .setUsesChronometer(false)
+            paused ->
+                builder
+                    .setContentTitle("Paused · ${Format.clock(timerMs(stats))}")
+                    .setShowWhen(false)
+                    .setUsesChronometer(false)
             // Auto-pause on, no fix yet since Start or Resume: nothing is counted until the
             // first one, so show the time reached instead of a timer that would jump back.
-            autoPause && waitingForFix -> builder
-                .setContentTitle("Recording · ${Format.clock(stats.movingMs)}")
-                .setShowWhen(false)
-                .setUsesChronometer(false)
+            autoPause && waitingForFix ->
+                builder
+                    .setContentTitle("Recording · ${Format.clock(stats.movingMs)}")
+                    .setShowWhen(false)
+                    .setUsesChronometer(false)
             // Auto-pause on: the timer counts moving time, picking up where it paused.
-            autoPause -> builder
-                .setContentTitle("Recording")
-                .setWhen(System.currentTimeMillis() - stats.movingMs)
-                .setShowWhen(true)
-                .setUsesChronometer(true)
+            autoPause ->
+                builder
+                    .setContentTitle("Recording")
+                    .setWhen(System.currentTimeMillis() - stats.movingMs)
+                    .setShowWhen(true)
+                    .setUsesChronometer(true)
             // Auto-pause off: the timer counts time since Start, less any manual pauses.
-            else -> builder
-                .setContentTitle("Recording")
-                .setWhen(startedAtMillis + pausedMs)
-                .setShowWhen(true)
-                .setUsesChronometer(true)
+            else ->
+                builder
+                    .setContentTitle("Recording")
+                    .setWhen(startedAtMillis + pausedMs)
+                    .setShowWhen(true)
+                    .setUsesChronometer(true)
         }
         return builder
             .setOngoing(true)

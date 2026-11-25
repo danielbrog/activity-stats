@@ -19,6 +19,7 @@ data class AuthConfig(
     val authorizationEndpoint: String get() = "$domain/oauth2/authorize"
     val tokenEndpoint: String get() = "$domain/oauth2/token"
     val revokeEndpoint: String get() = "$domain/oauth2/revoke"
+
     /** Clears Cognito's own sign-in cookie, so the next sign-in asks for an account again. */
     val logoutEndpoint: String get() = "$domain/logout"
 

@@ -8,8 +8,7 @@ import org.junit.Test
 /** When the rename dialog lets you save, and what it saves. */
 class RenameToSaveTest {
 
-    private fun toSave(text: String, current: String = "Morning ride") =
-        renameToSave(text, current, RideTitle::clean)
+    private fun toSave(text: String, current: String = "Morning ride") = renameToSave(text, current, RideTitle::clean)
 
     @Test
     fun aNewNameIsSavedCleaned() {

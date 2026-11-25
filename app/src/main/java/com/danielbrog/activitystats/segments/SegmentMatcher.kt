@@ -45,8 +45,10 @@ object SegmentMatcher {
     const val ON_PATH_METERS = 25.0
     const val MIN_ON_PATH_FRACTION = 0.9
     const val DISTANCE_TOLERANCE = 0.10
+
     /** A short segment still gets this much leeway, since each end can be anywhere in its radius. */
     const val MIN_DISTANCE_TOLERANCE_METERS = 25.0
+
     /** Slower than [STOP_SPEED_MPS] for this long between two fixes is a stop, as for auto-pause. */
     const val STOP_AFTER_MS = 5_000L
     const val STOP_SPEED_MPS = 0.5
@@ -73,7 +75,10 @@ object SegmentMatcher {
         val match = Match(segment)
         // A loop: its ends are within reach of each other, so one lap can end where the next starts.
         val endsMeet = Geo.distanceMeters(
-            segment.start.latitude, segment.start.longitude, segment.end.latitude, segment.end.longitude,
+            segment.start.latitude,
+            segment.start.longitude,
+            segment.end.latitude,
+            segment.end.longitude,
         ) <= 2 * END_RADIUS_METERS
 
         val efforts = mutableListOf<SegmentEffort>()
@@ -151,7 +156,11 @@ object SegmentMatcher {
         var offPath = 0
         for (k in from..to) {
             val f = ride.fixes[k]
-            if (Geo.distanceToPathMeters(f.latitude, f.longitude, match.pathLats, match.pathLons) > ON_PATH_METERS) offPath++
+            if (Geo.distanceToPathMeters(f.latitude, f.longitude, match.pathLats, match.pathLons) >
+                ON_PATH_METERS
+            ) {
+                offPath++
+            }
         }
         return offPath <= max(1, (count * (1 - MIN_ON_PATH_FRACTION)).toInt())
     }
@@ -203,8 +212,12 @@ object SegmentMatcher {
 
         /** How far [p] is from the leg from fix [k] to the next. */
         fun distanceToLeg(k: Int, p: RoutePoint) = Geo.onLeg(
-            p.latitude, p.longitude,
-            fixes[k].latitude, fixes[k].longitude, fixes[k + 1].latitude, fixes[k + 1].longitude,
+            p.latitude,
+            p.longitude,
+            fixes[k].latitude,
+            fixes[k].longitude,
+            fixes[k + 1].latitude,
+            fixes[k + 1].longitude,
         ).distanceMeters
 
         /** Whether the leg from fix [k] to the next is a stop; see [SegmentMatcher.isStop]. */

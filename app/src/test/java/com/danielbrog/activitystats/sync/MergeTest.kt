@@ -15,8 +15,15 @@ class MergeTest {
     )
 
     private fun local(updatedAt: Long, syncState: SyncState = SyncState.SYNCED, deletedAt: Long? = null) =
-        ActivityEntity(id = "a", startedAt = 1_000L, endedAt = 2_000L, title = "Phone", updatedAt = updatedAt,
-            syncState = syncState, deletedAt = deletedAt)
+        ActivityEntity(
+            id = "a",
+            startedAt = 1_000L,
+            endedAt = 2_000L,
+            title = "Phone",
+            updatedAt = updatedAt,
+            syncState = syncState,
+            deletedAt = deletedAt,
+        )
 
     @Test
     fun aRideNewToThisPhoneIsDownloaded() {
@@ -41,27 +48,42 @@ class MergeTest {
     @Test
     fun aNewerCloudCopyWinsOverOlderUnsentEdits() {
         // The phone renamed it earlier but hasn't uploaded yet; the cloud's later change wins.
-        assertEquals(Decision.TakeCloud, decide(local(updatedAt = 4_000L, syncState = SyncState.PENDING), cloud(updatedAt = 5_000L)))
+        assertEquals(
+            Decision.TakeCloud,
+            decide(local(updatedAt = 4_000L, syncState = SyncState.PENDING), cloud(updatedAt = 5_000L)),
+        )
     }
 
     @Test
     fun aDeletionFromTheCloudReachesARideThisPhoneHas() {
-        assertEquals(Decision.TakeCloud, decide(local(updatedAt = 4_000L), cloud(updatedAt = 5_000L, deletedAt = 5_000L)))
+        assertEquals(
+            Decision.TakeCloud,
+            decide(local(updatedAt = 4_000L), cloud(updatedAt = 5_000L, deletedAt = 5_000L)),
+        )
     }
 
     @Test
     fun aRestoreFromTheCloudReachesARideDeletedHere() {
-        assertEquals(Decision.TakeCloud, decide(local(updatedAt = 4_000L, deletedAt = 4_000L), cloud(updatedAt = 5_000L)))
+        assertEquals(
+            Decision.TakeCloud,
+            decide(local(updatedAt = 4_000L, deletedAt = 4_000L), cloud(updatedAt = 5_000L)),
+        )
     }
 
     @Test
     fun aRefusedRideTakesANewerCloudCopy() {
-        assertEquals(Decision.TakeCloud, decide(local(updatedAt = 4_000L, syncState = SyncState.FAILED), cloud(updatedAt = 5_000L)))
+        assertEquals(
+            Decision.TakeCloud,
+            decide(local(updatedAt = 4_000L, syncState = SyncState.FAILED), cloud(updatedAt = 5_000L)),
+        )
     }
 
     @Test
     fun aRefusedRideKeepsItsCopyOverAnOlderCloudOne() {
-        assertEquals(Decision.Keep, decide(local(updatedAt = 6_000L, syncState = SyncState.FAILED), cloud(updatedAt = 5_000L)))
+        assertEquals(
+            Decision.Keep,
+            decide(local(updatedAt = 6_000L, syncState = SyncState.FAILED), cloud(updatedAt = 5_000L)),
+        )
     }
 
     @Test
@@ -72,6 +94,9 @@ class MergeTest {
 
     @Test
     fun aNewerPhoneCopyIsKeptForTheNextUpload() {
-        assertEquals(Decision.Keep, decide(local(updatedAt = 6_000L, syncState = SyncState.PENDING), cloud(updatedAt = 5_000L)))
+        assertEquals(
+            Decision.Keep,
+            decide(local(updatedAt = 6_000L, syncState = SyncState.PENDING), cloud(updatedAt = 5_000L)),
+        )
     }
 }

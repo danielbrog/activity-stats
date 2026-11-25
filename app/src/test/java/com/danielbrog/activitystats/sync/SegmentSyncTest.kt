@@ -42,8 +42,13 @@ class SegmentSyncTest {
     )
 
     private fun review(segmentId: String, status: String? = "PUBLIC", syncedAt: Long = 20L) = CloudReview(
-        segmentId = segmentId, status = status, submittedAt = 100L, decidedAt = 200L,
-        reviewNote = null, verifiedSegmentId = "v-$segmentId", syncedAt = syncedAt,
+        segmentId = segmentId,
+        status = status,
+        submittedAt = 100L,
+        decidedAt = 200L,
+        reviewNote = null,
+        verifiedSegmentId = "v-$segmentId",
+        syncedAt = syncedAt,
     )
 
     /** The phone's segments, with the same rules as the real DAO queries. */
@@ -56,12 +61,20 @@ class SegmentSyncTest {
 
         override suspend fun markSegmentSynced(id: String, sentUpdatedAt: Long) {
             val s = rows.getValue(id)
-            if (s.updatedAt == sentUpdatedAt && s.syncState == SyncState.PENDING) rows[id] = s.copy(syncState = SyncState.SYNCED)
+            if (s.updatedAt == sentUpdatedAt &&
+                s.syncState == SyncState.PENDING
+            ) {
+                rows[id] = s.copy(syncState = SyncState.SYNCED)
+            }
         }
 
         override suspend fun markSegmentFailed(id: String, sentUpdatedAt: Long) {
             val s = rows.getValue(id)
-            if (s.updatedAt == sentUpdatedAt && s.syncState == SyncState.PENDING) rows[id] = s.copy(syncState = SyncState.FAILED)
+            if (s.updatedAt == sentUpdatedAt &&
+                s.syncState == SyncState.PENDING
+            ) {
+                rows[id] = s.copy(syncState = SyncState.FAILED)
+            }
         }
 
         override suspend fun getSegment(id: String) = rows[id]
@@ -69,7 +82,13 @@ class SegmentSyncTest {
         override suspend fun applyCloudSegment(cloud: CloudSegment): Boolean {
             val s = rows[cloud.id] ?: return false
             if (s.updatedAt >= cloud.updatedAt) return false
-            rows[cloud.id] = s.copy(name = cloud.name, deletedAt = cloud.deletedAt, updatedAt = cloud.updatedAt, syncState = SyncState.SYNCED)
+            rows[cloud.id] =
+                s.copy(
+                    name = cloud.name,
+                    deletedAt = cloud.deletedAt,
+                    updatedAt = cloud.updatedAt,
+                    syncState = SyncState.SYNCED,
+                )
             return true
         }
 
@@ -144,7 +163,8 @@ class SegmentSyncTest {
     @Test
     fun aNewerCloudCopyIsTaken() = runBlocking {
         val store = FakeStore(listOf(local("a", updatedAt = 1_000L)))
-        val api = FakeApi(reply = { SegmentPutResult.Newer(cloud("a", updatedAt = 2_000L, name = "Renamed elsewhere")) })
+        val api =
+            FakeApi(reply = { SegmentPutResult.Newer(cloud("a", updatedAt = 2_000L, name = "Renamed elsewhere")) })
         SegmentUploader(store, api).uploadPending(user)
         assertEquals("Renamed elsewhere", store.rows.getValue("a").name)
         assertEquals(SyncState.SYNCED, store.rows.getValue("a").syncState)
@@ -164,7 +184,10 @@ class SegmentSyncTest {
     @Test
     fun aNewerRenameOnThePhoneSurvivesADifferentLine() = runBlocking {
         val store = FakeStore(listOf(local("a", updatedAt = 3_000L, path = "_p~iF").copy(name = "Hill climb")))
-        val api = FakeApi(reply = { SegmentPutResult.LineChanged(cloud("a", updatedAt = 2_000L, path = "_ulLnnqC", name = "Old name")) })
+        val api =
+            FakeApi(reply = {
+                SegmentPutResult.LineChanged(cloud("a", updatedAt = 2_000L, path = "_ulLnnqC", name = "Old name"))
+            })
         val report = SegmentUploader(store, api).uploadPending(user)
         val row = store.rows.getValue("a")
         assertEquals("_ulLnnqC", row.path) // the cloud's line
@@ -177,7 +200,10 @@ class SegmentSyncTest {
     @Test
     fun aDifferentLineOnASegmentDeletedInTheCloudIsNotMatched() = runBlocking {
         val store = FakeStore(listOf(local("a", updatedAt = 1_000L)))
-        val api = FakeApi(reply = { SegmentPutResult.LineChanged(cloud("a", updatedAt = 2_000L, deletedAt = 2_000L, path = "_ulLnnqC")) })
+        val api =
+            FakeApi(reply = {
+                SegmentPutResult.LineChanged(cloud("a", updatedAt = 2_000L, deletedAt = 2_000L, path = "_ulLnnqC"))
+            })
         SegmentUploader(store, api).uploadPending(user)
         assertEquals(2_000L, store.rows.getValue("a").deletedAt)
         assertTrue(store.matched.isEmpty())
@@ -198,12 +224,15 @@ class SegmentSyncTest {
         val store = FakeStore(listOf(local("a", updatedAt = 1L), local("b", updatedAt = 2L)))
         val api = FakeApi()
         var signedIn = true
-        val uploader = SegmentUploader(store, object : SegmentSyncApi by api {
-            override suspend fun putSegment(id: String, segment: SegmentUpload): SegmentPutResult {
-                signedIn = false
-                return api.putSegment(id, segment)
-            }
-        })
+        val uploader = SegmentUploader(
+            store,
+            object : SegmentSyncApi by api {
+                override suspend fun putSegment(id: String, segment: SegmentUpload): SegmentPutResult {
+                    signedIn = false
+                    return api.putSegment(id, segment)
+                }
+            },
+        )
         uploader.uploadPending(user) { signedIn }
         assertEquals(listOf("a"), api.sent)
     }
@@ -241,7 +270,13 @@ class SegmentSyncTest {
     @Test
     fun aNewerCloudCopyUpdatesAndAnOlderOneIsKept() = runBlocking {
         val store = FakeStore(listOf(local("new", updatedAt = 1_000L), local("old", updatedAt = 3_000L)))
-        val api = FakeApi(listOf(cloud("new", updatedAt = 2_000L, name = "Renamed"), cloud("old", updatedAt = 2_000L, name = "Stale")))
+        val api =
+            FakeApi(
+                listOf(
+                    cloud("new", updatedAt = 2_000L, name = "Renamed"),
+                    cloud("old", updatedAt = 2_000L, name = "Stale"),
+                ),
+            )
         val report = SegmentDownloader(store, api, FakeCursor()).downloadChanges(user)
         assertEquals(1, report.updated)
         assertEquals("Renamed", store.rows.getValue("new").name)
@@ -271,7 +306,8 @@ class SegmentSyncTest {
     @Test
     fun aRunStoppedForTimeKeepsTheCursorBeforeAWaitingReview() = runBlocking {
         val store = FakeStore()
-        val api = FakeApi(listOf(review("a", syncedAt = 20L), cloud("other", syncedAt = 25L), cloud("a", syncedAt = 30L)))
+        val api =
+            FakeApi(listOf(review("a", syncedAt = 20L), cloud("other", syncedAt = 25L), cloud("a", syncedAt = 30L)))
         val cursor = FakeCursor()
         var clock = 0L
         // Time runs out after two items: the review is waiting, its segment not read yet.
@@ -329,7 +365,8 @@ class SegmentSyncTest {
     fun networkTroubleIsThrownForARetry() = runBlocking<Unit> {
         val api = object : SegmentSyncApi {
             override suspend fun putSegment(id: String, segment: SegmentUpload) = SegmentPutResult.Applied
-            override suspend fun listSegments(since: Long, page: String?): CloudSegmentPage = throw IOException("offline")
+            override suspend fun listSegments(since: Long, page: String?): CloudSegmentPage =
+                throw IOException("offline")
         }
         SegmentDownloader(FakeStore(), api, FakeCursor()).downloadChanges(user)
     }
@@ -346,7 +383,7 @@ class SegmentSyncTest {
               {"kind":"review","segmentId":"a","status":"SUBMITTED","submittedAt":3,"syncedAt":11},
               {"kind":"leaderboard","segmentId":"a","syncedAt":12}
             ],"nextCursor":"next"}
-            """.trimIndent()
+            """.trimIndent(),
         )
         assertEquals(2, page.items.size)
         assertEquals("Hill", (page.items[0] as CloudSegment).name)
@@ -356,7 +393,13 @@ class SegmentSyncTest {
 
     @Test
     fun aPageOfAnotherShapeIsASerializationError() {
-        for (body in listOf("""{"nextCursor":"x"}""", """{"items":null}""", """{"items":[1]}""", "[]", "<html>Wi-Fi login</html>")) {
+        for (body in listOf(
+            """{"nextCursor":"x"}""",
+            """{"items":null}""",
+            """{"items":[1]}""",
+            "[]",
+            "<html>Wi-Fi login</html>",
+        )) {
             assertThrows(body, SerializationException::class.java) { parseSegmentPage(body) }
         }
     }

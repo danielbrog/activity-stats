@@ -12,7 +12,10 @@ import android.provider.Settings
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,15 +23,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +46,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,35 +55,28 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.danielbrog.activitystats.data.rideTitle
+import com.danielbrog.activitystats.location.GpsPreview
+import com.danielbrog.activitystats.location.GpsStatus
+import com.danielbrog.activitystats.location.LocationPreview
 import com.danielbrog.activitystats.location.LocationViewModel
+import com.danielbrog.activitystats.location.PreviewFix
+import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.location.SavedSummary
 import com.danielbrog.activitystats.location.TrackingUiState
 import com.danielbrog.activitystats.settings.DisplaySettings
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
+import com.danielbrog.activitystats.stats.SpeedDisplay
 import com.danielbrog.activitystats.stats.displayTimeMs
 import com.danielbrog.activitystats.stats.liveSpeedMps
-import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.graphics.Color
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
-import com.danielbrog.activitystats.location.GpsPreview
-import com.danielbrog.activitystats.location.GpsStatus
-import com.danielbrog.activitystats.location.LocationPreview
-import com.danielbrog.activitystats.location.PreviewFix
-import com.danielbrog.activitystats.location.RoutePoint
-import androidx.compose.material3.Surface
-import com.danielbrog.activitystats.stats.SpeedDisplay
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 import kotlinx.coroutines.delay
 
@@ -122,7 +122,7 @@ fun LiveScreen(
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
+        ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
         hasLocation = context.hasFineLocation()
         if (startIfAllowed()) return@rememberLauncherForActivityResult
@@ -132,7 +132,7 @@ fun LiveScreen(
     // Opening Record asks for location once, so the GPS can warm up before Start. Declining
     // isn't asked again until Start is pressed or the app is next opened.
     val openPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
+        ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
         hasLocation = context.hasFineLocation()
         problem = problemAfterAsking(granted)
@@ -141,7 +141,7 @@ fun LiveScreen(
         if (!hasLocation && !state.isTracking && !viewModel.askedForLocationOnOpen) {
             viewModel.askedForLocationOnOpen = true
             openPermissionLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
             )
         }
     }
@@ -308,7 +308,7 @@ private fun LiveContent(
         if (notificationsOff) {
             Notice(
                 "Notifications are off, so the recording notification and its Pause and Finish buttons " +
-                    "are hidden. Tracking still works with the screen off."
+                    "are hidden. Tracking still works with the screen off.",
             )
         }
 
@@ -358,9 +358,18 @@ private fun LiveContent(
         Spacer(Modifier.height(12.dp))
         Text(
             // Whichever time isn't the big one goes here.
-            text = (if (settings.autoPause) "Elapsed ${Format.clock(elapsedMs)}" else "Moving ${Format.clock(stats.movingMs)}") +
-                " · " + (if (display == SpeedDisplay.Speed) "Max " else "Best ") +
-                Format.speedOrPace(stats.maxSpeedMps, unit, display),
+            text =
+                (
+                    if (settings.autoPause) {
+                        "Elapsed ${Format.clock(
+                            elapsedMs,
+                        )}"
+                    } else {
+                        "Moving ${Format.clock(stats.movingMs)}"
+                    }
+                    ) +
+                    " · " + (if (display == SpeedDisplay.Speed) "Max " else "Best ") +
+                    Format.speedOrPace(stats.maxSpeedMps, unit, display),
             style = MaterialTheme.typography.bodyLarge.withTabularDigits(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -507,13 +516,12 @@ private fun Context.hasFineLocation() =
     ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
 
-private fun Context.canPostNotifications() =
-    NotificationManagerCompat.from(this).areNotificationsEnabled()
+private fun Context.canPostNotifications() = NotificationManagerCompat.from(this).areNotificationsEnabled()
 
 private fun Context.openAppSettings() {
     startActivity(
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
     )
 }
 
