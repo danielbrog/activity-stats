@@ -34,7 +34,9 @@ class ManualPauseTest {
 
     /** One fix a second at [speed] m/s, from [fromSecond] to [toSecond]. */
     private fun ride(fromSecond: Int, toSecond: Int, fromMeters: Double, speed: Float, stretch: Int) =
-        (fromSecond..toSecond).map { s -> fix(s, fromMeters + (s - fromSecond) * speed, speed, stretch, altitude = 100.0) }
+        (fromSecond..toSecond).map { s ->
+            fix(s, fromMeters + (s - fromSecond) * speed, speed, stretch, altitude = 100.0)
+        }
 
     /**
      * 100 s at 10 m/s (1 km), pause, carried 5 km north in 10 minutes, Resume, another
@@ -118,7 +120,10 @@ class ManualPauseTest {
         // Recording, 5 minutes paused so far: 16:40 since Start shows as 11:40.
         assertEquals(700_000L, displayTimeMs(false, true, ActivityStats(), started, 1_000_000L, pausedMs = 300_000L))
         // After Finish: elapsed less the pauses.
-        assertEquals(600_000L, displayTimeMs(false, false, ActivityStats(elapsedMs = 700_000L), started, 0L, pausedMs = 100_000L))
+        assertEquals(
+            600_000L,
+            displayTimeMs(false, false, ActivityStats(elapsedMs = 700_000L), started, 0L, pausedMs = 100_000L),
+        )
     }
 
     @Test
@@ -127,7 +132,10 @@ class ManualPauseTest {
         // Moving: ticks on from the last fix.
         assertEquals(603_000L, displayTimeMs(true, true, stats, 0L, 2_003_000L, sinceLastFixMs = 3_000L))
         // Paused by hand: frozen, though auto-pause hasn't decided anything.
-        assertEquals(600_000L, displayTimeMs(true, true, stats, 0L, 2_003_000L, manuallyPaused = true, sinceLastFixMs = 3_000L))
+        assertEquals(
+            600_000L,
+            displayTimeMs(true, true, stats, 0L, 2_003_000L, manuallyPaused = true, sinceLastFixMs = 3_000L),
+        )
     }
 
     @Test

@@ -1,0 +1,20 @@
+# Code style, read by ktlint (./gradlew ktlintCheck / ktlintFormat) and by Android Studio.
+root = true
+
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+insert_final_newline = true
+# The style closest to Android Studio's own formatting.
+ktlint_code_style = android_studio
+# Multi-line calls and declarations must end with a trailing comma (ktlintFormat adds it).
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+# Never let Android Studio write `import x.*`: ktlint rejects wildcard imports and can't undo them.
+ij_kotlin_name_count_to_use_star_import = 2147483647
+ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
+# Composables are named like classes (LiveScreen), not like functions.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+# Blank lines between every branch of a `when` with one multi-line branch: style, not a fix.
+ktlint_standard_blank-line-between-when-conditions = disabled

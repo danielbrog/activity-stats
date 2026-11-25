@@ -15,7 +15,9 @@ enum class SyncState {
     SYNCED,
 
     /** The server refused it; it waits until it is edited or Sync now is pressed. */
-    FAILED;
+    FAILED,
+
+    ;
 
     companion object {
         /** A new ride waits to upload if it has an owner, and stays on the phone if not. */

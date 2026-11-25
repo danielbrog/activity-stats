@@ -12,20 +12,16 @@ class SpeedSeriesTest {
     private val metresPerDegreeLat = 111_195.0
     private var seq = 0
 
-    private fun fix(
-        second: Int,
-        northMeters: Double,
-        speed: Float? = null,
-        status: FixStatus = FixStatus.Kept,
-    ) = GpsData(
-        seq = ++seq,
-        timeMillis = second * 1_000L,
-        latitude = 43.65 + northMeters / metresPerDegreeLat,
-        longitude = -79.38,
-        accuracyMeters = 5f,
-        speedMps = speed,
-        status = status,
-    )
+    private fun fix(second: Int, northMeters: Double, speed: Float? = null, status: FixStatus = FixStatus.Kept) =
+        GpsData(
+            seq = ++seq,
+            timeMillis = second * 1_000L,
+            latitude = 43.65 + northMeters / metresPerDegreeLat,
+            longitude = -79.38,
+            accuracyMeters = 5f,
+            speedMps = speed,
+            status = status,
+        )
 
     @Test
     fun onlyKeptFixesAreUsedAndDistanceAccumulates() {
@@ -35,7 +31,7 @@ class SpeedSeriesTest {
                 fix(1, 5.0, speed = 5f),
                 fix(2, 900.0, speed = 40f, status = FixStatus.DroppedAccuracy),
                 fix(3, 15.0, speed = 5f),
-            )
+            ),
         )
         assertEquals(3, samples.size)
         assertEquals(0.0, samples[0].distanceMeters, 0.01)
@@ -49,9 +45,9 @@ class SpeedSeriesTest {
         val samples = SpeedSeries.fromFixes(
             listOf(
                 fix(0, 0.0, speed = null),
-                fix(1, 8.0, speed = 7.5f),  // reported speed wins
+                fix(1, 8.0, speed = 7.5f), // reported speed wins
                 fix(3, 20.0, speed = null), // 12 m in 2 s -> 6 m/s
-            )
+            ),
         )
         assertEquals(0.0, samples[0].speedMps, 0.0)
         assertEquals(7.5, samples[1].speedMps, 1e-6)

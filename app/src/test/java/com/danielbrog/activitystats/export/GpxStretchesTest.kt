@@ -25,8 +25,11 @@ class GpxStretchesTest {
     )
 
     private val paused = listOf(
-        fix(1, 0), fix(2, 0),
-        fix(3, 1), fix(4, 1, FixStatus.DroppedAccuracy), fix(5, 1),
+        fix(1, 0),
+        fix(2, 0),
+        fix(3, 1),
+        fix(4, 1, FixStatus.DroppedAccuracy),
+        fix(5, 1),
         fix(6, 2),
     )
 

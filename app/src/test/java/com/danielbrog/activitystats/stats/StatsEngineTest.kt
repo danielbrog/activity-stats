@@ -16,20 +16,16 @@ class StatsEngineTest {
     private var seq = 0
 
     /** A fix [northMeters] north of the base point at [second] seconds after [start]. */
-    private fun fix(
-        second: Int,
-        northMeters: Double,
-        status: FixStatus = FixStatus.Kept,
-        speed: Float? = null,
-    ) = GpsData(
-        seq = ++seq,
-        timeMillis = start + second * 1_000L,
-        latitude = baseLat + northMeters / metresPerDegreeLat,
-        longitude = baseLon,
-        accuracyMeters = 5f,
-        speedMps = speed,
-        status = status,
-    )
+    private fun fix(second: Int, northMeters: Double, status: FixStatus = FixStatus.Kept, speed: Float? = null) =
+        GpsData(
+            seq = ++seq,
+            timeMillis = start + second * 1_000L,
+            latitude = baseLat + northMeters / metresPerDegreeLat,
+            longitude = baseLon,
+            accuracyMeters = 5f,
+            speedMps = speed,
+            status = status,
+        )
 
     /** Ride north at [speed] m/s with GPS-reported speed, one fix per second. */
     private fun StatsEngine.ride(fromSecond: Int, toSecond: Int, fromMeters: Double, speed: Float) {
@@ -49,8 +45,8 @@ class StatsEngineTest {
     fun aLongGapBetweenFixesIsNotMovingTimeButItsDistanceCounts() {
         // As in a bike computer's file: it stopped recording for 10 minutes, then went on.
         val engine = StatsEngine(start)
-        engine.ride(0, 60, 0.0, 6f)            // 60 s, 360 m
-        engine.ride(660, 720, 400.0, 6f)       // 10 min later, 40 m on; another 60 s
+        engine.ride(0, 60, 0.0, 6f) // 60 s, 360 m
+        engine.ride(660, 720, 400.0, 6f) // 10 min later, 40 m on; another 60 s
         val stats = engine.snapshot(ms(720))
 
         assertEquals(120_000L, stats.movingMs)
@@ -94,9 +90,9 @@ class StatsEngineTest {
     @Test
     fun pausedTimeIsLeftOutFromTheFirstSlowFix() {
         val engine = StatsEngine(start)
-        engine.ride(0, 10, 0.0, 6f)       // 10 s moving
-        engine.standKept(11, 40, 60.0)    // stopped 11..40
-        engine.ride(41, 50, 60.0, 6f)     // resumes at 41; 41..50 is 9 s moving
+        engine.ride(0, 10, 0.0, 6f) // 10 s moving
+        engine.standKept(11, 40, 60.0) // stopped 11..40
+        engine.ride(41, 50, 60.0, 6f) // resumes at 41; 41..50 is 9 s moving
         val stats = engine.snapshot(ms(50))
 
         // 0..11 counts (moving until the first slow fix), the stop doesn't, 41..50 does.
@@ -156,7 +152,10 @@ class StatsEngineTest {
     fun theTimeTicksForFiveSecondsAfterTheLastFixThenHolds() {
         val stats = ActivityStats(movingMs = 600_000L, isPaused = false)
         assertEquals(603_000L, displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = 3_000L))
-        assertEquals(605_000L, displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = StatsEngine.CURRENT_SPEED_WINDOW_MS))
+        assertEquals(
+            605_000L,
+            displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = StatsEngine.CURRENT_SPEED_WINDOW_MS),
+        )
         // A tunnel: no fix for 90 s. The Time holds rather than running on and jumping back.
         assertEquals(605_000L, displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = 90_000L))
         // No fix yet since Start or Resume: nothing to tick from.
@@ -187,7 +186,11 @@ class StatsEngineTest {
     fun currentSpeedIsZeroWithNoRecentFix() {
         val stats = ActivityStats(currentSpeedMps = 8.0)
         assertEquals(8.0, liveSpeedMps(stats, isTracking = true, sinceLastFixMs = 3_000L), 0.0)
-        assertEquals(8.0, liveSpeedMps(stats, isTracking = true, sinceLastFixMs = StatsEngine.CURRENT_SPEED_WINDOW_MS), 0.0)
+        assertEquals(
+            8.0,
+            liveSpeedMps(stats, isTracking = true, sinceLastFixMs = StatsEngine.CURRENT_SPEED_WINDOW_MS),
+            0.0,
+        )
         // No fix for longer than the speed window: the GPS is lost, not riding at 8 m/s.
         assertEquals(0.0, liveSpeedMps(stats, isTracking = true, sinceLastFixMs = 6_000L), 0.0)
         // No fix yet since Start or Resume: the stats' own speed (0 then) stands.

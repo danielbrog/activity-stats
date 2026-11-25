@@ -26,19 +26,13 @@ object GpxWriter {
     private val fileDate: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US)
 
     /** Writes the whole file to [out], so a long ride is never built as one big string. */
-    fun write(
-        out: Appendable,
-        title: String,
-        type: String,
-        startedAtMillis: Long,
-        fixes: List<GpsData>,
-    ) {
+    fun write(out: Appendable, title: String, type: String, startedAtMillis: Long, fixes: List<GpsData>) {
         val name = escape(title)
         out.append("""<?xml version="1.0" encoding="UTF-8"?>""").append('\n')
         out.append(
             """<gpx version="1.1" creator="Activity Stats" xmlns="http://www.topografix.com/GPX/1/1" """ +
                 """xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" """ +
-                """xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">"""
+                """xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">""",
         ).append('\n')
         out.append("  <metadata>\n")
         out.append("    <name>").append(name).append("</name>\n")

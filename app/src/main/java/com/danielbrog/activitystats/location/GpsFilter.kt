@@ -16,10 +16,7 @@ enum class FixStatus { Kept, DroppedAccuracy, DroppedStationary }
  *    while standing still, and would otherwise add fake distance. Comparing against the
  *    last *kept* fix means slow real movement is still kept once it leaves the radius.
  */
-class GpsFilter(
-    private val maxAccuracyMeters: Float = 20f,
-    private val stillSpeedMps: Float = 0.5f,
-) {
+class GpsFilter(private val maxAccuracyMeters: Float = 20f, private val stillSpeedMps: Float = 0.5f) {
     private var lastKept: GpsData? = null
 
     fun classify(fix: GpsData): FixStatus {

@@ -69,6 +69,7 @@ private val tabs = listOf(
 
 /** How long a screen takes to slide over another, or the bottom bar to grow or shrink. */
 private const val SLIDE_MS = 300
+
 /** Fade-through between tabs: the old one fades out quickly, then the new one fades in. */
 private const val FADE_OUT_MS = 90
 private const val FADE_IN_MS = 210

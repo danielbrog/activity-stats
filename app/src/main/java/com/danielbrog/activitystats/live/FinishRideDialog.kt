@@ -35,11 +35,7 @@ import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
  * Back, or tapping outside) closes it without saving.
  */
 @Composable
-fun FinishRideDialog(
-    defaultTitle: String,
-    onSave: (title: String?) -> Unit,
-    onKeepRiding: () -> Unit,
-) {
+fun FinishRideDialog(defaultTitle: String, onSave: (title: String?) -> Unit, onKeepRiding: () -> Unit) {
     // All selected, so typing replaces the default. Kept through a rotation.
     var name by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(defaultTitle, selection = TextRange(0, defaultTitle.length)))
@@ -61,8 +57,11 @@ fun FinishRideDialog(
                 singleLine = true,
                 supportingText = {
                     Text(
-                        if (RideTitle.clean(name.text) == null) "Left blank, it's saved as “$defaultTitle”"
-                        else "${name.text.length} / ${RideTitle.MAX_LENGTH}"
+                        if (RideTitle.clean(name.text) == null) {
+                            "Left blank, it's saved as “$defaultTitle”"
+                        } else {
+                            "${name.text.length} / ${RideTitle.MAX_LENGTH}"
+                        },
                     )
                 },
                 // The keyboard's ✓ saves: one tap fewer with gloves on.

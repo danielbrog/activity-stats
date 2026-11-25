@@ -39,7 +39,11 @@ fun UndoDeleteEffect(
     }
     LaunchedEffect(undoId) {
         val id = undoId ?: return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(message = message, actionLabel = "Undo", duration = SnackbarDuration.Long)
+        val result = snackbarHostState.showSnackbar(
+            message = message,
+            actionLabel = "Undo",
+            duration = SnackbarDuration.Long,
+        )
         if (result == SnackbarResult.ActionPerformed) undo(id)
         undoId = null
     }

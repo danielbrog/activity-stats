@@ -46,8 +46,9 @@ class TrackFileTest {
 
     @Test
     fun aVersionOneFileStillReadsWithItsPausesLost() {
-        val text = """{"version":1,"fixes":[{"seq":1,"t":1000,"lat":43.65,"lon":-79.38,"status":"Kept","segment":0},""" +
-            """{"seq":2,"t":2000,"lat":43.66,"lon":-79.38,"status":"Kept","segment":1}]}"""
+        val text =
+            """{"version":1,"fixes":[{"seq":1,"t":1000,"lat":43.65,"lon":-79.38,"status":"Kept","segment":0},""" +
+                """{"seq":2,"t":2000,"lat":43.66,"lon":-79.38,"status":"Kept","segment":1}]}"""
         val fixes = TrackFile.decode(text.gzipped())
         assertEquals(listOf(1, 2), fixes.map { it.seq })
         assertEquals(listOf(0, 0), fixes.map { it.stretch })

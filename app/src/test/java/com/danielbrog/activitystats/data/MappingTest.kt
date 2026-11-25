@@ -2,11 +2,11 @@ package com.danielbrog.activitystats.data
 
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
-import org.junit.Assert.assertEquals
-import org.junit.Test
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
+import org.junit.Assert.assertEquals
+import org.junit.Test
 
 class MappingTest {
 

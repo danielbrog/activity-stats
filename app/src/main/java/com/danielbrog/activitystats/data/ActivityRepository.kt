@@ -2,7 +2,6 @@ package com.danielbrog.activitystats.data
 
 import androidx.room.withTransaction
 import com.danielbrog.activitystats.export.GpxTrack
-import java.util.UUID
 import com.danielbrog.activitystats.location.GpsData
 import com.danielbrog.activitystats.location.RouteBounds
 import com.danielbrog.activitystats.stats.ActivityStats
@@ -12,6 +11,7 @@ import com.danielbrog.activitystats.stats.summarize
 import com.danielbrog.activitystats.sync.CloudCopy
 import com.danielbrog.activitystats.sync.DownloadStore
 import com.danielbrog.activitystats.sync.SyncStore
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
 /** What happened to an imported track; both carry the id of the ride to open. */
@@ -41,7 +41,8 @@ class ActivityRepository(
     private val ownerId: () -> String? = { null },
     private val onChanged: () -> Unit = {},
     private val onRideSaved: (rideId: String) -> Unit = {},
-) : SyncStore, DownloadStore {
+) : SyncStore,
+    DownloadStore {
 
     private val activities = db.activityDao()
     private val points = db.trackPointDao()
@@ -67,7 +68,7 @@ class ActivityRepository(
                 startedAt = startedAtMillis,
                 title = rideTitle(startedAtMillis),
                 updatedAt = startedAtMillis,
-            )
+            ),
         )
     }
 
@@ -148,7 +149,7 @@ class ActivityRepository(
                     elevationGainMeters = ElevationGain.of(fixes),
                     title = track.name?.let { RideTitle.clean(it) } ?: rideTitle(startedAt),
                     updatedAt = nowMillis,
-                ).withBounds(fixes)
+                ).withBounds(fixes),
             )
             fixes.chunked(500).forEach { batch -> points.insertPoints(batch.map { it.toTrackPoint(id) }) }
         }
@@ -212,7 +213,6 @@ class ActivityRepository(
         return open.size
     }
 
-    /** Files every ride with no owner under [userId], on sign-in. Returns how many. */
     /**
      * Gives everything made while signed out to [userId], waiting to upload: rides and segments,
      * together. Returns how many rides were claimed.
@@ -289,7 +289,7 @@ class ActivityRepository(
     override suspend fun saveDownloadedRide(ride: ActivityEntity, fixes: List<GpsData>) {
         val inserted = db.withTransaction {
             val row = activities.insertIfNew(
-                ride.copy(elevationGainMeters = ride.elevationGainMeters ?: ElevationGain.of(fixes)).withBounds(fixes)
+                ride.copy(elevationGainMeters = ride.elevationGainMeters ?: ElevationGain.of(fixes)).withBounds(fixes),
             )
             // Already here (it can't normally be): leave that ride and its points as they are.
             if (row == -1L) return@withTransaction false

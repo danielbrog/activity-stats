@@ -48,8 +48,12 @@ class SegmentGeometryTest {
     fun distanceToAPathIsToItsClosestLeg() {
         val path = listOf(at(0.0, 0.0), at(0.0, 500.0), at(500.0, 500.0))
         val p = at(250.0, 530.0) // 30 m north of the second leg
-        val d = Geo.distanceToPathMeters(p.latitude, p.longitude,
-            path.map { it.latitude }.toDoubleArray(), path.map { it.longitude }.toDoubleArray())
+        val d = Geo.distanceToPathMeters(
+            p.latitude,
+            p.longitude,
+            path.map { it.latitude }.toDoubleArray(),
+            path.map { it.longitude }.toDoubleArray(),
+        )
         assertEquals(30.0, d, 0.5)
     }
 
@@ -78,7 +82,11 @@ class SegmentGeometryTest {
     fun aRealPathRoundTripsToAboutAMetre() {
         val path = (0..200).map { at(it * 3.7, it * 7.1) }
         Polyline.decode(Polyline.encode(path)).zip(path).forEach { (back, original) ->
-            assertEquals(0.0, Geo.distanceMeters(back.latitude, back.longitude, original.latitude, original.longitude), 1.0)
+            assertEquals(
+                0.0,
+                Geo.distanceMeters(back.latitude, back.longitude, original.latitude, original.longitude),
+                1.0,
+            )
         }
     }
 

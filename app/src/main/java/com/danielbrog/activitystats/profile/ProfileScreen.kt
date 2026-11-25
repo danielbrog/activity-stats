@@ -128,7 +128,11 @@ private fun ProfileContent(
             }
             // Keep every tab loaded while off screen. They are light lists, and it means History
             // carries on (an import reports back, Undo stays up) while you look at another tab.
-            HorizontalPager(state = pagerState, beyondViewportPageCount = tabs.size - 1, modifier = Modifier.fillMaxSize()) { page ->
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = tabs.size - 1,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
                 when (tabs[page]) {
                     ProfileTab.History -> history()
                     ProfileTab.Segments -> segments()

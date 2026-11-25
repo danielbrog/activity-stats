@@ -43,6 +43,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DisplaySettings())
 
     private val _importing = MutableStateFlow(false)
+
     /** True while a file is being read and saved, so the button can't start a second one. */
     val importing: StateFlow<Boolean> = _importing.asStateFlow()
 
@@ -73,7 +74,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                         GpxImportException.Reason.NoTimes ->
                             "This is a planned route with no times, not a recorded ride."
                         GpxImportException.Reason.NoPoints -> "This GPX file has no track in it."
-                    }
+                    },
                 )
             } catch (e: IOException) {
                 Log.w("History", "GPX import failed", e)

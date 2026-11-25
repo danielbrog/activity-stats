@@ -5,6 +5,17 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
     alias(libs.plugins.secrets)
+    alias(libs.plugins.ktlint)
+}
+
+// Formatting: the rules are in .editorconfig at the project root, which Android Studio reads too.
+// `ktlintCheck` reports, `ktlintFormat` fixes what it can.
+ktlint {
+    version = libs.versions.ktlint
+    // The root build.gradle.kts and settings.gradle.kts too, not only this module's script.
+    kotlinScriptAdditionalPaths {
+        include(fileTree(rootDir) { include("*.kts") })
+    }
 }
 
 secrets {

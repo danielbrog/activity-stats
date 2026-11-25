@@ -48,6 +48,7 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     val account: StateFlow<AccountState> = auth.state
 
     private val _busy = MutableStateFlow(false)
+
     /** True while signing in or out, so the buttons can't start a second one. */
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
@@ -55,6 +56,7 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     val connection: StateFlow<Connection?> = _connection.asStateFlow()
 
     private val _message = MutableStateFlow<String?>(null)
+
     /** A one-off message for a snackbar; call [messageShown] once it is on screen. */
     val message: StateFlow<String?> = _message.asStateFlow()
 
@@ -100,7 +102,9 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             auth.state
                 .distinctUntilChangedBy { (it as? AccountState.SignedIn)?.userId }
-                .collect { state -> if (state is AccountState.SignedIn) checkConnection() else _connection.value = null }
+                .collect { state ->
+                    if (state is AccountState.SignedIn) checkConnection() else _connection.value = null
+                }
         }
     }
 
@@ -185,8 +189,11 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: AccountHttp.HttpException) {
                 Log.w(TAG, "Connection check failed", e)
                 Connection.Failed(
-                    if (e.code == 401 || e.code == 403) "The server didn't accept your sign-in."
-                    else "The server had a problem (error ${e.code})."
+                    if (e.code == 401 || e.code == 403) {
+                        "The server didn't accept your sign-in."
+                    } else {
+                        "The server had a problem (error ${e.code})."
+                    },
                 )
             } catch (e: IOException) {
                 Log.w(TAG, "Connection check failed", e)

@@ -99,7 +99,10 @@ fun HistoryScreen(
     }
 
     HistoryContent(
-        rides, settings, use24Hour, onOpenRide,
+        rides,
+        settings,
+        use24Hour,
+        onOpenRide,
         importing = importing,
         // GPX files often have no proper type set, so show every file; reading checks it.
         onImport = { pickGpx.launch(arrayOf("*/*")) },
@@ -128,7 +131,11 @@ private fun HistoryContent(
                 if (importing) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(painterResource(R.drawable.ic_import), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(
+                        painterResource(R.drawable.ic_import),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(if (importing) "Importing…" else "Import GPX")
@@ -162,12 +169,7 @@ private fun HistoryContent(
 }
 
 @Composable
-private fun RideCard(
-    ride: ActivityEntity,
-    settings: DisplaySettings,
-    use24Hour: Boolean,
-    onClick: () -> Unit,
-) {
+private fun RideCard(ride: ActivityEntity, settings: DisplaySettings, use24Hour: Boolean, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -213,7 +215,11 @@ private fun SyncIcon(syncState: SyncState) {
     Icon(
         painterResource(icon),
         contentDescription = description,
-        tint = if (syncState == SyncState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        tint = if (syncState == SyncState.FAILED) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
         modifier = Modifier.size(18.dp),
     )
 }
@@ -251,8 +257,12 @@ private fun HistoryPreview() {
 private fun HistoryEmptyPreview() {
     ActivityStatsTheme {
         HistoryContent(
-            emptyList(), DisplaySettings(), use24Hour = false, onOpenRide = {},
-            importing = false, onImport = {},
+            emptyList(),
+            DisplaySettings(),
+            use24Hour = false,
+            onOpenRide = {},
+            importing = false,
+            onImport = {},
         )
     }
 }

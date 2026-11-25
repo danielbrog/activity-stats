@@ -36,7 +36,8 @@ class SyncStateTest {
     fun `a new segment is private, matching the column's default`() {
         // The column default is written as 'PRIVATE' by hand, since an enum name isn't a constant.
         assertEquals("PRIVATE", SegmentStatus.PRIVATE.name)
-        val segment = SegmentEntity(id = "s", name = "Hill", path = "", distanceMeters = 100.0, createdAt = 0, updatedAt = 0)
+        val segment =
+            SegmentEntity(id = "s", name = "Hill", path = "", distanceMeters = 100.0, createdAt = 0, updatedAt = 0)
         assertEquals(SegmentStatus.PRIVATE, segment.status)
     }
 

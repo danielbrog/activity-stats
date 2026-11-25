@@ -44,20 +44,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.danielbrog.activitystats.R
-import kotlinx.coroutines.delay
 import com.danielbrog.activitystats.sync.SyncStatus
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
+import kotlinx.coroutines.delay
 
 /**
  * The Account screen, opened from the Profile header: sign in or create an account on Cognito's page,
  * see who is signed in and whether the backend accepts it, and sign out.
  */
 @Composable
-fun AccountScreen(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: AccountViewModel = viewModel(),
-) {
+fun AccountScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: AccountViewModel = viewModel()) {
     val account by viewModel.account.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val connection by viewModel.connection.collectAsStateWithLifecycle()
@@ -125,7 +121,7 @@ private fun AccountContent(
             }
             AccountState.NotConfigured -> Explanation(
                 "Sign-in isn't set up in this build. Add the backend's settings to local.properties " +
-                    "(see secrets.defaults.properties) and rebuild."
+                    "(see secrets.defaults.properties) and rebuild.",
             )
             AccountState.SignedOut -> SignedOutContent(busy, onSignIn)
             is AccountState.SignedIn ->
@@ -144,7 +140,7 @@ private fun SignedOutContent(busy: Boolean, onSignIn: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Explanation(
             "Sign in to back up your rides and keep them in step across your phones. " +
-                "Recording works the same either way."
+                "Recording works the same either way.",
         )
         Button(onClick = onSignIn, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             if (busy) {
@@ -171,7 +167,11 @@ private fun SignedInContent(
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Signed in as", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Signed in as",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Text(
                     account.email ?: "your account",
                     style = MaterialTheme.typography.titleMedium,
@@ -184,7 +184,7 @@ private fun SignedInContent(
         SyncCard(syncStatus, onSyncNow)
         Explanation(
             "Rides recorded while signed in belong to this account and are kept in the cloud. " +
-                "They sync whenever the app is opened, and after every change."
+                "They sync whenever the app is opened, and after every change.",
         )
         OutlinedButton(onClick = onSignOut, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Text("Sign out")
@@ -206,7 +206,11 @@ private fun SyncCard(status: SyncStatus?, onSyncNow: () -> Unit) {
     val line = remember(status, now, use24Hour) { status?.text(now, use24Hour) ?: "Checking…" }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Sync", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Sync",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (status?.running == true) {
@@ -216,7 +220,11 @@ private fun SyncCard(status: SyncStatus?, onSyncNow: () -> Unit) {
                 Text(
                     line,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if ((status?.failed ?: 0) > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    color = if ((status?.failed ?: 0) > 0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                     // TalkBack reads the new line when it changes, such as when Sync now finishes.
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
@@ -271,7 +279,10 @@ private fun SignedInPreview() {
             AccountState.SignedIn("user", "rider@example.com"),
             busy = false,
             connection = Connection.Connected,
-            {}, {}, {}, {},
+            {},
+            {},
+            {},
+            {},
             syncStatus = SyncStatus(waiting = 2, lastSyncedAt = 1_793_000_000_000L),
         )
     }

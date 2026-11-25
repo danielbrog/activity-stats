@@ -9,16 +9,17 @@ import org.junit.Test
 
 class PersonalRecordsTest {
 
-    private fun ride(
-        id: String,
-        startedAt: Long,
-        meters: Double = 0.0,
-        movingMs: Long = 0L,
-        gain: Double? = null,
-    ) = ActivityEntity(
-        id = id, startedAt = startedAt, endedAt = startedAt + 1, title = "Ride $id",
-        distanceMeters = meters, movingTimeMs = movingMs, elevationGainMeters = gain, updatedAt = startedAt,
-    )
+    private fun ride(id: String, startedAt: Long, meters: Double = 0.0, movingMs: Long = 0L, gain: Double? = null) =
+        ActivityEntity(
+            id = id,
+            startedAt = startedAt,
+            endedAt = startedAt + 1,
+            title = "Ride $id",
+            distanceMeters = meters,
+            movingTimeMs = movingMs,
+            elevationGainMeters = gain,
+            updatedAt = startedAt,
+        )
 
     private fun effort(id: String, effort: Effort, ms: Long?) = BestEffortEntity(id, effort.key, ms)
 
@@ -26,7 +27,12 @@ class PersonalRecordsTest {
     fun biggestClimbIsTheMostTotalClimbingWithTheEarlierRideWinningATie() {
         val records = PersonalRecords.from(
             // Newest first, as the history query returns them; "c" isn't worked out yet.
-            listOf(ride("c", 4, gain = null), ride("new", 3, gain = 640.0), ride("old", 2, gain = 640.0), ride("flat", 1, gain = 12.0)),
+            listOf(
+                ride("c", 4, gain = null),
+                ride("new", 3, gain = 640.0),
+                ride("old", 2, gain = 640.0),
+                ride("flat", 1, gain = 12.0),
+            ),
             emptyList(),
         )
         assertEquals("old", records.biggestClimb?.holder?.rideId)
@@ -42,7 +48,10 @@ class PersonalRecordsTest {
     @Test
     fun picksLongestRideAndMovingTimeSeparately() {
         val records = PersonalRecords.from(
-            listOf(ride("a", 1, meters = 40_000.0, movingMs = 5_000_000), ride("b", 2, meters = 30_000.0, movingMs = 6_000_000)),
+            listOf(
+                ride("a", 1, meters = 40_000.0, movingMs = 5_000_000),
+                ride("b", 2, meters = 30_000.0, movingMs = 6_000_000),
+            ),
             emptyList(),
         )
         assertEquals("a", records.longestRide?.holder?.rideId)

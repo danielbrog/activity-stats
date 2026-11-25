@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -43,11 +43,7 @@ import java.util.Locale
  * greyed out and their reason. Recording is started and stopped on the live screen.
  */
 @Composable
-fun GPSDisplayScreen(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: LocationViewModel = viewModel(),
-) {
+fun GPSDisplayScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: LocationViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     GPSDisplayContent(state = state, settings = settings, onBack = onBack, modifier = modifier)
@@ -108,15 +104,16 @@ private fun FixRow(fix: GpsData, settings: DisplaySettings) {
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (kept) 1f else 0.45f)
-            .padding(vertical = 8.dp)
+            .padding(vertical = 8.dp),
     ) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("#${fix.seq}", fontWeight = FontWeight.Bold)
             if (!kept) {
                 Text(
                     text = "dropped · " + when (fix.status) {
-                        FixStatus.DroppedAccuracy -> fix.accuracyMeters
-                            ?.let { "accuracy " + Format.shortLength(it.toDouble(), unit) } ?: "no accuracy"
+                        FixStatus.DroppedAccuracy ->
+                            fix.accuracyMeters
+                                ?.let { "accuracy " + Format.shortLength(it.toDouble(), unit) } ?: "no accuracy"
                         else -> "standing still"
                     },
                     style = MaterialTheme.typography.labelMedium,
@@ -128,15 +125,22 @@ private fun FixRow(fix: GpsData, settings: DisplaySettings) {
         Text("lat  %.6f".format(Locale.US, fix.latitude), style = mono)
         Text("long %.6f".format(Locale.US, fix.longitude), style = mono)
         Row(verticalAlignment = Alignment.CenterVertically) {
+            val accuracy = fix.accuracyMeters?.let { Format.shortLength(it.toDouble(), unit, decimals = 1) } ?: "—"
             Text(
-                text = "acc  " + (fix.accuracyMeters?.let { Format.shortLength(it.toDouble(), unit, decimals = 1) } ?: "—"),
+                text = "acc  $accuracy",
                 style = mono,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "speed " + (fix.speedMps?.let {
-                    "%.2f m/s (%s)".format(Locale.US, it, Format.speedOrPace(it.toDouble(), unit, settings.speedDisplay))
-                } ?: "—"),
+                text = "speed " + (
+                    fix.speedMps?.let {
+                        "%.2f m/s (%s)".format(
+                            Locale.US,
+                            it,
+                            Format.speedOrPace(it.toDouble(), unit, settings.speedDisplay),
+                        )
+                    } ?: "—"
+                    ),
                 style = mono,
             )
         }

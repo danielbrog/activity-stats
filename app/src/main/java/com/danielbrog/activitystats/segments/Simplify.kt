@@ -25,7 +25,14 @@ object Simplify {
             val b = points[to]
             for (i in from + 1 until to) {
                 val p = points[i]
-                val d = Geo.onLeg(p.latitude, p.longitude, a.latitude, a.longitude, b.latitude, b.longitude).distanceMeters
+                val d = Geo.onLeg(
+                    p.latitude,
+                    p.longitude,
+                    a.latitude,
+                    a.longitude,
+                    b.latitude,
+                    b.longitude,
+                ).distanceMeters
                 if (d > farthestMeters) {
                     farthestMeters = d
                     farthest = i

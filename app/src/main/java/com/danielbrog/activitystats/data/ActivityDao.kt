@@ -33,24 +33,27 @@ abstract class ActivityDao {
 
     @Query(
         "UPDATE activities SET title = :title, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
-            "ELSE syncState END WHERE id = :id"
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) " +
+            "THEN ${SyncStateSql.PENDING} " +
+            "ELSE syncState END WHERE id = :id",
     )
     abstract suspend fun rename(id: String, title: String, now: Long)
 
     /** Soft delete: the row stays, marked with when it was deleted. */
     @Query(
         "UPDATE activities SET deletedAt = :now, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
-            "ELSE syncState END WHERE id = :id"
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) " +
+            "THEN ${SyncStateSql.PENDING} " +
+            "ELSE syncState END WHERE id = :id",
     )
     abstract suspend fun softDelete(id: String, now: Long)
 
     /** Undoes a soft delete. */
     @Query(
         "UPDATE activities SET deletedAt = NULL, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
-            "ELSE syncState END WHERE id = :id"
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) " +
+            "THEN ${SyncStateSql.PENDING} " +
+            "ELSE syncState END WHERE id = :id",
     )
     abstract suspend fun restore(id: String, now: Long)
 
@@ -71,7 +74,7 @@ abstract class ActivityDao {
      */
     @Query(
         "SELECT * FROM activities WHERE userId = :userId AND syncState = ${SyncStateSql.PENDING} " +
-            "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL ORDER BY startedAt"
+            "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL ORDER BY startedAt",
     )
     abstract suspend fun pendingUploads(userId: String): List<ActivityEntity>
 
@@ -85,12 +88,14 @@ abstract class ActivityDao {
      */
     @Query(
         "UPDATE activities SET syncState = ${SyncStateSql.FAILED} " +
-            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}",
     )
     abstract suspend fun markFailed(id: String, sentUpdatedAt: Long)
 
     /** Puts [userId]'s refused rides back in the queue, for Sync now. */
-    @Query("UPDATE activities SET syncState = ${SyncStateSql.PENDING} WHERE userId = :userId AND syncState = ${SyncStateSql.FAILED}")
+    @Query(
+        "UPDATE activities SET syncState = ${SyncStateSql.PENDING} WHERE userId = :userId AND syncState = ${SyncStateSql.FAILED}",
+    )
     abstract suspend fun retryFailed(userId: String)
 
     /**
@@ -100,7 +105,7 @@ abstract class ActivityDao {
      */
     @Query(
         "SELECT COUNT(*) FROM activities WHERE userId = :userId AND syncState = ${SyncStateSql.PENDING} " +
-            "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL"
+            "AND endedAt IS NOT NULL AND elevationGainMeters IS NOT NULL",
     )
     abstract fun waitingCount(userId: String): Flow<Int>
 
@@ -114,7 +119,7 @@ abstract class ActivityDao {
      */
     @Query(
         "UPDATE activities SET syncState = ${SyncStateSql.SYNCED} " +
-            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}",
     )
     abstract suspend fun markSynced(id: String, sentUpdatedAt: Long): Int
 
@@ -126,19 +131,21 @@ abstract class ActivityDao {
      */
     @Query(
         "UPDATE activities SET title = :title, deletedAt = :deletedAt, updatedAt = :updatedAt, " +
-            "syncState = ${SyncStateSql.SYNCED} WHERE id = :id AND updatedAt < :updatedAt"
+            "syncState = ${SyncStateSql.SYNCED} WHERE id = :id AND updatedAt < :updatedAt",
     )
     abstract suspend fun applyCloudCopy(id: String, title: String, deletedAt: Long?, updatedAt: Long): Int
 
     // --- Bounding boxes, for segment matching ---
 
-    @Query("UPDATE activities SET minLat = :minLat, maxLat = :maxLat, minLon = :minLon, maxLon = :maxLon WHERE id = :id")
+    @Query(
+        "UPDATE activities SET minLat = :minLat, maxLat = :maxLat, minLon = :minLon, maxLon = :maxLon WHERE id = :id",
+    )
     abstract suspend fun setBounds(id: String, minLat: Double, maxLat: Double, minLon: Double, maxLon: Double)
 
     /** Finished, not-deleted activities of [type] whose box overlaps the given one. */
     @Query(
         "SELECT id FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL AND type = :type " +
-            "AND minLat <= :maxLat AND maxLat >= :minLat AND minLon <= :maxLon AND maxLon >= :minLon"
+            "AND minLat <= :maxLat AND maxLat >= :minLat AND minLon <= :maxLon AND maxLon >= :minLon",
     )
     abstract suspend fun ridesOverlapping(
         type: String,
@@ -150,27 +157,27 @@ abstract class ActivityDao {
 
     /** A not-deleted activity that started in the same second, or null: used to spot re-imports. */
     @Query(
-        "SELECT id FROM activities WHERE deletedAt IS NULL AND startedAt / 1000 = :startedAtMillis / 1000 LIMIT 1"
+        "SELECT id FROM activities WHERE deletedAt IS NULL AND startedAt / 1000 = :startedAtMillis / 1000 LIMIT 1",
     )
     abstract suspend fun idStartedInSameSecond(startedAtMillis: Long): String?
 
     /** Activities that never got an end time and started before [startedBefore]. */
     @Query(
         "SELECT * FROM activities WHERE endedAt IS NULL AND deletedAt IS NULL " +
-            "AND startedAt < :startedBefore"
+            "AND startedAt < :startedBefore",
     )
     abstract suspend fun unfinishedStartedBefore(startedBefore: Long): List<ActivityEntity>
 
     @Query(
         "SELECT * FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL " +
-            "ORDER BY startedAt DESC LIMIT 1"
+            "ORDER BY startedAt DESC LIMIT 1",
     )
     abstract fun latestFinished(): Flow<ActivityEntity?>
 
     /** Every finished, not-deleted activity, newest first. Updates itself on changes. */
     @Query(
         "SELECT * FROM activities WHERE endedAt IS NOT NULL AND deletedAt IS NULL " +
-            "ORDER BY startedAt DESC"
+            "ORDER BY startedAt DESC",
     )
     abstract fun allFinished(): Flow<List<ActivityEntity>>
 
@@ -180,7 +187,7 @@ abstract class ActivityDao {
     @Query(
         "UPDATE activities SET distanceMeters = :distanceMeters, movingTimeMs = :movingTimeMs, " +
             "elapsedTimeMs = :elapsedTimeMs, avgSpeedMps = :avgSpeedMps, " +
-            "maxSpeedMps = :maxSpeedMps, updatedAt = :updatedAt WHERE id = :id"
+            "maxSpeedMps = :maxSpeedMps, updatedAt = :updatedAt WHERE id = :id",
     )
     abstract suspend fun updateStats(
         id: String,

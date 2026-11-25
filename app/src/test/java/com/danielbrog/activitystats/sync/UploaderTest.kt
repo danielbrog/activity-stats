@@ -49,8 +49,7 @@ class UploaderTest {
             }
             .sortedBy { it.startedAt }
 
-        override suspend fun pointsFor(id: String) =
-            listOf(GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept))
+        override suspend fun pointsFor(id: String) = listOf(GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept))
 
         override suspend fun markTrackUploaded(id: String) {
             rides[id] = rides.getValue(id).copy(trackUploaded = true)
@@ -74,7 +73,10 @@ class UploaderTest {
             // Same rule as the real query: only a newer cloud copy replaces the phone's.
             if (current.updatedAt >= cloud.updatedAt) return false
             rides[id] = current.copy(
-                title = cloud.title, deletedAt = cloud.deletedAt, updatedAt = cloud.updatedAt, syncState = SyncState.SYNCED,
+                title = cloud.title,
+                deletedAt = cloud.deletedAt,
+                updatedAt = cloud.updatedAt,
+                syncState = SyncState.SYNCED,
             )
             return true
         }
@@ -167,7 +169,8 @@ class UploaderTest {
         val store = FakeStore(listOf(ride("a", trackUploaded = true)))
         // The rider renames the ride while its summary is on the way.
         val api = FakeApi().apply {
-            beforeAnswer = { id -> store.rides[id] = store.rides.getValue(id).copy(title = "New name", updatedAt = 999_000L) }
+            beforeAnswer =
+                { id -> store.rides[id] = store.rides.getValue(id).copy(title = "New name", updatedAt = 999_000L) }
         }
         run(store, api)
         assertEquals(SyncState.PENDING, store.state("a"))
@@ -179,7 +182,8 @@ class UploaderTest {
         val api = FakeApi().apply {
             // The rider renames the ride while it uploads; the cloud then answers with a copy
             // newer than what was sent, but older than the rename.
-            beforeAnswer = { id -> store.rides[id] = store.rides.getValue(id).copy(title = "Rider's name", updatedAt = 90_000L) }
+            beforeAnswer =
+                { id -> store.rides[id] = store.rides.getValue(id).copy(title = "Rider's name", updatedAt = 90_000L) }
             answers = { PutResult.Newer(CloudCopy("Cloud name", 70_000L, null)) }
         }
         val report = run(store, api)
@@ -192,7 +196,13 @@ class UploaderTest {
 
     @Test
     fun aRideWithAReplyThatIsNotJsonIsSkipped() {
-        val store = FakeStore(listOf(ride("a", startedAt = 1_000L, trackUploaded = true), ride("b", startedAt = 2_000L, trackUploaded = true)))
+        val store =
+            FakeStore(
+                listOf(
+                    ride("a", startedAt = 1_000L, trackUploaded = true),
+                    ride("b", startedAt = 2_000L, trackUploaded = true),
+                ),
+            )
         val api = FakeApi().apply { badReplyFor = "a" }
         val report = run(store, api)
         assertEquals(listOf("a"), report.rejected)
@@ -203,7 +213,13 @@ class UploaderTest {
 
     @Test
     fun aMissingRouteOrRedirectLeavesTheRideWaiting() {
-        val store = FakeStore(listOf(ride("a", startedAt = 1_000L, trackUploaded = true), ride("b", startedAt = 2_000L, trackUploaded = true)))
+        val store =
+            FakeStore(
+                listOf(
+                    ride("a", startedAt = 1_000L, trackUploaded = true),
+                    ride("b", startedAt = 2_000L, trackUploaded = true),
+                ),
+            )
         val api = FakeApi().apply { answers = { id -> PutResult.Rejected(if (id == "a") 404 else 302) } }
         val report = run(store, api)
         assertEquals(listOf("a", "b"), report.rejected)
@@ -216,7 +232,8 @@ class UploaderTest {
         val store = FakeStore(listOf(ride("a", trackUploaded = true, updatedAt = 61_000L)))
         // The rider shortens the refused title while the old copy is being refused.
         val api = FakeApi().apply {
-            beforeAnswer = { id -> store.rides[id] = store.rides.getValue(id).copy(title = "Shorter", updatedAt = 90_000L) }
+            beforeAnswer =
+                { id -> store.rides[id] = store.rides.getValue(id).copy(title = "Shorter", updatedAt = 90_000L) }
             answers = { PutResult.Rejected(400) }
         }
         run(store, api)
@@ -232,7 +249,13 @@ class UploaderTest {
 
     @Test
     fun signingOutPartWayStopsBeforeTheNextRide() {
-        val store = FakeStore(listOf(ride("a", startedAt = 1_000L, trackUploaded = true), ride("b", startedAt = 2_000L, trackUploaded = true)))
+        val store =
+            FakeStore(
+                listOf(
+                    ride("a", startedAt = 1_000L, trackUploaded = true),
+                    ride("b", startedAt = 2_000L, trackUploaded = true),
+                ),
+            )
         val api = FakeApi()
         var signedIn = true
         api.beforeAnswer = { signedIn = false }
@@ -243,7 +266,10 @@ class UploaderTest {
 
     @Test
     fun aRefusedRideIsMarkedFailedAndDoesNotStopTheOthers() {
-        val store = FakeStore(listOf(ride("a", startedAt = 1_000L), ride("b", startedAt = 2_000L), ride("c", startedAt = 3_000L)))
+        val store =
+            FakeStore(
+                listOf(ride("a", startedAt = 1_000L), ride("b", startedAt = 2_000L), ride("c", startedAt = 3_000L)),
+            )
         val api = FakeApi().apply {
             rejectLinkFor = "a"
             answers = { id -> if (id == "b") PutResult.Rejected(400) else PutResult.Applied }
@@ -260,7 +286,10 @@ class UploaderTest {
 
     @Test
     fun aNetworkFailureStopsAndKeepsWhatWasDone() {
-        val store = FakeStore(listOf(ride("a", startedAt = 1_000L), ride("b", startedAt = 2_000L), ride("c", startedAt = 3_000L)))
+        val store =
+            FakeStore(
+                listOf(ride("a", startedAt = 1_000L), ride("b", startedAt = 2_000L), ride("c", startedAt = 3_000L)),
+            )
         val api = FakeApi().apply { failOn = "summary b" }
         try {
             run(store, api)
@@ -287,7 +316,7 @@ class UploaderTest {
                     ride("done", syncState = SyncState.SYNCED),
                     // Climbing not worked out yet: it would go up without it, and never again.
                     ride("no-climbing", elevationGainMeters = null),
-                )
+                ),
             ),
             api,
         )
@@ -297,7 +326,15 @@ class UploaderTest {
     @Test
     fun ridesGoUpOldestFirst() {
         val api = FakeApi()
-        run(FakeStore(listOf(ride("new", startedAt = 9_000L, trackUploaded = true), ride("old", startedAt = 1_000L, trackUploaded = true))), api)
+        run(
+            FakeStore(
+                listOf(
+                    ride("new", startedAt = 9_000L, trackUploaded = true),
+                    ride("old", startedAt = 1_000L, trackUploaded = true),
+                ),
+            ),
+            api,
+        )
         assertEquals(listOf("summary old", "summary new"), api.calls)
     }
 }

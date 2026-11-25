@@ -81,7 +81,21 @@ class FormatTest {
 
     @Test
     fun labelsMatchTheUnit() {
-        assertEquals(listOf("km", "km/h", "m"), listOf(Format.distanceLabel(DistanceUnit.Km), Format.speedLabel(DistanceUnit.Km), Format.elevationLabel(DistanceUnit.Km)))
-        assertEquals(listOf("mi", "mph", "ft"), listOf(Format.distanceLabel(DistanceUnit.Mi), Format.speedLabel(DistanceUnit.Mi), Format.elevationLabel(DistanceUnit.Mi)))
+        assertEquals(
+            listOf("km", "km/h", "m"),
+            listOf(
+                Format.distanceLabel(DistanceUnit.Km),
+                Format.speedLabel(DistanceUnit.Km),
+                Format.elevationLabel(DistanceUnit.Km),
+            ),
+        )
+        assertEquals(
+            listOf("mi", "mph", "ft"),
+            listOf(
+                Format.distanceLabel(DistanceUnit.Mi),
+                Format.speedLabel(DistanceUnit.Mi),
+                Format.elevationLabel(DistanceUnit.Mi),
+            ),
+        )
     }
 }

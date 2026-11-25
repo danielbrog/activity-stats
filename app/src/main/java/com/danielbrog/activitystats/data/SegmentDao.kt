@@ -65,19 +65,21 @@ abstract class SegmentDao {
     /** Synced, unless it was edited after the copy that was sent ([sentUpdatedAt]). */
     @Query(
         "UPDATE segments SET syncState = ${SyncStateSql.SYNCED} " +
-            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}",
     )
     abstract suspend fun markSynced(id: String, sentUpdatedAt: Long): Int
 
     /** Failed (refused by the server), unless it was edited after the copy that was sent. */
     @Query(
         "UPDATE segments SET syncState = ${SyncStateSql.FAILED} " +
-            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}"
+            "WHERE id = :id AND updatedAt = :sentUpdatedAt AND syncState = ${SyncStateSql.PENDING}",
     )
     abstract suspend fun markFailed(id: String, sentUpdatedAt: Long)
 
     /** Puts [userId]'s refused segments back in the queue, for Sync now. */
-    @Query("UPDATE segments SET syncState = ${SyncStateSql.PENDING} WHERE userId = :userId AND syncState = ${SyncStateSql.FAILED}")
+    @Query(
+        "UPDATE segments SET syncState = ${SyncStateSql.PENDING} WHERE userId = :userId AND syncState = ${SyncStateSql.FAILED}",
+    )
     abstract suspend fun retryFailed(userId: String)
 
     /**
@@ -87,7 +89,7 @@ abstract class SegmentDao {
      */
     @Query(
         "UPDATE segments SET name = :name, deletedAt = :deletedAt, updatedAt = :updatedAt, " +
-            "syncState = ${SyncStateSql.SYNCED} WHERE id = :id AND updatedAt < :updatedAt"
+            "syncState = ${SyncStateSql.SYNCED} WHERE id = :id AND updatedAt < :updatedAt",
     )
     abstract suspend fun applyCloudCopy(id: String, name: String, deletedAt: Long?, updatedAt: Long): Int
 
@@ -98,7 +100,7 @@ abstract class SegmentDao {
      */
     @Query(
         "UPDATE segments SET status = :status, submittedAt = :submittedAt, decidedAt = :decidedAt, " +
-            "reviewNote = :reviewNote, verifiedSegmentId = :verifiedSegmentId WHERE id = :id"
+            "reviewNote = :reviewNote, verifiedSegmentId = :verifiedSegmentId WHERE id = :id",
     )
     abstract suspend fun applyReview(
         id: String,
@@ -129,24 +131,27 @@ abstract class SegmentDao {
      */
     @Query(
         "UPDATE segments SET name = :name, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
-            "ELSE syncState END WHERE id = :id AND name IS NOT :name"
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) " +
+            "THEN ${SyncStateSql.PENDING} " +
+            "ELSE syncState END WHERE id = :id AND name IS NOT :name",
     )
     abstract suspend fun rename(id: String, name: String, now: Long): Int
 
     /** Soft delete: the row and its efforts stay, marked with when it was deleted. */
     @Query(
         "UPDATE segments SET deletedAt = :now, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
-            "ELSE syncState END WHERE id = :id"
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) " +
+            "THEN ${SyncStateSql.PENDING} " +
+            "ELSE syncState END WHERE id = :id",
     )
     abstract suspend fun softDelete(id: String, now: Long)
 
     /** Undoes a soft delete; its efforts come back with it. */
     @Query(
         "UPDATE segments SET deletedAt = NULL, updatedAt = :now, " +
-            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) THEN ${SyncStateSql.PENDING} " +
-            "ELSE syncState END WHERE id = :id"
+            "syncState = CASE WHEN syncState IN (${SyncStateSql.SYNCED}, ${SyncStateSql.FAILED}) " +
+            "THEN ${SyncStateSql.PENDING} " +
+            "ELSE syncState END WHERE id = :id",
     )
     abstract suspend fun restore(id: String, now: Long)
 
@@ -159,7 +164,7 @@ abstract class SegmentDao {
         "SELECT s.id, s.name, s.distanceMeters, MIN(e.elapsedMs) AS bestMs, COUNT(e.activityId) AS effortCount " +
             "FROM segments s LEFT JOIN segment_efforts e ON e.segmentId = s.id " +
             "AND e.activityId IN (SELECT id FROM activities WHERE deletedAt IS NULL) " +
-            "WHERE s.deletedAt IS NULL GROUP BY s.id ORDER BY s.name COLLATE NOCASE"
+            "WHERE s.deletedAt IS NULL GROUP BY s.id ORDER BY s.name COLLATE NOCASE",
     )
     abstract fun observeSummaries(): Flow<List<SegmentSummary>>
 
@@ -179,7 +184,7 @@ abstract class SegmentDao {
      */
     @Query(
         "DELETE FROM segment_efforts WHERE activityId = :activityId " +
-            "AND segmentId IN (SELECT id FROM segments WHERE deletedAt IS NULL)"
+            "AND segmentId IN (SELECT id FROM segments WHERE deletedAt IS NULL)",
     )
     abstract suspend fun deleteEffortsForRide(activityId: String)
 
@@ -202,7 +207,7 @@ abstract class SegmentDao {
         "SELECT e.segmentId, e.activityId, e.occurrence, e.startedAt, e.elapsedMs, " +
             "a.title AS rideTitle FROM segment_efforts e JOIN activities a ON a.id = e.activityId " +
             "WHERE e.segmentId = :segmentId AND a.deletedAt IS NULL " +
-            "ORDER BY e.elapsedMs, e.startedAt"
+            "ORDER BY e.elapsedMs, e.startedAt",
     )
     abstract fun observeEfforts(segmentId: String): Flow<List<SegmentEffortWithRide>>
 
@@ -217,7 +222,7 @@ abstract class SegmentDao {
             "FROM segment_efforts e JOIN segments s ON s.id = e.segmentId " +
             "WHERE e.activityId = :rideId AND s.deletedAt IS NULL " +
             // Name, then id, settle segments that start at the same spot, so rows never swap.
-            "ORDER BY e.startedAt, s.name COLLATE NOCASE, e.segmentId"
+            "ORDER BY e.startedAt, s.name COLLATE NOCASE, e.segmentId",
     )
     abstract fun observeEffortsForRide(rideId: String): Flow<List<RideSegmentEffort>>
 }

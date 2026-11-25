@@ -102,7 +102,11 @@ fun SegmentPickerMap(
         },
     ) {
         stretches.filter { it.last > it.first }.forEach { run ->
-            Polyline(points = latLngs.subList(run.first, run.last + 1), color = MaterialTheme.colorScheme.outline, width = 10f)
+            Polyline(
+                points = latLngs.subList(run.first, run.last + 1),
+                color = MaterialTheme.colorScheme.outline,
+                width = 10f,
+            )
         }
         picked.filter { it.last > it.first }.forEach { run ->
             Polyline(

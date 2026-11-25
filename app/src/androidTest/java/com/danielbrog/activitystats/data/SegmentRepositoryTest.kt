@@ -11,14 +11,14 @@ import com.danielbrog.activitystats.location.RoutePoint
 import com.danielbrog.activitystats.segments.Polyline
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.sync.CloudCopy
-import com.danielbrog.activitystats.sync.CloudSegment
 import com.danielbrog.activitystats.sync.CloudReview
+import com.danielbrog.activitystats.sync.CloudSegment
 import kotlin.math.cos
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
@@ -56,7 +56,11 @@ class SegmentRepositoryTest {
 
     @Before
     fun setUp() {
-        db = Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java).build()
+        db =
+            Room.inMemoryDatabaseBuilder(
+                InstrumentationRegistry.getInstrumentation().targetContext,
+                AppDatabase::class.java,
+            ).build()
         segments = SegmentRepository(db, background = background, onChanged = { changes++ })
         rides = ActivityRepository(db, onRideSaved = { id ->
             savedRides += id
@@ -76,11 +80,24 @@ class SegmentRepositoryTest {
     }
 
     /** 2 km north along a road [eastMeters] east of the origin, a fix every 10 m and every second. */
-    private fun road(startMillis: Long, eastMeters: Double = 0.0, msPerFix: Long = 1_000L, firstSeq: Int = 1, stretch: Int = 0) =
-        (0..200).map { i ->
-            GpsData(firstSeq + i, startMillis + i * msPerFix, lat0 + i * 10.0 / perDegLat, lon0 + eastMeters / perDegLon,
-                5f, 10f, FixStatus.Kept, stretch = stretch)
-        }
+    private fun road(
+        startMillis: Long,
+        eastMeters: Double = 0.0,
+        msPerFix: Long = 1_000L,
+        firstSeq: Int = 1,
+        stretch: Int = 0,
+    ) = (0..200).map { i ->
+        GpsData(
+            firstSeq + i,
+            startMillis + i * msPerFix,
+            lat0 + i * 10.0 / perDegLat,
+            lon0 + eastMeters / perDegLon,
+            5f,
+            10f,
+            FixStatus.Kept,
+            stretch = stretch,
+        )
+    }
 
     /** A finished ride along [road] ([msPerFix] apart: 500 is twice as fast), then waits for its matching. */
     private suspend fun rideAlong(id: String, startMillis: Long, eastMeters: Double = 0.0, msPerFix: Long = 1_000L) =
@@ -119,7 +136,8 @@ class SegmentRepositoryTest {
         rideAlong("elsewhere", 9_000_000L, eastMeters = 30_000.0)
 
         // Fixes 50 to 150 of the first ride: 1 km of the road.
-        val created = requireNotNull(segments.create("Road", "first", startIndex = 50, endIndex = 150, nowMillis = 10_000_000L))
+        val created =
+            requireNotNull(segments.create("Road", "first", startIndex = 50, endIndex = 150, nowMillis = 10_000_000L))
         created.matching.join()
         assertTrue(segments.finding.value.isEmpty())
 
@@ -151,9 +169,13 @@ class SegmentRepositoryTest {
     fun anImportedRideIsMatchedAutomatically() = runBlocking {
         rideAlong("first", 1_000_000L)
         val id = createAndMatch("Road")
-        val track = GpxTrack("Imported ride", "ride", (0..200).map { i ->
-            GpxPoint(lat0 + i * 10.0 / perDegLat, lon0, elevation = null, timeMillis = 9_000_000L + i * 1_000L)
-        })
+        val track = GpxTrack(
+            "Imported ride",
+            "ride",
+            (0..200).map { i ->
+                GpxPoint(lat0 + i * 10.0 / perDegLat, lon0, elevation = null, timeMillis = 9_000_000L + i * 1_000L)
+            },
+        )
         val imported = rides.importTrack(track) as ImportResult.Imported
         awaitMatching()
         assertTrue(imported.id in segments.effortsFor(id).first().map { it.activityId })
@@ -288,9 +310,13 @@ class SegmentRepositoryTest {
 
     /** An imported run along the same road as [rideAlong], so only the sport differs. */
     private suspend fun runAlong(startMillis: Long): String {
-        val track = GpxTrack("A run", ActivityType.RUN, (0..200).map { i ->
-            GpxPoint(lat0 + i * 10.0 / perDegLat, lon0, elevation = null, timeMillis = startMillis + i * 1_000L)
-        })
+        val track = GpxTrack(
+            "A run",
+            ActivityType.RUN,
+            (0..200).map { i ->
+                GpxPoint(lat0 + i * 10.0 / perDegLat, lon0, elevation = null, timeMillis = startMillis + i * 1_000L)
+            },
+        )
         val imported = rides.importTrack(track) as ImportResult.Imported
         awaitMatching()
         return imported.id
@@ -394,7 +420,8 @@ class SegmentRepositoryTest {
         rideAlong("first", 1_000_000L)
         val id = createAndMatch("Road")
         val before = checkNotNull(segments.getSegment(id))
-        val review = CloudReview(id, "REJECTED", submittedAt = 10L, decidedAt = 20L, reviewNote = "Too short", syncedAt = 30L)
+        val review =
+            CloudReview(id, "REJECTED", submittedAt = 10L, decidedAt = 20L, reviewNote = "Too short", syncedAt = 30L)
         assertTrue(segments.applyReview(review, SegmentStatus.REJECTED))
         val after = checkNotNull(segments.getSegment(id))
         assertEquals(SegmentStatus.REJECTED, after.status)
@@ -411,8 +438,14 @@ class SegmentRepositoryTest {
         // The same road as "first" fixes 50 to 150, as another phone would have uploaded it.
         val made = checkNotNull(segments.getSegment(createAndMatch("Mine")))
         val fromCloud = CloudSegment(
-            id = "from-cloud", name = "From the cloud", path = made.path, distanceMeters = made.distanceMeters,
-            sport = "ride", createdAt = 1L, updatedAt = 2L, syncedAt = 3L,
+            id = "from-cloud",
+            name = "From the cloud",
+            path = made.path,
+            distanceMeters = made.distanceMeters,
+            sport = "ride",
+            createdAt = 1L,
+            updatedAt = 2L,
+            syncedAt = 3L,
         )
         segments.saveDownloadedSegment(fromCloud.toEntity("me"))
         segments.saveDownloadedSegment(fromCloud.toEntity("me").copy(name = "Again")) // already here: ignored
@@ -427,7 +460,10 @@ class SegmentRepositoryTest {
         val id = createAndMatch("Road")
         segments.delete(id, nowMillis = 10L)
         val restored = checkNotNull(segments.getSegment(id)).let {
-            CloudSegment(id, it.name, it.path, it.distanceMeters, it.sport, it.createdAt, updatedAt = 20L, deletedAt = null, syncedAt = 30L)
+            CloudSegment(
+                id, it.name, it.path, it.distanceMeters, it.sport, it.createdAt,
+                updatedAt = 20L, deletedAt = null, syncedAt = 30L,
+            )
         }
         assertTrue(segments.applyCloudSegment(restored))
         awaitSegmentMatching()
@@ -453,7 +489,17 @@ class SegmentRepositoryTest {
         val id = createAndMatch("Road")
         segments.rename(id, "Hill climb", nowMillis = 5_000L)
         val made = checkNotNull(segments.getSegment(id))
-        val older = CloudSegment(id, "Old name", made.path, made.distanceMeters, made.sport, made.createdAt, updatedAt = 4_000L, syncedAt = 30L)
+        val older =
+            CloudSegment(
+                id,
+                "Old name",
+                made.path,
+                made.distanceMeters,
+                made.sport,
+                made.createdAt,
+                updatedAt = 4_000L,
+                syncedAt = 30L,
+            )
         assertFalse(segments.replaceWithCloudSegment(older)) // still has an edit to upload
         awaitSegmentMatching()
         val after = checkNotNull(segments.getSegment(id))
@@ -466,7 +512,9 @@ class SegmentRepositoryTest {
     fun syncNowRetriesRefusedSegments() = runBlocking {
         rideAlong("first", 1_000_000L)
         val id = createAndMatch("Road")
-        db.openHelper.writableDatabase.execSQL("UPDATE segments SET userId = 'me', syncState = 'FAILED' WHERE id = '$id'")
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE segments SET userId = 'me', syncState = 'FAILED' WHERE id = '$id'",
+        )
         rides.retryFailed("me")
         assertEquals(SyncState.PENDING, segments.getSegment(id)?.syncState)
     }
@@ -505,7 +553,9 @@ class SegmentRepositoryTest {
     fun aSegmentWithABadLineDoesNotStopTheOthersMatching() = runBlocking {
         rideAlong("first", 1_000_000L)
         val good = createAndMatch("Road")
-        db.segmentDao().insertSegment(checkNotNull(segments.getSegment(good)).copy(id = "bad", name = "Bad", path = "_"))
+        db.segmentDao().insertSegment(
+            checkNotNull(segments.getSegment(good)).copy(id = "bad", name = "Bad", path = "_"),
+        )
         rideAlong("second", 5_000_000L)
         awaitMatching()
         assertEquals(setOf("first", "second"), segments.effortsFor(good).first().map { it.activityId }.toSet())

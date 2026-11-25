@@ -12,10 +12,7 @@ import com.danielbrog.activitystats.stats.Geo
  * [distanceMeters] is measured along the original ride, before simplifying, so it is the
  * distance actually ridden and the one to show. Matching compares [lineMeters] instead.
  */
-data class SegmentPath(
-    val points: List<RoutePoint>,
-    val distanceMeters: Double,
-) {
+data class SegmentPath(val points: List<RoutePoint>, val distanceMeters: Double) {
     init {
         require(points.size >= 2) { "A segment needs a start and an end" }
     }
@@ -39,7 +36,10 @@ data class SegmentPath(
             val side = Geo.distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
             if (side > 0 && remaining <= side) {
                 val t = remaining / side
-                return RoutePoint(a.latitude + t * (b.latitude - a.latitude), a.longitude + t * (b.longitude - a.longitude))
+                return RoutePoint(
+                    a.latitude + t * (b.latitude - a.latitude),
+                    a.longitude + t * (b.longitude - a.longitude),
+                )
             }
             remaining -= side
         }

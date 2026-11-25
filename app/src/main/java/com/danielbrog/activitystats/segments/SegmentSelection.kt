@@ -77,12 +77,11 @@ class SegmentSelection(fixes: List<GpsData>) {
      * [range] with its start ([moveStart]) or end moved [by] fixes, within the ride and
      * never meeting the other end. Unchanged if it can't move.
      */
-    fun nudge(range: IntRange, moveStart: Boolean, by: Int): IntRange =
-        if (moveStart) {
-            (range.first + by).coerceIn(0, range.last - 1)..range.last
-        } else {
-            range.first..(range.last + by).coerceIn(range.first + 1, kept.lastIndex)
-        }
+    fun nudge(range: IntRange, moveStart: Boolean, by: Int): IntRange = if (moveStart) {
+        (range.first + by).coerceIn(0, range.last - 1)..range.last
+    } else {
+        range.first..(range.last + by).coerceIn(range.first + 1, kept.lastIndex)
+    }
 
     /** [range] split where a manual pause falls, as index ranges into [points]. Copies nothing. */
     fun runs(range: IntRange): List<IntRange> = buildList {
@@ -134,7 +133,11 @@ class SegmentSelection(fixes: List<GpsData>) {
         val last = range.last
         if ((first..last).any { kept[it].stretch != kept[first].stretch }) return SelectionCheck.CrossesPause
         val path = SegmentPath.fromRide(kept, first, last)
-        if (path == null || path.distanceMeters < MIN_LENGTH_METERS) return SelectionCheck.TooShort(distanceMeters(range))
+        if (path == null ||
+            path.distanceMeters < MIN_LENGTH_METERS
+        ) {
+            return SelectionCheck.TooShort(distanceMeters(range))
+        }
         if (path.distanceMeters > MAX_LENGTH_METERS) return SelectionCheck.TooLong(path.distanceMeters)
 
         // This ride's effort is the one that starts here: at the first fix, or when the rider

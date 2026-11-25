@@ -95,11 +95,10 @@ object Format {
         return "%d:%02d %s".format(Locale.US, seconds / 60, seconds % 60, label)
     }
 
-    fun speedOrPace(mps: Double, unit: DistanceUnit, display: SpeedDisplay): String =
-        when (display) {
-            SpeedDisplay.Speed -> speed(mps, unit)
-            SpeedDisplay.Pace -> pace(mps, unit)
-        }
+    fun speedOrPace(mps: Double, unit: DistanceUnit, display: SpeedDisplay): String = when (display) {
+        SpeedDisplay.Speed -> speed(mps, unit)
+        SpeedDisplay.Pace -> pace(mps, unit)
+    }
 
     /** "12:34" under an hour, "1:02:03" from an hour on. */
     fun clock(ms: Long): String {

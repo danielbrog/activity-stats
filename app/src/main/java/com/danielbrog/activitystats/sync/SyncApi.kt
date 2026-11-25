@@ -83,7 +83,9 @@ internal fun retryFor(code: Int): IOException = if (code == 401) SignInRejectedE
  * worth retrying.
  */
 internal fun segmentPutResultOf(code: Int, body: String): SegmentPutResult {
-    if (code == 409) return parseSegmentConflict(body)?.let { SegmentPutResult.Newer(it) } ?: SegmentPutResult.Rejected(code)
+    if (code == 409) {
+        return parseSegmentConflict(body)?.let { SegmentPutResult.Newer(it) } ?: SegmentPutResult.Rejected(code)
+    }
     if (code == 400) parseSegmentConflict(body)?.let { return SegmentPutResult.LineChanged(it) }
     return when (outcomeOf(code)) {
         Outcome.Ok -> SegmentPutResult.Applied
@@ -128,7 +130,9 @@ interface SegmentSyncApi {
  * [com.danielbrog.activitystats.account.AccountHttp]. [accessToken] must be fresh: it lasts an
  * hour, longer than one sync takes.
  */
-class HttpSyncApi(private val apiUrl: String, private val accessToken: String) : SyncApi, SegmentSyncApi {
+class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
+    SyncApi,
+    SegmentSyncApi {
 
     override suspend fun putActivity(id: String, summary: RideSummary): PutResult {
         val (code, reply) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)

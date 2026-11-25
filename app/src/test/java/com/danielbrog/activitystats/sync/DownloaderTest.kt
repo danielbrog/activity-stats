@@ -25,12 +25,17 @@ class DownloaderTest {
     /** "Now", on the same clock as syncedAt. Rides below are synced a little before it. */
     private var clock = 10_000_000L
 
-    private fun cloud(id: String, syncedAt: Long, updatedAt: Long = syncedAt, deletedAt: Long? = null, title: String = "Ride $id") =
-        CloudRide(
-            id = id, type = "ride", startedAt = 1_000L, endedAt = 2_000L, distanceMeters = 100.0,
-            movingTimeMs = 1_000L, elapsedTimeMs = 1_000L, avgSpeedMps = 5.0, maxSpeedMps = 6.0,
-            title = title, updatedAt = updatedAt, deletedAt = deletedAt, syncedAt = syncedAt,
-        )
+    private fun cloud(
+        id: String,
+        syncedAt: Long,
+        updatedAt: Long = syncedAt,
+        deletedAt: Long? = null,
+        title: String = "Ride $id",
+    ) = CloudRide(
+        id = id, type = "ride", startedAt = 1_000L, endedAt = 2_000L, distanceMeters = 100.0,
+        movingTimeMs = 1_000L, elapsedTimeMs = 1_000L, avgSpeedMps = 5.0, maxSpeedMps = 6.0,
+        title = title, updatedAt = updatedAt, deletedAt = deletedAt, syncedAt = syncedAt,
+    )
 
     /** An in-memory database with the same rules as the real queries. */
     private class FakeStore(rides: List<ActivityEntity> = emptyList()) : DownloadStore {
@@ -48,8 +53,12 @@ class DownloaderTest {
         override suspend fun applyCloudCopy(id: String, cloud: CloudCopy): Boolean {
             val current = rides.getValue(id)
             if (current.updatedAt >= cloud.updatedAt) return false
-            rides[id] = current.copy(title = cloud.title, deletedAt = cloud.deletedAt, updatedAt = cloud.updatedAt,
-                syncState = SyncState.SYNCED)
+            rides[id] = current.copy(
+                title = cloud.title,
+                deletedAt = cloud.deletedAt,
+                updatedAt = cloud.updatedAt,
+                syncState = SyncState.SYNCED,
+            )
             return true
         }
     }
@@ -91,10 +100,16 @@ class DownloaderTest {
         override suspend fun downloadTrack(url: String): ByteArray {
             val id = url.substringAfterLast('/')
             if (id in refusedTracks) throw RejectedException(403)
-            return if (id in brokenTracks) "not gzip".toByteArray() else TrackFile.encode(listOf(
-                GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept),
-                GpsData(2, 2_000L, 43.66, -79.38, 5f, 5f, FixStatus.Kept, stretch = 1),
-            ))
+            return if (id in brokenTracks) {
+                "not gzip".toByteArray()
+            } else {
+                TrackFile.encode(
+                    listOf(
+                        GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept),
+                        GpsData(2, 2_000L, 43.66, -79.38, 5f, 5f, FixStatus.Kept, stretch = 1),
+                    ),
+                )
+            }
         }
 
         override suspend fun putActivity(id: String, summary: RideSummary) = error("not used by the download")
@@ -150,7 +165,9 @@ class DownloaderTest {
         // a and b were saved in the same millisecond; the first run stops after a.
         val store = FakeStore()
         val cursor = FakeCursor()
-        val api = FakeApi(listOf(listOf(cloud("a", clock - 1_000), cloud("b", clock - 1_000)))).apply { missingTracks += "b" }
+        val api = FakeApi(listOf(listOf(cloud("a", clock - 1_000), cloud("b", clock - 1_000)))).apply {
+            missingTracks += "b"
+        }
         try {
             run(store, api, cursor)
             fail("Expected a retry while b's track is missing")
@@ -174,7 +191,9 @@ class DownloaderTest {
     @Test
     fun aNetworkFailureKeepsTheProgressMadeSoFar() {
         val store = FakeStore()
-        val api = FakeApi(listOf(listOf(cloud("a", 10), cloud("b", 20)), listOf(cloud("c", 30)))).apply { failListingAt = 1 }
+        val api = FakeApi(listOf(listOf(cloud("a", 10), cloud("b", 20)), listOf(cloud("c", 30)))).apply {
+            failListingAt = 1
+        }
         val cursor = FakeCursor()
         try {
             run(store, api, cursor)
@@ -188,7 +207,9 @@ class DownloaderTest {
     @Test
     fun aRecentlyMissingTrackStopsWithoutMovingPastIt() {
         val store = FakeStore()
-        val api = FakeApi(listOf(listOf(cloud("a", clock - 3_000), cloud("b", clock - 2_000), cloud("c", clock - 1_000))))
+        val api = FakeApi(
+            listOf(listOf(cloud("a", clock - 3_000), cloud("b", clock - 2_000), cloud("c", clock - 1_000))),
+        )
             .apply { missingTracks += "b" }
         val cursor = FakeCursor()
         try {
@@ -214,7 +235,9 @@ class DownloaderTest {
     @Test
     fun aTrackThatCantBeHadSkipsJustThatRide() {
         val store = FakeStore()
-        val api = FakeApi(listOf(listOf(cloud("broken", 10), cloud("refused", 20), cloud("badLink", 30), cloud("fine", 40)))).apply {
+        val api = FakeApi(
+            listOf(listOf(cloud("broken", 10), cloud("refused", 20), cloud("badLink", 30), cloud("fine", 40))),
+        ).apply {
             brokenTracks += "broken"
             refusedTracks += "refused"
             badLinkReplies += "badLink"
@@ -231,12 +254,16 @@ class DownloaderTest {
         val api = FakeApi(listOf(listOf(cloud("a", 10), cloud("b", 20))))
         val report = runBlocking {
             // The clock passes the deadline once a has been saved.
-            downloader(object : DownloadStore by store {
-                override suspend fun saveDownloadedRide(ride: ActivityEntity, fixes: List<GpsData>) {
-                    store.saveDownloadedRide(ride, fixes)
-                    clock += 1_000
-                }
-            }, api, cursor).downloadChanges(user, deadline = clock + 500)
+            downloader(
+                object : DownloadStore by store {
+                    override suspend fun saveDownloadedRide(ride: ActivityEntity, fixes: List<GpsData>) {
+                        store.saveDownloadedRide(ride, fixes)
+                        clock += 1_000
+                    }
+                },
+                api,
+                cursor,
+            ).downloadChanges(user, deadline = clock + 500)
         }
         assertTrue(report.more)
         assertEquals(setOf("a"), store.rides.keys)
@@ -252,13 +279,29 @@ class DownloaderTest {
 
     @Test
     fun newerRenamesAndDeletesReachRidesThisPhoneHas() {
-        val phone = ActivityEntity(id = "a", userId = user, startedAt = 1_000L, endedAt = 2_000L, title = "Old",
-            updatedAt = 5L, syncState = SyncState.SYNCED, trackUploaded = true)
+        val phone = ActivityEntity(
+            id = "a",
+            userId = user,
+            startedAt = 1_000L,
+            endedAt = 2_000L,
+            title = "Old",
+            updatedAt = 5L,
+            syncState = SyncState.SYNCED,
+            trackUploaded = true,
+        )
         val store = FakeStore(listOf(phone, phone.copy(id = "b")))
-        val report = run(store, FakeApi(listOf(listOf(
-            cloud("a", 10, updatedAt = 8, title = "Renamed elsewhere"),
-            cloud("b", 11, updatedAt = 8, deletedAt = 8),
-        ))), FakeCursor())
+        val report = run(
+            store,
+            FakeApi(
+                listOf(
+                    listOf(
+                        cloud("a", 10, updatedAt = 8, title = "Renamed elsewhere"),
+                        cloud("b", 11, updatedAt = 8, deletedAt = 8),
+                    ),
+                ),
+            ),
+            FakeCursor(),
+        )
 
         assertEquals(2, report.updated)
         assertEquals("Renamed elsewhere", store.rides.getValue("a").title)
@@ -269,8 +312,16 @@ class DownloaderTest {
 
     @Test
     fun thisPhonesOwnUploadsComingBackChangeNothing() {
-        val phone = ActivityEntity(id = "a", userId = user, startedAt = 1_000L, endedAt = 2_000L, title = "Mine",
-            updatedAt = 8L, syncState = SyncState.SYNCED, trackUploaded = true)
+        val phone = ActivityEntity(
+            id = "a",
+            userId = user,
+            startedAt = 1_000L,
+            endedAt = 2_000L,
+            title = "Mine",
+            updatedAt = 8L,
+            syncState = SyncState.SYNCED,
+            trackUploaded = true,
+        )
         val store = FakeStore(listOf(phone))
         val report = run(store, FakeApi(listOf(listOf(cloud("a", 10, updatedAt = 8, title = "Mine")))), FakeCursor())
         assertEquals(Downloader.Report(0, 0, emptyList()), report)
@@ -291,12 +342,16 @@ class DownloaderTest {
         var signedIn = true
         val api = FakeApi(listOf(listOf(cloud("a", 10), cloud("b", 20))))
         runBlocking {
-            downloader(object : DownloadStore by store {
-                override suspend fun saveDownloadedRide(ride: ActivityEntity, fixes: List<GpsData>) {
-                    store.saveDownloadedRide(ride, fixes)
-                    signedIn = false
-                }
-            }, api, FakeCursor()).downloadChanges(user, { signedIn })
+            downloader(
+                object : DownloadStore by store {
+                    override suspend fun saveDownloadedRide(ride: ActivityEntity, fixes: List<GpsData>) {
+                        store.saveDownloadedRide(ride, fixes)
+                        signedIn = false
+                    }
+                },
+                api,
+                FakeCursor(),
+            ).downloadChanges(user, { signedIn })
         }
         assertEquals(setOf("a"), store.rides.keys)
         assertNull(store.rides["b"])

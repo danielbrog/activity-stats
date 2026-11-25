@@ -10,8 +10,14 @@ import org.junit.Test
 class SegmentPathTest {
 
     private fun segment(path: String) = SegmentEntity(
-        id = "s", userId = null, name = "S", path = path, distanceMeters = 1_000.0,
-        createdAt = 1L, updatedAt = 1L, syncState = SyncState.LOCAL_ONLY,
+        id = "s",
+        userId = null,
+        name = "S",
+        path = path,
+        distanceMeters = 1_000.0,
+        createdAt = 1L,
+        updatedAt = 1L,
+        syncState = SyncState.LOCAL_ONLY,
     )
 
     @Test
@@ -22,10 +28,10 @@ class SegmentPathTest {
 
     @Test
     fun aLineThatCantBeOneIsNull() {
-        assertNull(segment("_").toPathOrNull())  // ends in the middle of a number
+        assertNull(segment("_").toPathOrNull()) // ends in the middle of a number
         assertNull(segment("??").toPathOrNull()) // one point only
-        assertNull(segment("").toPathOrNull())   // no points
-        assertNull(segment(" ").toPathOrNull())  // not a polyline character
+        assertNull(segment("").toPathOrNull()) // no points
+        assertNull(segment(" ").toPathOrNull()) // not a polyline character
     }
 
     @Test

@@ -119,7 +119,10 @@ class SplitsTest {
             Split(1, Format.METERS_PER_MILE, 200_000, null, isPartial = false),
             Split(2, 800.0, 80_000, null, isPartial = true), // 10 m/s beats 8.05 m/s
         )
-        assertEquals("1.50 mi · fastest: last 0.50 mi, 22.4 mph", Splits.summary(miles, DistanceUnit.Mi, SpeedDisplay.Speed))
+        assertEquals(
+            "1.50 mi · fastest: last 0.50 mi, 22.4 mph",
+            Splits.summary(miles, DistanceUnit.Mi, SpeedDisplay.Speed),
+        )
         assertEquals("", Splits.summary(emptyList(), DistanceUnit.Km, SpeedDisplay.Speed))
     }
 

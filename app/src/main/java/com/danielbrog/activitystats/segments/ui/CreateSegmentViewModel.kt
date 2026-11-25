@@ -77,10 +77,8 @@ sealed interface CreateOutcome {
  * callback), so a screen rebuilt by rotation still sees it.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class CreateSegmentViewModel(
-    application: Application,
-    private val savedStateHandle: SavedStateHandle,
-) : AndroidViewModel(application) {
+class CreateSegmentViewModel(application: Application, private val savedStateHandle: SavedStateHandle) :
+    AndroidViewModel(application) {
 
     private val app = application as ActivityStatsApp
     private val rideId: String = savedStateHandle.toRoute<CreateSegmentRoute>().rideId
@@ -98,7 +96,10 @@ class CreateSegmentViewModel(
 
     /** The slider's window, saved like the ends; null (the whole ride) until set. */
     private val window: StateFlow<IntRange?> =
-        combine(savedStateHandle.getStateFlow(WINDOW_START, -1), savedStateHandle.getStateFlow(WINDOW_END, -1)) { s, e ->
+        combine(savedStateHandle.getStateFlow(WINDOW_START, -1), savedStateHandle.getStateFlow(WINDOW_END, -1)) {
+                s,
+                e,
+            ->
             if (s in 0 until e) s..e else null
         }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -144,6 +145,7 @@ class CreateSegmentViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), DisplaySettings())
 
     private val _saving = MutableStateFlow(false)
+
     /** True while the segment is being saved, so Create can't be pressed twice. */
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 

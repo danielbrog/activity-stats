@@ -11,11 +11,7 @@ class ElevationSeriesTest {
     private val metresPerDegreeLat = 111_195.0
     private var seq = 0
 
-    private fun fix(
-        northMeters: Double,
-        altitude: Double?,
-        status: FixStatus = FixStatus.Kept,
-    ) = GpsData(
+    private fun fix(northMeters: Double, altitude: Double?, status: FixStatus = FixStatus.Kept) = GpsData(
         seq = ++seq,
         timeMillis = seq * 1_000L,
         latitude = 43.65 + northMeters / metresPerDegreeLat,
@@ -31,10 +27,10 @@ class ElevationSeriesTest {
         val samples = ElevationSeries.fromFixes(
             listOf(
                 fix(0.0, 100.0),
-                fix(10.0, null),                                   // no altitude: skipped
-                fix(20.0, 300.0, FixStatus.DroppedAccuracy),       // dropped: skipped
+                fix(10.0, null), // no altitude: skipped
+                fix(20.0, 300.0, FixStatus.DroppedAccuracy), // dropped: skipped
                 fix(30.0, 104.0),
-            )
+            ),
         )
         assertEquals(2, samples.size)
         assertEquals(100.0, samples[0].altitudeMeters, 0.0)
