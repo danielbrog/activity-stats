@@ -2,6 +2,7 @@ package com.danielbrog.activitystats.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -9,10 +10,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -24,6 +28,7 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.maps.android.compose.CameraMoveStartedReason
 import com.google.maps.android.compose.CameraPositionState
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapUiSettings
@@ -31,6 +36,7 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberUpdatedMarkerState
+import kotlinx.coroutines.flow.filter
 
 /** Zoom for a route with a single point: roughly a few city blocks. */
 private const val SINGLE_POINT_ZOOM = 16f
@@ -63,6 +69,10 @@ fun rememberRouteMapState(): RouteMapState {
  * [startTitle] and [endTitle]. [lines] has one line per stretch between manual pauses, drawn
  * separately so a pause shows as a break. Pan and zoom freely; it doesn't follow anything.
  * See [RouteMapState] for keeping its place when it is rebuilt.
+ *
+ * [contentPadding] is the part of the map something covers (a sheet over its bottom, say), so
+ * its logo and centring use the part still visible. [onMapTouch] is called when the rider taps
+ * the map or starts to pan or zoom it.
  */
 @Composable
 fun RouteMap(
@@ -71,6 +81,8 @@ fun RouteMap(
     startTitle: String = "Start",
     endTitle: String = "Finish",
     state: RouteMapState = rememberRouteMapState(),
+    contentPadding: PaddingValues = PaddingValues(),
+    onMapTouch: () -> Unit = {},
 ) {
     if (LocalInspectionMode.current) {
         Box(
@@ -103,11 +115,37 @@ fun RouteMap(
         state.fitted = true
     }
 
+    // Google Maps keeps the camera's centre in the middle of the padded area, so new padding
+    // would slide the whole map. Move the camera by the same half-step the other way, so the
+    // route stays where it is on screen while the padding (and the logo) moves.
+    val bottomPx = with(LocalDensity.current) { contentPadding.calculateBottomPadding().roundToPx() }
+    var appliedBottomPx by remember { mutableIntStateOf(bottomPx) }
+    LaunchedEffect(bottomPx) {
+        val change = bottomPx - appliedBottomPx
+        appliedBottomPx = bottomPx
+        // Only with a map on screen: before it attaches, its saved camera already suits the new
+        // padding (after rotation, say), and a queued move would shift it.
+        if (change != 0 && state.fitted && state.camera.projection != null) {
+            state.camera.move(CameraUpdateFactory.scrollBy(0f, -change / 2f))
+        }
+    }
+
+    // A pan or zoom by the rider (not the fit above) counts as touching the map.
+    val touch by rememberUpdatedState(onMapTouch)
+    LaunchedEffect(state.camera) {
+        val camera = state.camera
+        snapshotFlow { camera.isMoving && camera.cameraMoveStartedReason == CameraMoveStartedReason.GESTURE }
+            .filter { it }
+            .collect { touch() }
+    }
+
     GoogleMap(
         modifier = modifier,
         cameraPositionState = state.camera,
+        contentPadding = contentPadding,
         uiSettings = MapUiSettings(zoomControlsEnabled = false, mapToolbarEnabled = false),
         onMapLoaded = { mapLoaded = true },
+        onMapClick = { touch() },
     ) {
         latLngLines.filter { it.size >= 2 }.forEach { line ->
             Polyline(points = line, color = MaterialTheme.colorScheme.primary, width = 14f)

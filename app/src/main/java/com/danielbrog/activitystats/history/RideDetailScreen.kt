@@ -63,9 +63,11 @@ import com.danielbrog.activitystats.stats.SpeedSample
 import com.danielbrog.activitystats.stats.Split
 import com.danielbrog.activitystats.ui.ConfirmDeleteDialog
 import com.danielbrog.activitystats.ui.EffortCard
+import com.danielbrog.activitystats.ui.MapWithDetailsSheet
 import com.danielbrog.activitystats.ui.RenameDialog
 import com.danielbrog.activitystats.ui.RouteMap
 import com.danielbrog.activitystats.ui.UndoDeleteEffect
+import com.danielbrog.activitystats.ui.rememberRouteMapState
 import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 
 /**
@@ -181,8 +183,11 @@ private fun RideDetailContent(
     onOpenSegment: (id: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+        ) {
             IconButton(onClick = onBack) {
                 Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
             }
@@ -214,7 +219,11 @@ private fun RideDetailContent(
     }
 }
 
-/** Scrolls: date, map, stats, splits, segments (when it covered any), then the speed and elevation charts. */
+/**
+ * The ride with a route: the map in its own window, the details in a sheet over it (see
+ * [MapWithDetailsSheet]). With no route there is nothing to show in a map, so the page simply
+ * scrolls, with a placeholder where the map would be.
+ */
 @Composable
 private fun LoadedRide(
     ride: ActivityEntity,
@@ -227,7 +236,66 @@ private fun LoadedRide(
     onToggleSplits: (show: Boolean) -> Unit,
     segmentEfforts: List<RideSegmentEffort>,
     onOpenSegment: (id: String) -> Unit,
-) = Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+) {
+    val details: @Composable () -> Unit = {
+        RideDetails(
+            ride, speedSamples, elevationSamples, splits, settings, use24Hour, onToggleSplits,
+            segmentEfforts, onOpenSegment,
+        )
+    }
+    if (route.isEmpty()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Text("No route recorded", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.height(12.dp))
+            details()
+        }
+    } else {
+        val mapState = rememberRouteMapState()
+        MapWithDetailsSheet(
+            map = { padding, onMapTouch ->
+                RouteMap(
+                    route,
+                    modifier = Modifier.fillMaxSize(),
+                    state = mapState,
+                    contentPadding = padding,
+                    onMapTouch = onMapTouch,
+                )
+            },
+        ) { area ->
+            Column(
+                area
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            ) { details() }
+        }
+    }
+}
+
+/** Date, stats, splits, segments (when it covered any), then the speed and elevation charts. */
+@Composable
+private fun RideDetails(
+    ride: ActivityEntity,
+    speedSamples: List<SpeedSample>,
+    elevationSamples: List<ElevationSample>,
+    splits: List<Split>,
+    settings: DisplaySettings,
+    use24Hour: Boolean,
+    onToggleSplits: (show: Boolean) -> Unit,
+    segmentEfforts: List<RideSegmentEffort>,
+    onOpenSegment: (id: String) -> Unit,
+) = Column {
     val unit = settings.unit
     val display = settings.speedDisplay
     val speedWord = if (display == SpeedDisplay.Speed) "speed" else "pace"
@@ -243,18 +311,6 @@ private fun LoadedRide(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    Spacer(Modifier.height(12.dp))
-
-    val mapModifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(16.dp))
-    if (route.isEmpty()) {
-        Box(
-            modifier = mapModifier.background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) { Text("No route recorded", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-    } else {
-        RouteMap(route, modifier = mapModifier)
-    }
-
     Spacer(Modifier.height(16.dp))
     StatRow(
         "Distance" to Format.distance(ride.distanceMeters, unit),
