@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -58,6 +59,7 @@ import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.stats.DistanceUnit
 import com.danielbrog.activitystats.stats.Format
 import com.danielbrog.activitystats.stats.displayTimeMs
+import com.danielbrog.activitystats.stats.liveSpeedMps
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -256,12 +258,16 @@ private fun LiveContent(
 
     // Tick the clock every second while recording; after Finish, show the final values.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // The monotonic clock, for time since the last fix: it never jumps with the phone's time.
+    var elapsedNow by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(state.isTracking) {
         while (state.isTracking) {
             now = System.currentTimeMillis()
+            elapsedNow = SystemClock.elapsedRealtime()
             delay(1_000L)
         }
     }
+    val sinceLastFixMs = state.sinceLastFixMs(elapsedNow)
     val elapsedMs = when {
         state.isTracking -> now - state.startedAtMillis
         else -> stats.elapsedMs
@@ -274,6 +280,7 @@ private fun LiveContent(
         nowMillis = now,
         pausedMs = state.pausedMsAt(now),
         manuallyPaused = manuallyPaused,
+        sinceLastFixMs = sinceLastFixMs,
     )
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
@@ -336,7 +343,7 @@ private fun LiveContent(
         Row(modifier = Modifier.fillMaxWidth()) {
             BigStat(
                 "Current $speedLabel",
-                Format.speedOrPace(stats.currentSpeedMps, unit, display),
+                Format.speedOrPace(liveSpeedMps(stats, state.isTracking, sinceLastFixMs), unit, display),
                 MaterialTheme.typography.displaySmall,
                 Modifier.weight(1f),
             )

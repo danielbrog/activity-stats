@@ -62,15 +62,23 @@ class StatsEngine(
     /** At or above this speed you are moving. */
     private val movingSpeedMps: Double = 0.5,
     /** Current speed is averaged over kept fixes from this long before "now". */
-    private val currentSpeedWindowMs: Long = 5_000L,
+    private val currentSpeedWindowMs: Long = CURRENT_SPEED_WINDOW_MS,
     /** How long you must stay slow before auto-pause kicks in. */
     private val pauseAfterMs: Long = 5_000L,
     /**
      * A gap longer than this between two fixes counts as stopped: another device's file
      * left out its own auto-paused time, or GPS was lost. The distance across it still counts.
      */
-    private val maxGapMs: Long = 60_000L,
+    private val maxGapMs: Long = MAX_GAP_MS,
 ) {
+    companion object {
+        /** A gap longer than this between fixes is stopped time, never moving time. */
+        const val MAX_GAP_MS = 60_000L
+
+        /** Current speed is averaged over this long; with no fix for longer, it is 0. */
+        const val CURRENT_SPEED_WINDOW_MS = 5_000L
+    }
+
     private var lastKept: GpsData? = null
     private val recent = ArrayDeque<GpsData>()
     private var distanceMeters = 0.0
@@ -202,7 +210,13 @@ class StatsEngine(
 /**
  * The big Time on the Record screen. With auto-pause on it is moving time, which stops
  * while paused; with it off it is elapsed time less [pausedMs], the time paused by hand.
- * While moving it keeps ticking between fixes; while [manuallyPaused] it stands still.
+ *
+ * While moving it ticks on from the last fix, [sinceLastFixMs] ago (measured on the phone's
+ * monotonic clock, so a wrong or changed phone time can't skew it), but for no longer than
+ * [StatsEngine.CURRENT_SPEED_WINDOW_MS]: with no fix for longer the GPS is lost (a tunnel),
+ * and the Time holds instead of running on and jumping back. If fixes return soon enough for
+ * the engine to count the gap, it catches up then. It stands still while [manuallyPaused],
+ * and when [sinceLastFixMs] is null: no fix yet since Start or Resume.
  */
 fun displayTimeMs(
     autoPause: Boolean,
@@ -212,10 +226,22 @@ fun displayTimeMs(
     nowMillis: Long,
     pausedMs: Long = 0L,
     manuallyPaused: Boolean = false,
+    sinceLastFixMs: Long? = null,
 ): Long = when {
     !autoPause && isTracking -> max(0L, nowMillis - startedAtMillis - pausedMs)
     !autoPause -> max(0L, stats.elapsedMs - pausedMs)
-    isTracking && !manuallyPaused && !stats.isPaused && stats.asOfMillis > 0L ->
-        stats.movingMs + max(0L, nowMillis - stats.asOfMillis)
+    isTracking && !manuallyPaused && !stats.isPaused && sinceLastFixMs != null ->
+        stats.movingMs + sinceLastFixMs.coerceIn(0L, StatsEngine.CURRENT_SPEED_WINDOW_MS)
     else -> stats.movingMs
+}
+
+/**
+ * The Current speed on the Record screen: the speed at the last fix, or 0 once no fix has
+ * come for longer than [StatsEngine.CURRENT_SPEED_WINDOW_MS] while recording ([sinceLastFixMs],
+ * on the monotonic clock), so a lost GPS doesn't leave the last speed frozen on screen.
+ * Standing still is unaffected: the GPS keeps sending fixes then, and their speed is already 0.
+ */
+fun liveSpeedMps(stats: ActivityStats, isTracking: Boolean, sinceLastFixMs: Long?): Double = when {
+    isTracking && sinceLastFixMs != null && sinceLastFixMs > StatsEngine.CURRENT_SPEED_WINDOW_MS -> 0.0
+    else -> stats.currentSpeedMps
 }

@@ -125,9 +125,34 @@ class ManualPauseTest {
     fun withAutoPauseOnTheTimeStandsStillWhilePausedByHand() {
         val stats = ActivityStats(movingMs = 600_000L, isPaused = false, asOfMillis = 2_000_000L)
         // Moving: ticks on from the last fix.
-        assertEquals(609_000L, displayTimeMs(true, true, stats, 0L, 2_009_000L))
+        assertEquals(603_000L, displayTimeMs(true, true, stats, 0L, 2_003_000L, sinceLastFixMs = 3_000L))
         // Paused by hand: frozen, though auto-pause hasn't decided anything.
-        assertEquals(600_000L, displayTimeMs(true, true, stats, 0L, 2_009_000L, manuallyPaused = true))
+        assertEquals(600_000L, displayTimeMs(true, true, stats, 0L, 2_003_000L, manuallyPaused = true, sinceLastFixMs = 3_000L))
+    }
+
+    @Test
+    fun resumingHoldsTheTimeUntilTheNextFix() {
+        // Paused at 1:00:00 of moving time, after fixes; Resume clears the last fix.
+        val recording = TrackingUiState(
+            isTracking = true,
+            stats = ActivityStats(movingMs = 3_600_000L, isPaused = false, asOfMillis = 2_000_000L),
+            lastFixElapsedMs = 50_000L,
+        )
+        val resumed = recording.copy(lastFixElapsedMs = 0L)
+        // 30 s after Resume, still no fix: the Time holds at 1:00:00, not 1:00:30.
+        val since = resumed.sinceLastFixMs(elapsedNowMs = 80_000L)
+        assertNull(since)
+        assertEquals(3_600_000L, displayTimeMs(true, true, resumed.stats, 0L, 0L, sinceLastFixMs = since))
+    }
+
+    @Test
+    fun timeSinceTheLastFixIsOnTheMonotonicClock() {
+        val state = TrackingUiState(isTracking = true, lastFixElapsedMs = 10_000L)
+        assertEquals(3_000L, state.sinceLastFixMs(elapsedNowMs = 13_000L))
+        // Never negative, whatever the two readings.
+        assertEquals(0L, state.sinceLastFixMs(elapsedNowMs = 9_000L))
+        // Before the first fix (Start), or after Resume: none.
+        assertNull(TrackingUiState(isTracking = true).sinceLastFixMs(elapsedNowMs = 13_000L))
     }
 
     @Test

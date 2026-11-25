@@ -145,11 +145,55 @@ class StatsEngineTest {
         assertEquals(701_000L, displayTimeMs(false, true, stats, started, 2_001_000L))
         assertEquals(700_000L, displayTimeMs(false, false, stats, started, 2_001_000L))
         // On and moving: moving time, ticking since the last fix.
-        assertEquals(601_000L, displayTimeMs(true, true, stats, started, 2_001_000L))
+        assertEquals(601_000L, displayTimeMs(true, true, stats, started, 2_001_000L, sinceLastFixMs = 1_000L))
         // On and paused: frozen at moving time.
         assertEquals(600_000L, displayTimeMs(true, true, stats.copy(isPaused = true), started, 2_009_000L))
         // On, after Stop: moving time.
         assertEquals(600_000L, displayTimeMs(true, false, stats, started, 2_009_000L))
+    }
+
+    @Test
+    fun theTimeTicksForFiveSecondsAfterTheLastFixThenHolds() {
+        val stats = ActivityStats(movingMs = 600_000L, isPaused = false)
+        assertEquals(603_000L, displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = 3_000L))
+        assertEquals(605_000L, displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = StatsEngine.CURRENT_SPEED_WINDOW_MS))
+        // A tunnel: no fix for 90 s. The Time holds rather than running on and jumping back.
+        assertEquals(605_000L, displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = 90_000L))
+        // No fix yet since Start or Resume: nothing to tick from.
+        assertEquals(600_000L, displayTimeMs(true, true, stats, 0L, 0L, sinceLastFixMs = null))
+    }
+
+    @Test
+    fun afterAGapTheTimeNeverStepsBackMoreThanTheSpeedWindow() {
+        // A short gap (30 s) the engine counts: the Time catches up when the fix comes.
+        val short = StatsEngine(start)
+        short.ride(0, 60, 0.0, 6f)
+        val shownShort = displayTimeMs(true, true, short.snapshot(ms(60)), start, 0L, sinceLastFixMs = 29_000L)
+        short.add(fix(90, 540.0, speed = 6f))
+        assertEquals(65_000L, shownShort)
+        assertEquals(90_000L, short.snapshot(ms(90)).movingMs)
+
+        // A long gap (3 min) it doesn't count: the Time steps back by at most the 5 s it ticked.
+        val long = StatsEngine(start)
+        long.ride(0, 60, 0.0, 6f)
+        val shownLong = displayTimeMs(true, true, long.snapshot(ms(60)), start, 0L, sinceLastFixMs = 179_000L)
+        long.add(fix(240, 1_440.0, speed = 6f))
+        val recorded = long.snapshot(ms(240)).movingMs
+        assertEquals(60_000L, recorded)
+        assertEquals(StatsEngine.CURRENT_SPEED_WINDOW_MS, shownLong - recorded)
+    }
+
+    @Test
+    fun currentSpeedIsZeroWithNoRecentFix() {
+        val stats = ActivityStats(currentSpeedMps = 8.0)
+        assertEquals(8.0, liveSpeedMps(stats, isTracking = true, sinceLastFixMs = 3_000L), 0.0)
+        assertEquals(8.0, liveSpeedMps(stats, isTracking = true, sinceLastFixMs = StatsEngine.CURRENT_SPEED_WINDOW_MS), 0.0)
+        // No fix for longer than the speed window: the GPS is lost, not riding at 8 m/s.
+        assertEquals(0.0, liveSpeedMps(stats, isTracking = true, sinceLastFixMs = 6_000L), 0.0)
+        // No fix yet since Start or Resume: the stats' own speed (0 then) stands.
+        assertEquals(0.0, liveSpeedMps(ActivityStats(), isTracking = true, sinceLastFixMs = null), 0.0)
+        // After Finish the stored value stands.
+        assertEquals(8.0, liveSpeedMps(stats, isTracking = false, sinceLastFixMs = 6_000L), 0.0)
     }
 
     private fun ms(second: Int) = start + second * 1_000L

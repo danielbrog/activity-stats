@@ -60,7 +60,19 @@ data class TrackingUiState(
     val pausedAtMillis: Long? = null,
     /** Time spent in manual pauses that have ended, this recording. */
     val pausedMs: Long = 0L,
+    /**
+     * When the newest fix was made, on the phone's monotonic clock
+     * ([android.os.SystemClock.elapsedRealtime]), or 0 before the first fix of this stretch
+     * (at Start, and after Resume). Only for "how long since the last fix" on the live screen:
+     * that clock never jumps when the phone's time is wrong or changed, but it restarts at
+     * boot, so it is never saved.
+     */
+    val lastFixElapsedMs: Long = 0L,
 ) {
+    /** How long since the last fix, given the monotonic clock now; null before the first one. */
+    fun sinceLastFixMs(elapsedNowMs: Long): Long? =
+        lastFixElapsedMs.takeIf { it > 0L }?.let { (elapsedNowMs - it).coerceAtLeast(0L) }
+
     /** True while the rider has pressed Pause and not yet Resume. */
     val isManuallyPaused: Boolean get() = pausedAtMillis != null
 
