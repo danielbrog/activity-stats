@@ -66,6 +66,9 @@ class LocationTrackingService : Service() {
     private var pausedAtMillis: Long? = null
     private var pausedMs = 0L
 
+    /** True from Start or Resume until the first fix of that stretch arrives. */
+    private var waitingForFix = true
+
     // Saving: fixes are buffered and written in batches, so a crash loses at most ~10 s.
     private val writer by lazy { (application as ActivityStatsApp).recordingWriter }
 
@@ -86,8 +89,9 @@ class LocationTrackingService : Service() {
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             // Classify in arrival order, since the filter compares to the last kept fix.
-            // A fix delivered just after Pause belongs to no stretch of the ride.
-            if (pausedAtMillis != null) return
+            // A fix delivered just after Pause belongs to no stretch of the ride, and one
+            // delivered just after Finish must not change the ride being saved.
+            if (!isRunning || pausedAtMillis != null) return
             val newFixes = result.locations.map { location ->
                 val fix = location.toGpsData(++seq)
                 fix.copy(status = filter.classify(fix))
@@ -98,6 +102,10 @@ class LocationTrackingService : Service() {
             // to 0 when standing still. "Now" is the newest fix's time, the engine's clock.
             val newestMillis = newFixes.maxOf { it.timeMillis }
             val latestStats = stats.snapshot(newestMillis)
+            // When the newest fix was made on the monotonic clock, for "time since the last
+            // fix" on screen; kept out of GpsData, since it means nothing after a reboot.
+            val newestElapsedMs = result.locations.maxOf { it.elapsedRealtimeNanos } / 1_000_000L
+            waitingForFix = false
             TrackingState.update {
                 it.copy(
                     fixes = (newFixes.reversed() + it.fixes).take(MAX_FIXES),
@@ -105,6 +113,7 @@ class LocationTrackingService : Service() {
                     totalCount = it.totalCount + newFixes.size,
                     keptCount = it.keptCount + newlyKept,
                     stats = latestStats,
+                    lastFixElapsedMs = newestElapsedMs,
                 )
             }
             pendingFixes += newFixes
@@ -165,6 +174,7 @@ class LocationTrackingService : Service() {
         stretch = 0
         pausedAtMillis = null
         pausedMs = 0L
+        waitingForFix = true
         activityId = UUID.randomUUID().toString()
         pendingFixes.clear()
         lastSavedAtMillis = startedAtMillis
@@ -226,11 +236,19 @@ class LocationTrackingService : Service() {
         }
         pausedMs += (System.currentTimeMillis() - pausedAt).coerceAtLeast(0L)
         pausedAtMillis = null
+        waitingForFix = true
         stretch++
         // Compare the first new fix with nothing, not with where the pause began.
         filter = GpsFilter()
         TrackingState.update {
-            it.copy(route = Route.startLine(it.route), pausedAtMillis = null, pausedMs = pausedMs)
+            it.copy(
+                route = Route.startLine(it.route),
+                pausedAtMillis = null,
+                pausedMs = pausedMs,
+                // No fix yet in this stretch: the Time holds until the first one, as the
+                // engine doesn't count the time before it either.
+                lastFixElapsedMs = 0L,
+            )
         }
         requestUpdates()
         postNotification()
@@ -320,6 +338,12 @@ class LocationTrackingService : Service() {
             // Paused: stop the timer and show the time reached so far.
             paused -> builder
                 .setContentTitle("Paused · ${Format.clock(timerMs(stats))}")
+                .setShowWhen(false)
+                .setUsesChronometer(false)
+            // Auto-pause on, no fix yet since Start or Resume: nothing is counted until the
+            // first one, so show the time reached instead of a timer that would jump back.
+            autoPause && waitingForFix -> builder
+                .setContentTitle("Recording · ${Format.clock(stats.movingMs)}")
                 .setShowWhen(false)
                 .setUsesChronometer(false)
             // Auto-pause on: the timer counts moving time, picking up where it paused.
