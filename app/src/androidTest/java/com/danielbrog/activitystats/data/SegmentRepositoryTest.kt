@@ -7,6 +7,8 @@ import com.danielbrog.activitystats.export.GpxPoint
 import com.danielbrog.activitystats.export.GpxTrack
 import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
+import com.danielbrog.activitystats.location.RoutePoint
+import com.danielbrog.activitystats.segments.Polyline
 import com.danielbrog.activitystats.stats.ActivityStats
 import com.danielbrog.activitystats.sync.CloudCopy
 import com.danielbrog.activitystats.sync.CloudSegment
@@ -65,7 +67,10 @@ class SegmentRepositoryTest {
     /** Lets any matching finish and stops the scope before the database goes, so nothing runs on into the next test. */
     @After
     fun tearDown() {
-        runBlocking { awaitMatching() }
+        runBlocking {
+            awaitMatching()
+            segments.awaitSegmentMatching()
+        }
         background.cancel()
         db.close()
     }
@@ -464,6 +469,47 @@ class SegmentRepositoryTest {
         db.openHelper.writableDatabase.execSQL("UPDATE segments SET userId = 'me', syncState = 'FAILED' WHERE id = '$id'")
         rides.retryFailed("me")
         assertEquals(SyncState.PENDING, segments.getSegment(id)?.syncState)
+    }
+
+    @Test
+    fun undoingADeleteFindsEffortsForRidesSavedMeanwhile() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        segments.delete(id)
+        rideAlong("second", 5_000_000L) // matched while the segment was deleted: no effort
+        awaitMatching()
+        segments.restore(id)
+        assertTrue(id in segments.finding.value) // "Finding efforts…" while it runs
+        awaitSegmentMatching()
+        assertEquals(setOf("first", "second"), segments.effortsFor(id).first().map { it.activityId }.toSet())
+    }
+
+    @Test
+    fun matchingUsesTheSegmentAsItIsWhenItRuns() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val id = createAndMatch("Road")
+        assertEquals(1, segments.effortsFor(id).first().size)
+        // Its line changes (as sync can) before a waiting job runs: the job matches the new
+        // line, 5 km away from every ride, not the one it was started for.
+        val made = checkNotNull(segments.getSegment(id))
+        val elsewhere = made.toPathOrNull()!!.points.map { RoutePoint(it.latitude + 0.05, it.longitude) }
+        db.segmentDao().replaceSegment(made.copy(path = Polyline.encode(elsewhere)))
+        assertEquals(0, segments.recomputeForSegment(id))
+        assertTrue(segments.effortsFor(id).first().isEmpty())
+        // Deleted by then: left alone.
+        segments.delete(id)
+        assertEquals(0, segments.recomputeForSegment(id))
+    }
+
+    @Test
+    fun aSegmentWithABadLineDoesNotStopTheOthersMatching() = runBlocking {
+        rideAlong("first", 1_000_000L)
+        val good = createAndMatch("Road")
+        db.segmentDao().insertSegment(checkNotNull(segments.getSegment(good)).copy(id = "bad", name = "Bad", path = "_"))
+        rideAlong("second", 5_000_000L)
+        awaitMatching()
+        assertEquals(setOf("first", "second"), segments.effortsFor(good).first().map { it.activityId }.toSet())
+        assertEquals(0, segments.recomputeForSegment("bad"))
     }
 
     /** Waits for any segment matching started in the background (downloads, restores). */

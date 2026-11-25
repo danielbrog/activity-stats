@@ -190,6 +190,68 @@ class SegmentMatcherTest {
         assertEquals(200_000.0, efforts[0].elapsedMs.toDouble(), 2_000.0)
     }
 
+    /** Round the 500 m square, starting and ending [startNorth] m up its west side. */
+    private fun loopFrom(startNorth: Double, step: Double) = line(
+        0.0 to startNorth, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0, 0.0 to startNorth, step = step,
+    )
+
+    @Test
+    fun eachLapOfALoopStartsWhereTheLastEnded() {
+        // The segment starts 5 m up the west side, between two fixes 10 m apart. The second
+        // lap must start at that crossing, not at the fix after it (half a second late).
+        val loop = SegmentPath(loopFrom(5.0, 10.0).map { at(it.first, it.second) }, 2_000.0)
+        val lap = line(0.0 to 0.0, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0)
+        val twoLaps = line(0.0 to -100.0, 0.0 to 0.0) + lap.drop(1) + lap.drop(1) + line(0.0 to 0.0, 0.0 to 50.0).drop(1)
+        val efforts = SegmentMatcher.find(loop, ride(twoLaps))
+        assertEquals(listOf(0, 1), efforts.map { it.occurrence })
+        // 2,000 m at 10 m a second, each lap.
+        efforts.forEach { assertEquals(200_000.0, it.elapsedMs.toDouble(), 100.0) }
+    }
+
+    @Test
+    fun noLapOfALoopIsMissedWhenFixesAreFarApart() {
+        // An import with a fix every ~42 m: only one fix is near the start (15 m up), the
+        // one before it. The second lap's start is on the same leg as the first lap's end.
+        val loop = SegmentPath(loopFrom(15.0, 10.0).map { at(it.first, it.second) }, 2_000.0)
+        val lap = line(0.0 to 0.0, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0, step = 40.0)
+        val twoLaps = line(0.0 to -120.0, 0.0 to 0.0, step = 40.0) + lap.drop(1) + lap.drop(1) +
+            line(0.0 to 0.0, 0.0 to 120.0, step = 40.0).drop(1)
+        assertEquals(2, SegmentMatcher.find(loop, ride(twoLaps)).size)
+    }
+
+    @Test
+    fun aGapAfterTheStartDoesNotMakeTheEffortTwice() {
+        // A 100 m segment; the fixes between 510 m and 610 m were dropped, so the fix before
+        // the end (510 m) is still near the start. That must not count as a second effort.
+        val short = SegmentPath(line(0.0 to 500.0, 0.0 to 600.0).map { at(it.first, it.second) }, 100.0)
+        val points = line(0.0 to 0.0, 0.0 to 480.0) + listOf(0.0 to 510.0, 0.0 to 610.0) +
+            line(0.0 to 610.0, 0.0 to 800.0).drop(1)
+        assertEquals(1, SegmentMatcher.find(short, ride(points)).size)
+    }
+
+    /** A loop segment from [startNorth] m up the square's west side, round, to [endNorth] m up it. */
+    private fun nearLoop(startNorth: Double, endNorth: Double) = SegmentPath(
+        line(0.0 to startNorth, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0, 0.0 to endNorth)
+            .map { at(it.first, it.second) },
+        1_500.0 + 500.0 - startNorth + endNorth,
+    )
+
+    @Test
+    fun twoLapsCountWhenALoopsEndIsJustPastItsStart() {
+        val lap = line(0.0 to 0.0, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0)
+        val twoLaps = line(0.0 to -100.0, 0.0 to 0.0) + lap.drop(1) + lap.drop(1) + line(0.0 to 0.0, 0.0 to 100.0).drop(1)
+        // Made from a ride, a loop's ends are never exactly the same point.
+        assertEquals(2, SegmentMatcher.find(nearLoop(20.0, 25.0), ride(twoLaps)).size)
+        assertEquals(2, SegmentMatcher.find(nearLoop(25.0, 20.0), ride(twoLaps)).size)
+    }
+
+    @Test
+    fun oneLapOfALoopThenRidingOnIsOneEffort() {
+        val lap = line(0.0 to 0.0, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0)
+        val oneLap = line(0.0 to -100.0, 0.0 to 0.0) + lap.drop(1) + line(0.0 to 0.0, 0.0 to 400.0).drop(1)
+        assertEquals(1, SegmentMatcher.find(nearLoop(20.0, 25.0), ride(oneLap)).size)
+    }
+
     @Test
     fun aLoopRiddenTheOtherWayRoundDoesNotCount() {
         val lap = line(0.0 to 0.0, 0.0 to 500.0, 500.0 to 500.0, 500.0 to 0.0, 0.0 to 0.0)
