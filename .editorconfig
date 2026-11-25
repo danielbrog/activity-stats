@@ -20,3 +20,7 @@ ktlint_function_naming_ignore_when_annotated_with = Composable
 ktlint_standard_blank-line-between-when-conditions = disabled
 # Compose rules (io.nlopez.compose.rules): the app is Material 3, so a Material 2 import is a mistake.
 compose_disallow_material2 = true
+# Unused imports: off by default in ktlint 1.x (it reads text, not types), but accurate on this
+# code. If a future ktlint drops the rule, delete this line; Android Studio's "Optimize imports
+# on the fly" covers edits made there.
+ktlint_standard_no-unused-imports = enabled
