@@ -3,6 +3,7 @@ package com.danielbrog.activitystats.history
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +19,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.drawText
@@ -30,6 +32,9 @@ import com.danielbrog.activitystats.stats.SpeedSample
 import com.danielbrog.activitystats.stats.SpeedSeries
 import java.util.Locale
 import kotlin.math.abs
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Speed along the ride: distance across, speed up from 0, with a dashed line at the average.
@@ -115,20 +120,7 @@ private fun RideChart(
         modifier = modifier
             .fillMaxWidth()
             .height(200.dp)
-            .pointerInput(points) {
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    touchX = down.position.x
-                    down.consume()
-                    while (true) {
-                        val change = awaitPointerEvent().changes.firstOrNull() ?: break
-                        if (!change.pressed) break
-                        touchX = change.position.x
-                        change.consume()
-                    }
-                    touchX = null
-                }
-            },
+            .pointerInput(Unit) { readTheChart { touchX = it } },
     ) {
         val leftPad = with(density) { 40.dp.toPx() }
         val bottomPad = with(density) { 20.dp.toPx() }
@@ -210,3 +202,43 @@ private fun RideChart(
 private fun formatTick(value: Double): String =
     java.math.BigDecimal.valueOf(value).setScale(2, java.math.RoundingMode.HALF_UP)
         .stripTrailingZeros().toPlainString()
+
+/** How long a finger rests on a chart before its readout shows, so a scroll starting there doesn't flash it. */
+private const val READOUT_DELAY_MS = 100L
+
+/**
+ * Reading a chart by touch, reporting the finger's x through [onTouchX] (null when it lifts).
+ * Holding still shows the readout after [READOUT_DELAY_MS]. A drag that goes up or down first is
+ * left to the page (or sheet) to scroll, and clears it. One that goes sideways first is the
+ * chart's until the finger lifts: every move is taken, so the page can't pick it up halfway.
+ */
+private suspend fun PointerInputScope.readTheChart(onTouchX: (Float?) -> Unit) = coroutineScope {
+    val gestures = this
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val show = gestures.launch {
+            delay(READOUT_DELAY_MS)
+            onTouchX(down.position.x)
+        }
+        try {
+            // Null when the finger lifts, or the page takes the drag as a scroll.
+            val slide = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                ?: return@awaitEachGesture
+            show.cancel()
+            onTouchX(slide.position.x)
+            var pointer = slide.id
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == pointer && it.pressed }
+                    ?: event.changes.firstOrNull { it.pressed }
+                    ?: break
+                pointer = change.id
+                onTouchX(change.position.x)
+                event.changes.forEach { it.consume() }
+            }
+        } finally {
+            show.cancel()
+            onTouchX(null)
+        }
+    }
+}
