@@ -156,9 +156,7 @@ object SegmentMatcher {
         var offPath = 0
         for (k in from..to) {
             val f = ride.fixes[k]
-            if (Geo.distanceToPathMeters(f.latitude, f.longitude, match.pathLats, match.pathLons) >
-                ON_PATH_METERS
-            ) {
+            if (Geo.distanceToPathMeters(f.latitude, f.longitude, match.pathLats, match.pathLons) > ON_PATH_METERS) {
                 offPath++
             }
         }

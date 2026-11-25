@@ -139,9 +139,7 @@ class AuthRepository(
             withService { service ->
                 suspendCancellableCoroutine<TokenResponse> { cont ->
                     service.performTokenRequest(response.createTokenExchangeRequest()) { result, ex ->
-                        if (result !=
-                            null
-                        ) {
+                        if (result != null) {
                             cont.resume(result)
                         } else {
                             cont.resumeWithException(ex ?: IOException("No tokens"))
@@ -205,9 +203,7 @@ class AuthRepository(
             val token = withService { service ->
                 suspendCancellableCoroutine<String> { cont ->
                     current.performActionWithFreshTokens(service) { accessToken, _, ex ->
-                        if (accessToken !=
-                            null
-                        ) {
+                        if (accessToken != null) {
                             cont.resume(accessToken)
                         } else {
                             cont.resumeWithException(ex ?: IOException("No token"))

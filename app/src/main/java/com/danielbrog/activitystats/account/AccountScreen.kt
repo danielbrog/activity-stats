@@ -220,9 +220,7 @@ private fun SyncCard(status: SyncStatus?, onSyncNow: () -> Unit) {
                 Text(
                     line,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if ((status?.failed ?: 0) >
-                        0
-                    ) {
+                    color = if ((status?.failed ?: 0) > 0) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurface
