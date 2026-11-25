@@ -42,8 +42,8 @@ private enum class ProfileTab(val label: String) { History("History"), Segments(
  * Messages, like "Ride deleted · Undo", are shown here rather than in a tab, so they stay
  * put when you swipe.
  *
- * [deletedRideId] and [onDeletedRideHandled] pass a ride deleted from its detail screen on
- * to History, which offers Undo; [deletedSegmentId] and [onDeletedSegmentHandled] do the same
+ * [deletedRideId] and [onClearDeletedRide] pass a ride deleted from its detail screen on
+ * to History, which offers Undo; [deletedSegmentId] and [onClearDeletedSegment] do the same
  * for a segment, to the Segments tab.
  */
 @Composable
@@ -53,9 +53,9 @@ fun ProfileScreen(
     onOpenAccount: () -> Unit,
     onOpenSettings: () -> Unit,
     deletedRideId: String?,
-    onDeletedRideHandled: () -> Unit,
+    onClearDeletedRide: () -> Unit,
     deletedSegmentId: String?,
-    onDeletedSegmentHandled: () -> Unit,
+    onClearDeletedSegment: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -68,7 +68,7 @@ fun ProfileScreen(
             HistoryScreen(
                 onOpenRide = onOpenRide,
                 deletedRideId = deletedRideId,
-                onDeletedRideHandled = onDeletedRideHandled,
+                onClearDeletedRide = onClearDeletedRide,
                 snackbarHostState = snackbarHostState,
             )
         },
@@ -76,7 +76,7 @@ fun ProfileScreen(
             SegmentsTab(
                 onOpenSegment = onOpenSegment,
                 deletedSegmentId = deletedSegmentId,
-                onDeletedSegmentHandled = onDeletedSegmentHandled,
+                onClearDeletedSegment = onClearDeletedSegment,
                 snackbarHostState = snackbarHostState,
             )
         },

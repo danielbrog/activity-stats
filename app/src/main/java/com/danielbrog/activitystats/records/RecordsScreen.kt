@@ -46,7 +46,7 @@ import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 fun RecordsScreen(
     onOpenRide: (id: String) -> Unit,
     deletedRideId: String?,
-    onDeletedRideHandled: () -> Unit,
+    onClearDeletedRide: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: RecordsViewModel = viewModel(),
 ) {
@@ -56,7 +56,7 @@ fun RecordsScreen(
 
     UndoDeleteEffect(
         deletedId = deletedRideId,
-        onHandled = onDeletedRideHandled,
+        onClearResult = onClearDeletedRide,
         snackbarHostState = snackbarHostState,
         message = "Ride deleted",
         onUndo = viewModel::restore,

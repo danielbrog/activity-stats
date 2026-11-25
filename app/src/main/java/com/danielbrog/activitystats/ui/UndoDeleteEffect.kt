@@ -17,24 +17,26 @@ import androidx.compose.runtime.setValue
  * the id if it is tapped.
  *
  * Two steps, so the bar is shown once and can't be cancelled: the id is copied into saved
- * state and [onHandled] clears the navigation result straight away; a second effect, keyed
+ * state and [onClearResult] clears the navigation result straight away; a second effect, keyed
  * on the copy, shows the bar. Clearing the result therefore never cancels the bar, and the
  * copy brings it back after Android stops the app.
  */
 @Composable
 fun UndoDeleteEffect(
     deletedId: String?,
-    onHandled: () -> Unit,
+    onClearResult: () -> Unit,
     snackbarHostState: SnackbarHostState,
     message: String,
     onUndo: (id: String) -> Unit,
 ) {
+    // Effects outlive a redraw, so they read the newest callbacks, not the ones they started with.
     val undo by rememberUpdatedState(onUndo)
+    val clearResult by rememberUpdatedState(onClearResult)
     var undoId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(deletedId) {
         if (deletedId != null) {
             undoId = deletedId
-            onHandled()
+            clearResult()
         }
     }
     LaunchedEffect(undoId) {

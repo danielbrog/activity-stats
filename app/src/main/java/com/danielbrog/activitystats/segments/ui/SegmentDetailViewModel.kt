@@ -72,11 +72,11 @@ class SegmentDetailViewModel(application: Application, savedStateHandle: SavedSt
         viewModelScope.launch { repository.rename(segmentId, name) }
     }
 
-    /** Soft-deletes the segment, then calls [onDeleted] with its id so the screen can close. */
-    fun delete(onDeleted: (id: String) -> Unit) {
+    /** Soft-deletes the segment, then calls [onDeleteComplete] with its id so the screen can close. */
+    fun delete(onDeleteComplete: (id: String) -> Unit) {
         viewModelScope.launch {
             repository.delete(segmentId)
-            onDeleted(segmentId)
+            onDeleteComplete(segmentId)
         }
     }
 

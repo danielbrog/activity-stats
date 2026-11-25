@@ -73,20 +73,20 @@ class SegmentsViewModel(application: Application) : AndroidViewModel(application
  *
  * When [deletedSegmentId] is set (a segment was just deleted from its screen), shows a
  * "Segment deleted" bar with Undo in [snackbarHostState] (Profile's, so it stays put when you
- * swipe), then calls [onDeletedSegmentHandled] so it isn't shown again.
+ * swipe), then calls [onClearDeletedSegment] so it isn't shown again.
  */
 @Composable
 fun SegmentsTab(
     onOpenSegment: (id: String) -> Unit,
     deletedSegmentId: String?,
-    onDeletedSegmentHandled: () -> Unit,
+    onClearDeletedSegment: () -> Unit,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
     viewModel: SegmentsViewModel = viewModel(),
 ) {
     UndoDeleteEffect(
         deletedId = deletedSegmentId,
-        onHandled = onDeletedSegmentHandled,
+        onClearResult = onClearDeletedSegment,
         snackbarHostState = snackbarHostState,
         message = "Segment deleted",
         onUndo = viewModel::restore,

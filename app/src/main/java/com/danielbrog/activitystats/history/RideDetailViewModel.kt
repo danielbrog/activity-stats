@@ -174,11 +174,11 @@ class RideDetailViewModel(application: Application, savedStateHandle: SavedState
         }
     }
 
-    /** Soft-deletes the ride, then calls [onDeleted] with its id so the screen can close. */
-    fun delete(onDeleted: (id: String) -> Unit) {
+    /** Soft-deletes the ride, then calls [onDeleteComplete] with its id so the screen can close. */
+    fun delete(onDeleteComplete: (id: String) -> Unit) {
         viewModelScope.launch {
             repository.delete(rideId)
-            onDeleted(rideId)
+            onDeleteComplete(rideId)
         }
     }
 }

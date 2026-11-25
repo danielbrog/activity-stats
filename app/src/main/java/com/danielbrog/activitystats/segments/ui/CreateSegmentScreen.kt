@@ -73,13 +73,15 @@ fun CreateSegmentScreen(
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val outcome by viewModel.outcome.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // The effect below outlives a redraw, so it reads the newest onBack, not the one it started with.
+    val back by rememberUpdatedState(onBack)
 
     // React to the saved result here, not in a callback, so a screen rebuilt by rotation sees it.
     LaunchedEffect(outcome) {
         when (outcome) {
             CreateOutcome.Created -> {
                 Toast.makeText(context, "Segment created", Toast.LENGTH_SHORT).show()
-                onBack()
+                back()
             }
             CreateOutcome.Failed -> {
                 Toast.makeText(context, "Couldn't create this segment", Toast.LENGTH_SHORT).show()
