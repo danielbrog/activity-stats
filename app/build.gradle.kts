@@ -71,6 +71,9 @@ android {
 }
 
 dependencies {
+    // Compose rules for ktlint (Modifier parameters, state, ViewModels, previews); see .editorconfig.
+    ktlintRuleset(libs.compose.rules.ktlint)
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

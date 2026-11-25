@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 /**
  * The History tab inside Profile: every saved ride, newest first, and Import GPX, which opens
  * the new ride. When [deletedRideId] is set (a ride was just deleted from its detail screen),
- * shows a "Ride deleted" bar with Undo, then calls [onDeletedRideHandled] so it isn't shown
+ * shows a "Ride deleted" bar with Undo, then calls [onClearDeletedRide] so it isn't shown
  * again.
  *
  * Messages go to [snackbarHostState], which Profile owns and shows, so a message stays put
@@ -61,7 +61,7 @@ import kotlinx.coroutines.launch
 fun HistoryScreen(
     onOpenRide: (id: String) -> Unit,
     deletedRideId: String?,
-    onDeletedRideHandled: () -> Unit,
+    onClearDeletedRide: () -> Unit,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
     viewModel: HistoryViewModel = viewModel(),
@@ -72,7 +72,7 @@ fun HistoryScreen(
 
     UndoDeleteEffect(
         deletedId = deletedRideId,
-        onHandled = onDeletedRideHandled,
+        onClearResult = onClearDeletedRide,
         snackbarHostState = snackbarHostState,
         message = "Ride deleted",
         onUndo = viewModel::restore,

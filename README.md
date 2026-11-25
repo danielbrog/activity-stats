@@ -99,7 +99,7 @@ The upload, download and merge logic is plain Kotlin, tested against a fake serv
 cd backend && npm test                 # backend tests
 ```
 
-The Kotlin code is formatted with [ktlint](https://pinterest.github.io/ktlint/), using the rules in [`.editorconfig`](.editorconfig) (which Android Studio follows too):
+The Kotlin code is formatted with [ktlint](https://pinterest.github.io/ktlint/), using the rules in [`.editorconfig`](.editorconfig) (which Android Studio follows too). ktlint also runs the [Compose rules](https://mrmans0n.github.io/compose-rules/), which catch Compose mistakes such as a missing `Modifier` parameter or an effect holding on to an old callback:
 
 ```bash
 ./gradlew ktlintCheck                  # report anything off-style

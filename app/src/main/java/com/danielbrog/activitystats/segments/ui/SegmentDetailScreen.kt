@@ -63,18 +63,18 @@ import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
  * Average speed is always shown as speed, whatever the speed/pace setting.
  *
  * Like History and Records, shows Undo when a ride opened from here was deleted
- * ([deletedRideId], then [onDeletedRideHandled] so it isn't shown again).
+ * ([deletedRideId], then [onClearDeletedRide] so it isn't shown again).
  *
- * The ⋮ menu edits the name or deletes the segment; [onDeleted] is called with its id once it
+ * The ⋮ menu edits the name or deletes the segment; [onDeleteComplete] is called with its id once it
  * is deleted, so the Segments tab can offer Undo.
  */
 @Composable
 fun SegmentDetailScreen(
     onBack: () -> Unit,
     onOpenRide: (id: String) -> Unit,
-    onDeleted: (id: String) -> Unit,
+    onDeleteComplete: (id: String) -> Unit,
     deletedRideId: String?,
-    onDeletedRideHandled: () -> Unit,
+    onClearDeletedRide: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SegmentDetailViewModel = viewModel(),
 ) {
@@ -87,7 +87,7 @@ fun SegmentDetailScreen(
 
     UndoDeleteEffect(
         deletedId = deletedRideId,
-        onHandled = onDeletedRideHandled,
+        onClearResult = onClearDeletedRide,
         snackbarHostState = snackbarHostState,
         message = "Ride deleted",
         onUndo = viewModel::restoreRide,
@@ -125,7 +125,7 @@ fun SegmentDetailScreen(
             name = segment.name,
             onConfirm = {
                 showDelete = false
-                viewModel.delete(onDeleted)
+                viewModel.delete(onDeleteComplete)
             },
             onDismiss = { showDelete = false },
         )

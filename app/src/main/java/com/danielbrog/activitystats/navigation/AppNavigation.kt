@@ -131,13 +131,13 @@ private fun Opaque(content: @Composable () -> Unit) {
  * in on top of them, without the bar, and Back slides them away again.
  */
 @Composable
-fun AppNavigation(navController: NavHostController = rememberNavController()) {
+fun AppNavigation(modifier: Modifier = Modifier, navController: NavHostController = rememberNavController()) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
     val showBottomBar = tabs.any { it.isSelected(destination) }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         bottomBar = {
             // Grows and shrinks rather than popping, so the content above moves smoothly.
             AnimatedVisibility(
@@ -186,9 +186,9 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                         onOpenAccount = { navController.navigate(AccountRoute) },
                         onOpenSettings = { navController.navigate(SettingsRoute) },
                         deletedRideId = deletedRideId,
-                        onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                        onClearDeletedRide = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
                         deletedSegmentId = deletedSegmentId,
-                        onDeletedSegmentHandled = { entry.savedStateHandle[DELETED_SEGMENT_ID] = null },
+                        onClearDeletedSegment = { entry.savedStateHandle[DELETED_SEGMENT_ID] = null },
                     )
                 }
             }
@@ -200,7 +200,7 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                     RecordsScreen(
                         onOpenRide = { id -> navController.openRide(id) },
                         deletedRideId = deletedRideId,
-                        onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                        onClearDeletedRide = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
                     )
                 }
             }
@@ -215,8 +215,8 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                         onCreateSegment = { id -> navController.navigate(CreateSegmentRoute(id)) },
                         onOpenSegment = { id -> navController.openSegment(id) },
                         deletedSegmentId = deletedSegmentId,
-                        onDeletedSegmentHandled = { entry.savedStateHandle[DELETED_SEGMENT_ID] = null },
-                        onDeleted = { id ->
+                        onClearDeletedSegment = { entry.savedStateHandle[DELETED_SEGMENT_ID] = null },
+                        onDeleteComplete = { id ->
                             navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_RIDE_ID, id)
                             navController.popBackStack()
                         },
@@ -235,13 +235,13 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
                     SegmentDetailScreen(
                         onBack = { navController.popBackStack() },
                         onOpenRide = { id -> navController.openRide(id) },
-                        onDeleted = { id ->
+                        onDeleteComplete = { id ->
                             // Segments open from Profile or a ride; both offer Undo.
                             navController.previousBackStackEntry?.savedStateHandle?.set(DELETED_SEGMENT_ID, id)
                             navController.popBackStack()
                         },
                         deletedRideId = deletedRideId,
-                        onDeletedRideHandled = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
+                        onClearDeletedRide = { entry.savedStateHandle[DELETED_RIDE_ID] = null },
                     )
                 }
             }

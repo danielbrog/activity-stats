@@ -71,20 +71,20 @@ import com.danielbrog.activitystats.ui.theme.ActivityStatsTheme
 /**
  * One saved ride: its route on a map, its stats, and the segments it covered (tapping one
  * opens it: [onOpenSegment]). The ⋮ menu exports it, makes a segment from part of it
- * ([onCreateSegment], with its id), edits the name or deletes the ride; [onDeleted] is called
+ * ([onCreateSegment], with its id), edits the name or deletes the ride; [onDeleteComplete] is called
  * with its id once it is deleted, so History can offer Undo.
  *
  * Shows Undo when a segment opened from here was deleted ([deletedSegmentId], then
- * [onDeletedSegmentHandled] so it isn't shown again).
+ * [onClearDeletedSegment] so it isn't shown again).
  */
 @Composable
 fun RideDetailScreen(
     onBack: () -> Unit,
     onCreateSegment: (rideId: String) -> Unit,
     onOpenSegment: (id: String) -> Unit,
-    onDeleted: (id: String) -> Unit,
+    onDeleteComplete: (id: String) -> Unit,
     deletedSegmentId: String?,
-    onDeletedSegmentHandled: () -> Unit,
+    onClearDeletedSegment: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: RideDetailViewModel = viewModel(),
 ) {
@@ -95,7 +95,7 @@ fun RideDetailScreen(
 
     UndoDeleteEffect(
         deletedId = deletedSegmentId,
-        onHandled = onDeletedSegmentHandled,
+        onClearResult = onClearDeletedSegment,
         snackbarHostState = snackbarHostState,
         message = "Segment deleted",
         onUndo = viewModel::restoreSegment,
@@ -146,7 +146,7 @@ fun RideDetailScreen(
             name = ride.title,
             onConfirm = {
                 showDelete = false
-                viewModel.delete(onDeleted)
+                viewModel.delete(onDeleteComplete)
             },
             onDismiss = { showDelete = false },
         )
@@ -316,20 +316,22 @@ private fun LoadedRide(
 @Composable
 private fun SegmentsOnRide(efforts: List<RideSegmentEffort>, unit: DistanceUnit, onOpenSegment: (id: String) -> Unit) {
     val laps = remember(efforts) { Laps.numbers(efforts.map { it.segmentId to it.occurrence }) }
-    Text("Segments", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-    Spacer(Modifier.height(8.dp))
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        efforts.forEachIndexed { i, effort ->
-            EffortCard(
-                title = effort.segmentName,
-                subtitle = laps[i]?.let { "Lap $it" },
-                isBest = effort.isBest,
-                elapsedMs = effort.elapsedMs,
-                distanceMeters = effort.distanceMeters,
-                unit = unit,
-                onClickLabel = "Open segment",
-                onClick = { onOpenSegment(effort.segmentId) },
-            )
+    Column {
+        Text("Segments", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+        Spacer(Modifier.height(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            efforts.forEachIndexed { i, effort ->
+                EffortCard(
+                    title = effort.segmentName,
+                    subtitle = laps[i]?.let { "Lap $it" },
+                    isBest = effort.isBest,
+                    elapsedMs = effort.elapsedMs,
+                    distanceMeters = effort.distanceMeters,
+                    unit = unit,
+                    onClickLabel = "Open segment",
+                    onClick = { onOpenSegment(effort.segmentId) },
+                )
+            }
         }
     }
 }

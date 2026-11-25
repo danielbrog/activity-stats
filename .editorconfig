@@ -18,3 +18,5 @@ ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
 ktlint_function_naming_ignore_when_annotated_with = Composable
 # Blank lines between every branch of a `when` with one multi-line branch: style, not a fix.
 ktlint_standard_blank-line-between-when-conditions = disabled
+# Compose rules (io.nlopez.compose.rules): the app is Material 3, so a Material 2 import is a mistake.
+compose_disallow_material2 = true
