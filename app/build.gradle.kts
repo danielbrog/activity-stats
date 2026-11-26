@@ -82,9 +82,11 @@ android {
         release {
             // Signed only where keystore.properties exists; elsewhere the APK comes out unsigned.
             if (releaseSigning != null) signingConfig = signingConfigs.getByName("release")
+            // R8 shrinks the whole app. Limiting it to some libraries (packageScope) moved part of
+            // Kotlin's standard library away from its package-private parent class, and the
+            // release build crashed on start with an IllegalAccessError.
             optimization {
                 enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
         }
     }

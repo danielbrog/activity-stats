@@ -20,3 +20,5 @@ replay_pid*.log
 keystore.properties
 *.jks
 *.keystore
+# Where Android Studio's Generate Signed APK wizard puts its APK and mapping.txt
+/app/release/
