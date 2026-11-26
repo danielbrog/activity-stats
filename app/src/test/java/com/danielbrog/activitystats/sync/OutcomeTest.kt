@@ -5,6 +5,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Which replies are retried and which skip the ride: wrong either way and rides get stuck or dropped. */
@@ -28,15 +29,41 @@ class OutcomeTest {
 
     @Test
     fun aUsageLimitReplyIsToldApartFromARateLimit() {
-        val rides = """{"error":"Weekly ride limit reached","limit":10,"resetsAt":1795996800000}"""
-        assertEquals(1_795_996_800_000L, limitResetsAt(429, rides))
-        val downloads = """{"error":"Daily download limit reached","limit":500,"resetsAt":1795651200000}"""
-        assertEquals(1_795_651_200_000L, limitResetsAt(429, downloads))
+        val rides = """{"error":"Weekly ride limit reached","kind":"rides","limit":10,"resetsAt":1795996800000}"""
+        val ridesLimit = usageLimitOf(429, rides)!!
+        assertEquals("rides", ridesLimit.kind)
+        assertEquals(1_795_996_800_000L, ridesLimit.resetsAt)
+        val downloads = """{"kind":"downloads","limit":500,"resetsAt":1795651200000}"""
+        assertEquals(1_795_651_200_000L, usageLimitOf(429, downloads)!!.resetsAt)
+        // From the backend before kinds: still a limit, of no named kind.
+        assertNull(usageLimitOf(429, """{"limit":10,"resetsAt":1795996800000}""")!!.kind)
         // API Gateway's own rate limit: also a 429, but only "slow down", so it is retried.
-        assertNull(limitResetsAt(429, """{"message":"Too Many Requests"}"""))
-        assertNull(limitResetsAt(429, "<html>busy</html>"))
-        assertNull(limitResetsAt(400, rides))
+        assertNull(usageLimitOf(429, """{"message":"Too Many Requests"}"""))
+        assertNull(usageLimitOf(429, "<html>busy</html>"))
+        assertNull(usageLimitOf(400, rides))
         assertEquals(Outcome.Retry, outcomeOf(429))
+    }
+
+    @Test
+    fun aSummaryLimitIsTheEditLimitOrTheRideLimit() {
+        val edits = """{"error":"Daily edit limit reached","kind":"edits","limit":200,"resetsAt":1795651200000}"""
+        assertEquals(1_795_651_200_000L, (summaryLimitOf(429, edits) as EditLimitReachedException).resetsAt)
+        val rides = """{"error":"Weekly ride limit reached","kind":"rides","limit":10,"resetsAt":1795996800000}"""
+        assertEquals(1_795_996_800_000L, (summaryLimitOf(429, rides) as RideLimitReachedException).resetsAt)
+        // No kind: the ride limit, the only one an older backend had.
+        assertTrue(summaryLimitOf(429, """{"limit":10,"resetsAt":1}""") is RideLimitReachedException)
+        // A kind from a newer backend holds back just this ride, not every new one.
+        assertTrue(summaryLimitOf(429, """{"kind":"something","limit":5,"resetsAt":1}""") is EditLimitReachedException)
+        assertNull(summaryLimitOf(429, """{"message":"Too Many Requests"}"""))
+    }
+
+    @Test
+    fun aSegmentSavePastTheEditLimitWaitsForTheReset() {
+        val edits = """{"error":"Daily edit limit reached","kind":"edits","limit":200,"resetsAt":1795651200000}"""
+        val limited = assertThrows(EditLimitReachedException::class.java) { segmentPutResultOf(429, edits) }
+        assertEquals(1_795_651_200_000L, limited.resetsAt)
+        // API Gateway's own rate limit is still just retried.
+        assertThrows(IOException::class.java) { segmentPutResultOf(429, """{"message":"Too Many Requests"}""") }
     }
 
     @Test

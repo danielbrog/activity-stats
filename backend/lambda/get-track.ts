@@ -2,7 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { GetObjectCommand, NoSuchKey, S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { pathIdOf, ApiEvent, ApiResult, error, requireEnv, TRACK_CONTENT_TYPE, trackKey, userIdOf } from './shared';
-import { claimDownload, downloadLimitReached } from './usage';
+import { claimDaily, dailyLimitReached, DOWNLOADS } from './usage';
 
 const s3 = new S3Client({});
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -45,14 +45,14 @@ export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   // Counted before reading, so a download past the limit doesn't fetch the file for nothing.
   let limited;
   try {
-    limited = await claimDownload(db, requireEnv('USAGE_TABLE_NAME'), userId);
+    limited = await claimDaily(db, requireEnv('USAGE_TABLE_NAME'), userId, DOWNLOADS);
   } catch (e) {
     close();
     throw e;
   }
   if (limited) {
     close();
-    return downloadLimitReached(limited.resetsAt);
+    return dailyLimitReached(DOWNLOADS, limited.resetsAt);
   }
   const bytes = await file.Body!.transformToByteArray();
 

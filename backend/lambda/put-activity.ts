@@ -2,7 +2,7 @@ import { ConditionalCheckFailedException, DynamoDBClient } from '@aws-sdk/client
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { pathIdOf, ApiEvent, ApiResult, error, json, requireEnv, userIdOf } from './shared';
 import { parseSummary, toApi } from './summary';
-import { claimRideSlot, rideLimitReached } from './usage';
+import { claimDaily, claimRideSlot, dailyLimitReached, EDITS, rideLimitReached } from './usage';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -10,14 +10,15 @@ const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * PUT /activities/{id}: saves a ride summary for the signed-in user.
  *
  * The newer copy wins: the save only goes through if there is no stored copy, or the
- * stored one's updatedAt is not newer than this one's. Sending the same copy twice is
- * harmless. If the stored copy is newer, nothing changes and it comes back with a 409, so
+ * stored one's updatedAt is not newer than this one's. Sending the same copy twice stores
+ * nothing new, but counts as an edit again (see below). If the stored copy is newer, nothing changes and it comes back with a 409, so
  * the app can take it instead. syncedAt is stamped here, from the server's clock.
  *
  * A summary that makes a live ride (none stored yet, or only a deleted copy) counts towards
  * the week's limit like a track does (see claimRideSlot), so sending summaries alone can't get
- * round it. Edits to a stored ride aren't counted, and neither is a ride deleted before it
- * synced: it is only a record that the ride is gone.
+ * round it. Every other summary is an edit: a rename or delete of a stored ride, or a ride
+ * deleted before it synced. Those count towards the day's [EDITS] instead. Either way it is
+ * counted before the save, so one past its limit stores nothing (a 429).
  */
 export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   const userId = userIdOf(event);
@@ -34,10 +35,14 @@ export const handler = async (event: ApiEvent): Promise<ApiResult> => {
     )
   )?.Item;
   const becomesLive = parsed.value.deletedAt === null && (!stored || stored.deletedAt != null);
+  const usageTable = requireEnv('USAGE_TABLE_NAME');
   if (becomesLive) {
     // Usually already counted when its track came in; counting again is a no-op.
-    const limited = await claimRideSlot(db, requireEnv('USAGE_TABLE_NAME'), userId, activityId);
+    const limited = await claimRideSlot(db, usageTable, userId, activityId);
     if (limited) return rideLimitReached(limited.resetsAt);
+  } else {
+    const limited = await claimDaily(db, usageTable, userId, EDITS);
+    if (limited) return dailyLimitReached(EDITS, limited.resetsAt);
   }
 
   const syncedAt = Date.now();

@@ -149,7 +149,8 @@ Indexes:
   never change. A newer stored copy comes back with a 409; a change of line or sport is refused
   with a 400. Both carry the stored copy (labelled, as below, and read up to date), so the phone
   can take it. A newer copy with no `deletedAt` brings a deleted segment back: that's how Undo
-  syncs, as for rides.
+  syncs, as for rides. Every save, creating one included, first counts towards the daily edit
+  limit (see `Usage`): past it, `429` and nothing is stored.
 - **Times more than a day ahead are refused,** so a phone with a wildly wrong clock can't stamp
   a far-future `updatedAt` that would make every later edit look older.
 - **Only the rider's fields are stored:** `parseSegment` drops everything else, including any
@@ -174,23 +175,27 @@ On-demand. Only counts, so it isn't backed up or kept if the stack is removed.
 | Key | Type | Meaning |
 |---|---|---|
 | `userId` (partition) | S | the account (`sub`) |
-| `period` (sort) | S | the week, `RIDES#2026-W48` (an ISO week, Monday to Sunday UTC), or the day, `DOWNLOADS#2026-11-26` (UTC) |
+| `period` (sort) | S | the week, `RIDES#2026-W48` (an ISO week, Monday to Sunday UTC), or the day, `DOWNLOADS#2026-11-26` or `EDITS#2026-11-26` (UTC) |
 
 | Attribute | Type | Meaning |
 |---|---|---|
 | `rides` | SS | on a week's row: the ids of the new rides counted that week |
-| `downloads` | N | on a day's row: the track downloads that day |
+| `downloads` | N | on a `DOWNLOADS` row: the track downloads that day |
+| `edits` | N | on an `EDITS` row: the edits saved that day |
 | `expiresAt` | N | two weeks after the week or day ends, **in seconds**: DynamoDB deletes the row itself then |
 
 **The weekly ride limit:** a new ride is counted the first time its track (`PutTrack`) or its
 summary (`PutActivity`, only when no copy is stored yet) arrives. Counting is one conditional
 update: add the ride's id to the week's set if the set holds fewer than `MAX_RIDES_PER_WEEK`
 (10 for now, in `lambda/usage.ts`) ids or already holds this one. So a retry never counts
-twice, two uploads at once can't both take the last place, and edits, deletes and restores of
-stored rides never count. Past the limit the reply is `429` with
-`{"error":"Weekly ride limit reached","limit":10,"resetsAt":<next Monday 00:00 UTC, ms>}`, and
-nothing is stored; the `limit` field tells it apart from API Gateway's own rate-limit `429`.
-A ride deleted before it synced never counts. Known limits, to settle before raising the limit:
+twice, two uploads at once can't both take the last place, and renames and deletes of stored
+rides never count here (they are edits). A restore of a ride stored as deleted counts again.
+Past the limit the reply is `429` with
+`{"error":"Weekly ride limit reached","kind":"rides","limit":10,"resetsAt":<next Monday 00:00 UTC, ms>}`,
+and nothing is stored. Every limit reply carries `limit`, which tells it apart from API
+Gateway's own rate-limit `429`, and `kind` (`rides`, `downloads` or `edits`), which tells the
+limits apart: a ride summary can reach either the ride or the edit limit.
+A ride deleted before it synced is an edit, not a ride. Known limits, to settle before raising the limit:
 a backlog claimed at sign-in goes up 10 a week, oldest first; and a ride whose track and
 summary first arrive in different weeks counts in both.
 
@@ -199,9 +204,17 @@ summary first arrive in different weeks counts in both.
 `MAX_DOWNLOADS_PER_DAY` (500 for now). A file not uploaded yet (`404`) isn't counted; the same
 track downloaded twice counts twice. The count comes before the file is read, so a download
 past the limit costs no file read. Past the limit the reply is `429` with
-`{"error":"Daily download limit reached","limit":500,"resetsAt":<next 00:00 UTC, ms>}`. The
+`{"error":"Daily download limit reached","kind":"downloads","limit":500,"resetsAt":<next 00:00 UTC, ms>}`. The
 phone stops downloading until then and books a sync for just after it; the rides it hasn't
 fetched stay in the listing, so the next run picks them up.
+
+**The daily edit limit:** `MAX_EDITS_PER_DAY` (200 for now) edits per account per UTC day, in
+the day's `edits`, counted the same way as downloads. An edit is any ride summary that doesn't
+make a new live ride (a rename or delete of a stored ride, or a ride deleted before it synced),
+and every segment save, creating one included. It is counted before the save, so a retry or a
+save that loses to a newer copy (`409`) counts too; input refused as invalid (`400`) doesn't.
+Past the limit the reply is `429` with `"kind":"edits"` and nothing is stored. The phone keeps
+the edit waiting and books a sync for just after the reset.
 
 ## Who may touch what
 
@@ -211,7 +224,7 @@ fetched stay in the listing, so the next run picks them up.
 | `ListActivities` | `GET /activities` | read | — | — | — |
 | `PutTrack` | `PUT /activities/{id}/track` | — | put, under `tracks/*` | — | update only |
 | `GetTrack` | `GET /activities/{id}/track` | — | read, under `tracks/*` | — | update only |
-| `PutSegment` | `PUT /segments/{id}` | — | — | put and get an item only | — |
+| `PutSegment` | `PUT /segments/{id}` | — | — | put and get an item only | update only |
 | `ListSegments` | `GET /segments` | — | — | query the `bySyncedAt` index only | — |
 
 Each Lambda gets only these permissions in CDK, and checks the user from the token itself.

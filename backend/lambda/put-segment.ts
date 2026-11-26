@@ -2,6 +2,7 @@ import { ConditionalCheckFailedException, DynamoDBClient } from '@aws-sdk/client
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { parseSegment, segmentItemToApi, segmentKey } from './segment';
 import { pathIdOf, ApiEvent, ApiResult, error, json, requireEnv, userIdOf } from './shared';
+import { claimDaily, dailyLimitReached, EDITS } from './usage';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -15,6 +16,9 @@ const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * created: a copy that tries to change them is refused with a 400. If the stored copy is
  * newer, nothing changes and it comes back with a 409. Both refusals carry the stored copy,
  * so the phone can take it. syncedAt is stamped here, from the server's clock.
+ *
+ * Every save, creating a segment included, counts towards the day's [EDITS], before anything
+ * is written: past the limit the reply is a 429 and nothing is stored.
  */
 export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   const userId = userIdOf(event);
@@ -23,6 +27,9 @@ export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   if (!segmentId) return error(400, 'Invalid segment id');
   const parsed = parseSegment(event.body, event.isBase64Encoded);
   if (!parsed.ok) return error(400, parsed.message);
+
+  const limited = await claimDaily(db, requireEnv('USAGE_TABLE_NAME'), userId, EDITS);
+  if (limited) return dailyLimitReached(EDITS, limited.resetsAt);
 
   const table = requireEnv('SEGMENTS_TABLE_NAME');
   const sk = segmentKey(segmentId);

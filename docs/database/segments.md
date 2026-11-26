@@ -166,7 +166,7 @@ review, admin and catalogue slices.
 
 | Route | Who | Work |
 |---|---|---|
-| `PUT /segments/{id}` | rider | Put `SEG#id` if new or not older than stored; else 409 with the stored copy |
+| `PUT /segments/{id}` | rider | Put `SEG#id` if new or not older than stored; else 409 with the stored copy. Each save counts towards the daily edit limit (429 past it) |
 | `GET /segments?since=T` | rider | Query `bySyncedAt`, `syncedAt > T` (the phone asks from 5 minutes before its cursor) |
 | `POST /segments/{id}/submit` | rider | Transaction: check `SEG#id` exists and isn't deleted; review → `SUBMITTED` with `queue`; run the duplicate check |
 | `POST /segments/{id}/withdraw` | rider | Review `SUBMITTED` → `PRIVATE`, remove `queue` |

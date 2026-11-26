@@ -57,6 +57,10 @@ class Uploader(
         val limited: List<String> = emptyList(),
         /** When the server counts again (Monday 00:00 UTC), if the limit was reached; else null. */
         val limitResetsAt: Long? = null,
+        /** Renames and deletes left waiting because the day's edits are used up. */
+        val editLimited: List<String> = emptyList(),
+        /** When the server counts edits again (the next 00:00 UTC), if that limit was reached; else null. */
+        val editLimitResetsAt: Long? = null,
     )
 
     /**
@@ -72,6 +76,8 @@ class Uploader(
         val rejected = mutableListOf<String>()
         val limited = mutableListOf<String>()
         var limitResetsAt: Long? = null
+        val editLimited = mutableListOf<String>()
+        var editLimitResetsAt: Long? = null
 
         /** Notes a ride not sent; parks it as failed only if the server clearly refused it. */
         suspend fun notSent(ride: ActivityEntity, code: Int?) {
@@ -81,15 +87,22 @@ class Uploader(
 
         for (ride in store.pendingUploads(userId)) {
             if (!stillSignedIn()) break
-            // A live ride whose track isn't up yet is new to the server, so it would count
-            // towards the week too: once the limit is reached, don't try the others this run.
-            // Edits to rides already up, and rides deleted before they synced, still go.
-            if (limited.isNotEmpty() && !ride.trackUploaded && ride.deletedAt == null) {
+            // A live ride whose track isn't up yet is new to the server and counts towards the
+            // week; anything else counts as an edit, towards the day. Once either limit is
+            // reached, the other rides it would count don't go this run, and wait for the reset.
+            // (Two the phone can't tell apart wait a day too: a restore of a ride the server has
+            // as deleted, and a ride whose track went up but whose summary didn't.)
+            val isNewRide = !ride.trackUploaded && ride.deletedAt == null
+            if (limited.isNotEmpty() && isNewRide) {
                 limited += ride.id
                 continue
             }
+            if (editLimitResetsAt != null && !isNewRide) {
+                editLimited += ride.id
+                continue
+            }
             try {
-                if (!ride.trackUploaded && ride.deletedAt == null) {
+                if (isNewRide) {
                     val points = store.pointsFor(ride.id)
                     val file = TrackFile.encode(points)
                     if (file.size > maxTrackBytes || points.size > TrackFile.MAX_FIXES) {
@@ -113,6 +126,10 @@ class Uploader(
                 // Not refused: it stays waiting, and the first sync after the reset sends it.
                 limited += ride.id
                 limitResetsAt = e.resetsAt
+            } catch (e: EditLimitReachedException) {
+                // The same, for the day's edits.
+                editLimited += ride.id
+                editLimitResetsAt = e.resetsAt
             } catch (e: RejectedException) {
                 notSent(ride, e.code)
             } catch (e: SerializationException) {
@@ -121,7 +138,7 @@ class Uploader(
                 notSent(ride, code = null)
             }
         }
-        return Report(synced, rejected, limited, limitResetsAt)
+        return Report(synced, rejected, limited, limitResetsAt, editLimited, editLimitResetsAt)
     }
 }
 

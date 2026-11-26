@@ -124,11 +124,15 @@ class SegmentSyncTest {
         val pageSize: Int = 100,
         val reply: (String) -> SegmentPutResult = { SegmentPutResult.Applied },
     ) : SegmentSyncApi {
+        /** Segments whose save the server refuses because the day's edits are used up. */
+        var editLimited = emptySet<String>()
+
         val sent = mutableListOf<String>()
         val asked = mutableListOf<Long>()
 
         override suspend fun putSegment(id: String, segment: SegmentUpload): SegmentPutResult {
             sent += id
+            if (id in editLimited) throw EditLimitReachedException(resetsAt = 3_000_000L)
             return reply(id)
         }
 
@@ -158,6 +162,23 @@ class SegmentSyncTest {
         assertEquals(listOf("a"), api.sent)
         assertEquals(1, report.synced)
         assertEquals(SyncState.SYNCED, store.rows.getValue("a").syncState)
+    }
+
+    @Test
+    fun theDaysEditLimitLeavesThatSegmentAndTheRestWaiting() = runBlocking {
+        val store =
+            FakeStore(listOf(local("a", updatedAt = 1L), local("b", updatedAt = 2L), local("c", updatedAt = 3L)))
+        val api = FakeApi().apply { editLimited = setOf("b") }
+        val report = SegmentUploader(store, api).uploadPending(user)
+
+        assertEquals(1, report.synced)
+        assertEquals(listOf("b", "c"), report.limited)
+        assertEquals(3_000_000L, report.limitResetsAt)
+        // c isn't tried: every segment save is an edit too.
+        assertEquals(listOf("a", "b"), api.sent)
+        assertEquals(SyncState.PENDING, store.rows.getValue("b").syncState)
+        assertEquals(SyncState.PENDING, store.rows.getValue("c").syncState)
+        assertTrue(report.rejected.isEmpty())
     }
 
     @Test

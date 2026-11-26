@@ -1,6 +1,6 @@
 import { body, event, segment, SEGMENT_ID, status, USER } from './helpers';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { handler } from '../lambda/put-segment';
 
@@ -13,6 +13,28 @@ const put = (data: unknown, id = SEGMENT_ID) =>
 const stale = () => new ConditionalCheckFailedException({ message: 'stale', $metadata: {} });
 
 describe('PUT /segments/{id}', () => {
+  test("every save counts towards the day's edits, creating one included", async () => {
+    db.on(UpdateCommand).resolves({});
+    db.on(PutCommand).resolves({});
+    expect(status(await put(segment()))).toBe(200);
+    const count = db.commandCalls(UpdateCommand)[0].args[0].input;
+    expect(count.TableName).toBe('test-usage');
+    expect(count.Key).toMatchObject({ userId: USER, period: expect.stringMatching(/^EDITS#/) });
+  });
+
+  test("past the day's edits a save is refused with a 429 and nothing is stored", async () => {
+    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    const result = await put(segment());
+    expect(status(result)).toBe(429);
+    expect(body(result)).toMatchObject({ error: 'Daily edit limit reached', kind: 'edits', limit: 200 });
+    expect(db.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  test('bad input is refused before it is counted', async () => {
+    expect(status(await put({ name: 'no line' }))).toBe(400);
+    expect(db.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
   test('saves the segment item under the user from the token, with a server syncedAt', async () => {
     db.on(PutCommand).resolves({});
     const before = Date.now();
