@@ -40,9 +40,6 @@ sealed interface SegmentPutResult {
     data class Rejected(val code: Int) : SegmentPutResult
 }
 
-/** A short-lived link to upload one track file to, with the headers the upload must send. */
-data class UploadLink(val url: String, val headers: Map<String, String>)
-
 /**
  * The server refused a request for one ride in a way retrying won't fix. Only that ride is
  * skipped. Network trouble is an [IOException] instead, which means "try again later".
@@ -62,7 +59,7 @@ internal enum class Outcome { Ok, Retry, Skip }
  * Sorts a status code into success, try again later, or give up on this ride. Plain Kotlin,
  * unit-tested, since getting it wrong either drops rides or gets them stuck.
  *
- * [fromS3] is for the track upload itself. Its link is only seconds old (it lasts five
+ * [fromS3] is for the track download from S3. Its link is only seconds old (it lasts five
  * minutes), so S3's 403 means S3 refused this file, not that a sign-in expired.
  */
 internal fun outcomeOf(code: Int, fromS3: Boolean = false): Outcome = when {
@@ -98,9 +95,11 @@ internal fun segmentPutResultOf(code: Int, body: String): SegmentPutResult {
 interface SyncApi {
     suspend fun putActivity(id: String, summary: RideSummary): PutResult
 
-    suspend fun trackUploadLink(id: String): UploadLink
-
-    suspend fun uploadTrack(link: UploadLink, bytes: ByteArray)
+    /**
+     * Sends ride [id]'s gzipped track file. The server checks it (size, format, sane values)
+     * before storing it, and refuses a file it won't store with a 4xx.
+     */
+    suspend fun uploadTrack(id: String, bytes: ByteArray)
 
     /**
      * One page of the rides saved after [since] (server time), oldest first. [page] is the
@@ -145,17 +144,10 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
         }
     }
 
-    override suspend fun trackUploadLink(id: String): UploadLink {
-        val (code, body) = request("POST", "$apiUrl/activities/$id/track-upload", ByteArray(0), emptyMap())
+    override suspend fun uploadTrack(id: String, bytes: ByteArray) {
+        val headers = mapOf("Content-Type" to TrackFile.CONTENT_TYPE)
+        val (code, _) = request("PUT", "$apiUrl/activities/$id/track", bytes, headers)
         throwUnlessOk(code)
-        val reply = json.decodeFromString(LinkJson.serializer(), body.decodeToString())
-        return UploadLink(reply.url, reply.headers)
-    }
-
-    override suspend fun uploadTrack(link: UploadLink, bytes: ByteArray) {
-        // The link is signed for S3: no sign-in token goes with it.
-        val (code, _) = request("PUT", link.url, bytes, link.headers, withToken = false)
-        throwUnlessOk(code, fromS3 = true)
     }
 
     override suspend fun listActivities(since: Long, page: String?): CloudPage {
@@ -173,7 +165,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     }
 
     override suspend fun downloadTrack(url: String): ByteArray {
-        // Signed for S3, like the upload link: no sign-in token goes with it.
+        // A link signed for S3: no sign-in token goes with it.
         val (code, body) = request("GET", url, null, emptyMap(), withToken = false)
         throwUnlessOk(code, fromS3 = true)
         return body
@@ -232,7 +224,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     }
 
     @Serializable
-    private data class LinkJson(val url: String, val headers: Map<String, String> = emptyMap())
+    private data class LinkJson(val url: String)
 
     private companion object {
         const val TIMEOUT_MS = 30_000

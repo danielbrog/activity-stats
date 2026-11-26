@@ -66,8 +66,8 @@ describe('ActivityStatsStack', () => {
       'GET /activities',
       'GET /activities/{id}/track',
       'GET /segments',
-      'POST /activities/{id}/track-upload',
       'PUT /activities/{id}',
+      'PUT /activities/{id}/track',
       'PUT /segments/{id}',
     ]);
     for (const route of Object.values(routes)) {
@@ -158,8 +158,8 @@ describe('ActivityStatsStack', () => {
       'ActivityStats-ListSegmentsErrors',
       'ActivityStats-PutActivityErrors',
       'ActivityStats-PutSegmentErrors',
+      'ActivityStats-PutTrackErrors',
       'ActivityStats-TrackDownloadUrlErrors',
-      'ActivityStats-TrackUploadUrlErrors',
     ]);
     for (const a of alarms) {
       const p = a.Properties;
@@ -185,10 +185,10 @@ describe('ActivityStatsStack', () => {
     });
   });
 
-  test('the upload function can only write track files, and cannot read them or the table', () => {
+  test('the track function can only write track files, and cannot read them or the table', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const uploadPolicy = policies.find((p) =>
-      JSON.stringify(p.Properties.Roles).includes('TrackUploadUrl'),
+      JSON.stringify(p.Properties.Roles).includes('PutTrack'),
     );
     expect(uploadPolicy).toBeDefined();
     const text = JSON.stringify(uploadPolicy!.Properties.PolicyDocument);

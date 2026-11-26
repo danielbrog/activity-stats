@@ -26,8 +26,17 @@ object TrackFile {
      */
     const val VERSION = 2
 
-    /** The type the file is uploaded with; the backend's upload link requires it. */
+    /** The type the file is uploaded with, so the API passes it on as binary. */
     const val CONTENT_TYPE = "application/gzip"
+
+    /**
+     * The largest file the backend stores, gzipped (its MAX_TRACK_BYTES): about 7 hours of
+     * recording. A ride with a bigger track isn't sent at all.
+     */
+    const val MAX_BYTES = 1_000_000
+
+    /** The most fixes the backend stores in one track (its MAX_FIXES): about 11 hours. */
+    const val MAX_FIXES = 40_000
 
     private val json = Json { ignoreUnknownKeys = true }
 

@@ -39,7 +39,12 @@ interface SyncStore {
  * is sent. Code that downloads rides must expect that. A track is uploaded once; later edits
  * only re-send the summary.
  */
-class Uploader(private val store: SyncStore, private val api: SyncApi) {
+class Uploader(
+    private val store: SyncStore,
+    private val api: SyncApi,
+    /** The largest track that is sent; tests set a small one. */
+    private val maxTrackBytes: Int = TrackFile.MAX_BYTES,
+) {
 
     /**
      * How a run went: rides now in the cloud, and the ids not sent this time. Those the server
@@ -69,8 +74,14 @@ class Uploader(private val store: SyncStore, private val api: SyncApi) {
             if (!stillSignedIn()) break
             try {
                 if (!ride.trackUploaded && ride.deletedAt == null) {
-                    val file = TrackFile.encode(store.pointsFor(ride.id))
-                    api.uploadTrack(api.trackUploadLink(ride.id), file)
+                    val points = store.pointsFor(ride.id)
+                    val file = TrackFile.encode(points)
+                    if (file.size > maxTrackBytes || points.size > TrackFile.MAX_FIXES) {
+                        // The server would refuse it: don't send it, and set the ride aside.
+                        notSent(ride, TRACK_TOO_LARGE)
+                        continue
+                    }
+                    api.uploadTrack(ride.id, file)
                     store.markTrackUploaded(ride.id)
                 }
                 when (val result = api.putActivity(ride.id, RideSummary.from(ride))) {
@@ -101,3 +112,6 @@ class Uploader(private val store: SyncStore, private val api: SyncApi) {
  * the ride and segment uploads, so the two can't drift apart.
  */
 internal fun refusesTheUpload(code: Int) = code in 400..499 && code != 404
+
+/** HTTP's "content too large": what the server answers for a track over its limit. */
+internal const val TRACK_TOO_LARGE = 413

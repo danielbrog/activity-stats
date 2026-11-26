@@ -113,8 +113,7 @@ class DownloaderTest {
         }
 
         override suspend fun putActivity(id: String, summary: RideSummary) = error("not used by the download")
-        override suspend fun trackUploadLink(id: String) = error("not used by the download")
-        override suspend fun uploadTrack(link: UploadLink, bytes: ByteArray) = error("not used by the download")
+        override suspend fun uploadTrack(id: String, bytes: ByteArray) = error("not used by the download")
     }
 
     private fun downloader(store: DownloadStore, api: FakeApi, cursor: FakeCursor) =

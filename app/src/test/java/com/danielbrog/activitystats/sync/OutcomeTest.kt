@@ -24,7 +24,7 @@ class OutcomeTest {
     }
 
     @Test
-    fun s3RefusingAFreshUploadLinkSkipsTheRide() {
+    fun s3RefusingAFreshDownloadLinkSkipsTheRide() {
         // The link is seconds old, so a 403 is about this file and won't change on retry.
         assertEquals(Outcome.Skip, outcomeOf(403, fromS3 = true))
         assertEquals(Outcome.Retry, outcomeOf(503, fromS3 = true))

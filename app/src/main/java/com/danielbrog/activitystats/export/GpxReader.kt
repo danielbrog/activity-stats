@@ -204,7 +204,8 @@ object GpxReader {
             val parent = path.elementAtOrNull(path.size - 2)
             val value = text.toString()
             when (localName) {
-                "ele" -> if (parent == "trkpt") ele = value.trim().toDoubleOrNull()
+                // toDoubleOrNull reads "NaN" and "Infinity" as numbers; a track can't hold them.
+                "ele" -> if (parent == "trkpt") ele = value.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
                 "time" -> if (parent == "trkpt") time = parseTime(value)
                 "name" -> when (parent) {
                     "metadata", "gpx" -> if (metadataName == null) metadataName = value

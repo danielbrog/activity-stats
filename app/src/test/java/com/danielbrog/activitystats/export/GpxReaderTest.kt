@@ -58,6 +58,24 @@ class GpxReaderTest {
     }
 
     @Test
+    fun anElevationThatIsNotANumberIsLeftOut() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+              <trk><trkseg>
+                <trkpt lat="43.65" lon="-79.38"><ele>NaN</ele><time>2026-11-07T14:00:00Z</time></trkpt>
+                <trkpt lat="43.651" lon="-79.38"><ele>Infinity</ele><time>2026-11-07T14:00:01Z</time></trkpt>
+                <trkpt lat="43.652" lon="-79.38"><ele>101.5</ele><time>2026-11-07T14:00:02Z</time></trkpt>
+              </trkseg></trk>
+            </gpx>
+        """.trimIndent()
+        val points = read(xml).points
+        assertNull(points[0].elevation)
+        assertNull(points[1].elevation)
+        assertEquals(101.5, points[2].elevation!!, 1e-9)
+    }
+
+    @Test
     fun readsNameAndTypeAndIgnoresExtensions() {
         val track = read(garmin)
         assertEquals("Hill reps", track.name)

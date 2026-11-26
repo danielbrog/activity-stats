@@ -49,7 +49,11 @@ class UploaderTest {
             }
             .sortedBy { it.startedAt }
 
-        override suspend fun pointsFor(id: String) = listOf(GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept))
+        /** How many fixes each ride's track has. */
+        var pointCount = 1
+
+        override suspend fun pointsFor(id: String) =
+            (1..pointCount).map { GpsData(it, 1_000L * it, 43.65, -79.38, 5f, 5f, FixStatus.Kept) }
 
         override suspend fun markTrackUploaded(id: String) {
             rides[id] = rides.getValue(id).copy(trackUploaded = true)
@@ -90,7 +94,7 @@ class UploaderTest {
         val uploaded = mutableMapOf<String, ByteArray>()
         var answers: (String) -> PutResult = { PutResult.Applied }
         var failOn: String? = null
-        var rejectLinkFor: String? = null
+        var rejectTrackFor: String? = null
         var beforeAnswer: (String) -> Unit = {}
         var badReplyFor: String? = null
 
@@ -102,15 +106,9 @@ class UploaderTest {
             return answers(id)
         }
 
-        override suspend fun trackUploadLink(id: String): UploadLink {
-            calls += "link $id"
-            if (rejectLinkFor == id) throw RejectedException(400)
-            return UploadLink("https://example.test/$id", emptyMap())
-        }
-
-        override suspend fun uploadTrack(link: UploadLink, bytes: ByteArray) {
-            val id = link.url.substringAfterLast('/')
+        override suspend fun uploadTrack(id: String, bytes: ByteArray) {
             calls += "track $id"
+            if (rejectTrackFor == id) throw RejectedException(400)
             if (failOn == "track $id") throw IOException("offline")
             uploaded[id] = bytes
         }
@@ -121,8 +119,12 @@ class UploaderTest {
         override suspend fun downloadTrack(url: String) = error("not used by the upload")
     }
 
-    private fun run(store: FakeStore, api: FakeApi, stillSignedIn: () -> Boolean = { true }) =
-        runBlocking { Uploader(store, api).uploadPending(user, stillSignedIn) }
+    private fun run(
+        store: FakeStore,
+        api: FakeApi,
+        stillSignedIn: () -> Boolean = { true },
+        maxTrackBytes: Int = TrackFile.MAX_BYTES,
+    ) = runBlocking { Uploader(store, api, maxTrackBytes).uploadPending(user, stillSignedIn) }
 
     @Test
     fun aNewRideUploadsItsTrackBeforeItsSummary() {
@@ -130,7 +132,7 @@ class UploaderTest {
         val api = FakeApi()
         val report = run(store, api)
 
-        assertEquals(listOf("link a", "track a", "summary a"), api.calls)
+        assertEquals(listOf("track a", "summary a"), api.calls)
         assertEquals(1, TrackFile.decode(api.uploaded.getValue("a")).size)
         assertEquals(SyncState.SYNCED, store.state("a"))
         assertTrue(store.rides.getValue("a").trackUploaded)
@@ -271,7 +273,7 @@ class UploaderTest {
                 listOf(ride("a", startedAt = 1_000L), ride("b", startedAt = 2_000L), ride("c", startedAt = 3_000L)),
             )
         val api = FakeApi().apply {
-            rejectLinkFor = "a"
+            rejectTrackFor = "a"
             answers = { id -> if (id == "b") PutResult.Rejected(400) else PutResult.Applied }
         }
         val report = run(store, api)
@@ -336,5 +338,41 @@ class UploaderTest {
             api,
         )
         assertEquals(listOf("summary old", "summary new"), api.calls)
+    }
+
+    @Test
+    fun aTrackTooLargeIsNeverSentAndDoesNotStopTheOthers() {
+        // "b" already has its track up, so only its summary goes.
+        val store =
+            FakeStore(listOf(ride("big", startedAt = 1_000L), ride("b", startedAt = 2_000L, trackUploaded = true)))
+        val api = FakeApi()
+        val oneFix = TrackFile.encode(listOf(GpsData(1, 1_000L, 43.65, -79.38, 5f, 5f, FixStatus.Kept))).size
+        val report = run(store, api, maxTrackBytes = oneFix - 1) // so "big"'s track is over the limit
+
+        assertEquals(listOf("big"), report.rejected)
+        assertEquals(SyncState.FAILED, store.state("big"))
+        // Not sent at all: the server would only refuse it.
+        assertTrue(api.calls.none { it == "track big" || it == "summary big" })
+        assertEquals(listOf("summary b"), api.calls)
+        assertEquals(SyncState.SYNCED, store.state("b"))
+    }
+
+    @Test
+    fun aTrackWithMoreFixesThanTheServerTakesIsNeverSent() {
+        val store = FakeStore(listOf(ride("long")))
+        store.pointCount = TrackFile.MAX_FIXES + 1
+        val api = FakeApi()
+        val report = run(store, api)
+
+        assertEquals(listOf("long"), report.rejected)
+        assertEquals(SyncState.FAILED, store.state("long"))
+        assertTrue(api.calls.isEmpty())
+    }
+
+    @Test
+    fun theTrackLimitsMatchTheServer() {
+        // The backend's MAX_TRACK_BYTES and MAX_FIXES (backend/lambda/track.ts).
+        assertEquals(1_000_000, TrackFile.MAX_BYTES)
+        assertEquals(40_000, TrackFile.MAX_FIXES)
     }
 }
