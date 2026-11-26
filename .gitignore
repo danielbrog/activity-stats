@@ -16,3 +16,9 @@ local.properties
 # JVM crash logs
 hs_err_pid*.log
 replay_pid*.log
+# The release signing key and its passwords (see docs/release.md)
+keystore.properties
+*.jks
+*.keystore
+# Where Android Studio's Generate Signed APK wizard puts its APK and mapping.txt
+/app/release/
