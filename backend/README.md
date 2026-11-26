@@ -76,7 +76,7 @@ The stack lives in **us-east-2** (Ohio), fixed in `bin/app.ts`.
 4. `npx cdk diff`, then `npx cdk deploy`, reviewing the security changes it lists.
 
 The outputs are `ApiUrl`, `UserPoolId`, `AppClientId`, `SignInUrl` and `Region`; the app needs
-three of them (see the main [README](../README.md#running-it-yourself)). None is a secret.
+three of them (see the main [README](../README.md#building-from-source)). None is a secret.
 
 Cost for personal use is close to nothing: everything bills per request, within the free tiers
 and Cognito's Lite plan.

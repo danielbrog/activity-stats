@@ -81,7 +81,6 @@ flowchart LR
 | `export/` | GPX reading and writing |
 
 There's more about the backend in [`backend/README.md`](backend/README.md).
-Making a signed release APK is in [`docs/release.md`](docs/release.md).
 
 ## Problems I had to solve
 
@@ -134,22 +133,17 @@ The Kotlin code is formatted with [ktlint](https://pinterest.github.io/ktlint/),
 ./gradlew ktlintFormat                 # fix what it can
 ```
 
-## Running it yourself
+## Building from source
+
+To just use the app, get the APK from [Releases](https://github.com/danielbrog/activity-stats/releases). To build it:
 
 1. Open the project in Android Studio.
-2. Add a Google Maps API key to `local.properties`. That file isn't in git; [`secrets.defaults.properties`](secrets.defaults.properties) lists the keys it can hold.
-   ```properties
-   MAPS_API_KEY=your-google-maps-key
-   ```
-3. Run it. Recording, history and records all work without a backend. The Account screen just says sign-in isn't set up.
-4. To use sync, deploy the backend (see [`backend/README.md`](backend/README.md)) and add its outputs to `local.properties`:
-   ```properties
-   COGNITO_DOMAIN=https://<prefix>.auth.<region>.amazoncognito.com
-   COGNITO_CLIENT_ID=<AppClientId>
-   SYNC_API_URL=<ApiUrl>
-   ```
+2. Add a Google Maps API key to `local.properties` (git-ignored; [`secrets.defaults.properties`](secrets.defaults.properties) lists the keys it can hold): `MAPS_API_KEY=...`
+3. Run it. Recording, rides, records and segments all work without a backend.
 
-My own account details only live in files git ignores. [`scripts/scan_secrets.py`](scripts/scan_secrets.py) checks each change for them before I push.
+Sync is optional: deploy your own backend ([`backend/README.md`](backend/README.md)) and add its outputs to `local.properties` as `COGNITO_DOMAIN` (`SignInUrl`), `COGNITO_CLIENT_ID` (`AppClientId`) and `SYNC_API_URL` (`ApiUrl`). Signed release builds are in [`docs/release.md`](docs/release.md).
+
+My own account details only live in git-ignored files, and [`scripts/scan_secrets.py`](scripts/scan_secrets.py) checks every change for them before I push.
 
 ## License
 
