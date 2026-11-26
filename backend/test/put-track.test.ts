@@ -1,12 +1,19 @@
 import { event, RIDE_ID, status, USER } from './helpers';
+import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { handler } from '../lambda/put-track';
 import { MAX_FIXES, MAX_TRACK_BYTES, parseTrack } from '../lambda/track';
 
 const s3 = mockClient(S3Client);
-beforeEach(() => s3.reset());
+const db = mockClient(DynamoDBDocumentClient);
+beforeEach(() => {
+  s3.reset();
+  db.reset();
+  db.on(UpdateCommand).resolves({}); // the week has room, unless a test says otherwise
+});
 
 // The handler checks times against the real clock, so the fixes are an hour ago from now.
 const NOW = Date.now();
@@ -149,6 +156,28 @@ describe('PUT /activities/{id}/track', () => {
     expect(input.Key).toBe(`tracks/${USER}/${RIDE_ID}.json.gz`);
     expect(input.ContentType).toBe('application/gzip');
     expect(unzip(input.Body as Uint8Array).fixes).toHaveLength(2);
+  });
+
+  test('a new ride is counted towards the week before its track is stored', async () => {
+    s3.on(PutObjectCommand).resolves({});
+    await upload(zip(track([fix(0)])));
+    const count = db.commandCalls(UpdateCommand)[0].args[0].input;
+    expect(count.TableName).toBe('test-usage');
+    expect(count.Key).toMatchObject({ userId: USER });
+    expect(count.ExpressionAttributeValues![':id']).toBe(RIDE_ID);
+  });
+
+  test('past the weekly limit the track is refused with a 429 and not stored', async () => {
+    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    const result = await upload(zip(track([fix(0)])));
+    expect(status(result)).toBe(429);
+    expect(JSON.parse((result as { body: string }).body)).toMatchObject({ limit: 10 });
+    expect(s3.commandCalls(PutObjectCommand)).toHaveLength(0);
+  });
+
+  test('a file that fails the checks uses up none of the week', async () => {
+    await upload(Buffer.from('just some text'));
+    expect(db.commandCalls(UpdateCommand)).toHaveLength(0);
   });
 
   test('a bad or oversized file is refused and nothing is stored', async () => {

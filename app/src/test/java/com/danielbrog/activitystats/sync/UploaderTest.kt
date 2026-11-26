@@ -95,6 +95,12 @@ class UploaderTest {
         var answers: (String) -> PutResult = { PutResult.Applied }
         var failOn: String? = null
         var rejectTrackFor: String? = null
+
+        /** Rides whose track the server refuses because the week's limit is reached. */
+        var limitedTracks = emptySet<String>()
+
+        /** Rides whose summary the server refuses because the week's limit is reached. */
+        var limitedSummaries = emptySet<String>()
         var beforeAnswer: (String) -> Unit = {}
         var badReplyFor: String? = null
 
@@ -102,6 +108,7 @@ class UploaderTest {
             calls += "summary $id"
             if (failOn == "summary $id") throw IOException("offline")
             if (badReplyFor == id) throw kotlinx.serialization.SerializationException("not JSON")
+            if (id in limitedSummaries) throw RideLimitReachedException(resetsAt = 2_000_000L)
             beforeAnswer(id)
             return answers(id)
         }
@@ -109,6 +116,7 @@ class UploaderTest {
         override suspend fun uploadTrack(id: String, bytes: ByteArray) {
             calls += "track $id"
             if (rejectTrackFor == id) throw RejectedException(400)
+            if (id in limitedTracks) throw RideLimitReachedException(resetsAt = 1_000_000L)
             if (failOn == "track $id") throw IOException("offline")
             uploaded[id] = bytes
         }
@@ -367,6 +375,66 @@ class UploaderTest {
         assertEquals(listOf("long"), report.rejected)
         assertEquals(SyncState.FAILED, store.state("long"))
         assertTrue(api.calls.isEmpty())
+    }
+
+    @Test
+    fun theWeeklyLimitLeavesNewRidesWaitingAndStillSendsEdits() {
+        val store = FakeStore(
+            listOf(
+                ride("new", startedAt = 1_000L),
+                ride("edited", startedAt = 2_000L, trackUploaded = true), // already up: an edit
+                ride("newer", startedAt = 3_000L),
+            ),
+        )
+        val api = FakeApi().apply { limitedTracks = setOf("new") }
+        val report = run(store, api)
+
+        // Waiting, not failed: they go up after the reset.
+        assertEquals(listOf("new", "newer"), report.limited)
+        assertTrue(report.rejected.isEmpty())
+        assertEquals(SyncState.PENDING, store.state("new"))
+        assertEquals(SyncState.PENDING, store.state("newer"))
+        // The edit still goes; the next new ride isn't even tried once the limit is known.
+        assertEquals(listOf("track new", "summary edited"), api.calls)
+        assertEquals(SyncState.SYNCED, store.state("edited"))
+        assertEquals(1, report.synced)
+        assertEquals(1_000_000L, report.limitResetsAt)
+    }
+
+    @Test
+    fun aLimitOnTheSummaryAlsoLeavesTheRideWaiting() {
+        // Its track went up, but the summary is the first the server stores of it.
+        val store = FakeStore(
+            listOf(
+                ride("half", startedAt = 1_000L, trackUploaded = true),
+                ride("next", startedAt = 2_000L),
+            ),
+        )
+        val api = FakeApi().apply { limitedSummaries = setOf("half") }
+        val report = run(store, api)
+
+        assertEquals(listOf("half", "next"), report.limited)
+        assertEquals(SyncState.PENDING, store.state("half"))
+        assertEquals(SyncState.PENDING, store.state("next"))
+        assertEquals(listOf("summary half"), api.calls)
+        assertEquals(2_000_000L, report.limitResetsAt)
+    }
+
+    @Test
+    fun aRideDeletedBeforeItSyncedStillGoesOnceTheLimitIsReached() {
+        val store = FakeStore(
+            listOf(
+                ride("new", startedAt = 1_000L),
+                ride("gone", startedAt = 2_000L, deletedAt = 5_000L),
+            ),
+        )
+        val api = FakeApi().apply { limitedTracks = setOf("new") }
+        val report = run(store, api)
+
+        assertEquals(listOf("new"), report.limited)
+        // Its deletion isn't held back: only a summary goes, and it doesn't count.
+        assertEquals(listOf("track new", "summary gone"), api.calls)
+        assertEquals(SyncState.SYNCED, store.state("gone"))
     }
 
     @Test

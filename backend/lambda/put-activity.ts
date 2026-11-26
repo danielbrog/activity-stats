@@ -2,6 +2,7 @@ import { ConditionalCheckFailedException, DynamoDBClient } from '@aws-sdk/client
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { pathIdOf, ApiEvent, ApiResult, error, json, requireEnv, userIdOf } from './shared';
 import { parseSummary, toApi } from './summary';
+import { claimRideSlot, rideLimitReached } from './usage';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -12,6 +13,11 @@ const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * stored one's updatedAt is not newer than this one's. Sending the same copy twice is
  * harmless. If the stored copy is newer, nothing changes and it comes back with a 409, so
  * the app can take it instead. syncedAt is stamped here, from the server's clock.
+ *
+ * A summary that makes a live ride (none stored yet, or only a deleted copy) counts towards
+ * the week's limit like a track does (see claimRideSlot), so sending summaries alone can't get
+ * round it. Edits to a stored ride aren't counted, and neither is a ride deleted before it
+ * synced: it is only a record that the ride is gone.
  */
 export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   const userId = userIdOf(event);
@@ -22,6 +28,18 @@ export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   if (!parsed.ok) return error(400, parsed.message);
 
   const table = requireEnv('TABLE_NAME');
+  const stored = (
+    await db.send(
+      new GetCommand({ TableName: table, Key: { userId, activityId }, ProjectionExpression: 'activityId, deletedAt' }),
+    )
+  )?.Item;
+  const becomesLive = parsed.value.deletedAt === null && (!stored || stored.deletedAt != null);
+  if (becomesLive) {
+    // Usually already counted when its track came in; counting again is a no-op.
+    const limited = await claimRideSlot(db, requireEnv('USAGE_TABLE_NAME'), userId, activityId);
+    if (limited) return rideLimitReached(limited.resetsAt);
+  }
+
   const syncedAt = Date.now();
   try {
     await db.send(

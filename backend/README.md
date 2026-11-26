@@ -18,9 +18,9 @@ into the APK. The app only needs the five values printed after a deploy (see bel
 
 | Route | What it does |
 |---|---|
-| `PUT /activities/{id}` | Saves a ride summary. Only replaces the stored copy if this one's `updatedAt` isn't older; otherwise returns `409` with the stored copy |
+| `PUT /activities/{id}` | Saves a ride summary. Only replaces the stored copy if this one's `updatedAt` isn't older; otherwise returns `409` with the stored copy. A ride not stored yet counts towards the weekly ride limit (`429` past it) |
 | `GET /activities?since=<ms>&cursor=<c>` | Rides saved after `since` (the largest `syncedAt` from the last pull), 100 per page, deleted ones included |
-| `PUT /activities/{id}/track` | Saves the gzipped track file sent as the body. Checked first: at most 1 MB (`413` over), it must unzip within 8 MB and be the app's track format with sane values (`400` otherwise); a clean copy is stored |
+| `PUT /activities/{id}/track` | Saves the gzipped track file sent as the body. Checked first: at most 1 MB (`413` over), it must unzip within 8 MB and be the app's track format with sane values (`400` otherwise); a clean copy is stored. A new ride counts towards the weekly ride limit: 10 per account per week for now (`429` past it) |
 | `GET /activities/{id}/track` | A link to download the track file, valid for 5 minutes; `404` if not uploaded yet |
 
 ### Security

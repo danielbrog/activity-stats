@@ -1,6 +1,6 @@
 import { body, event, RIDE_ID, status, summary, USER } from './helpers';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { handler } from '../lambda/put-activity';
 
@@ -11,6 +11,49 @@ const put = (data: unknown, id = RIDE_ID) =>
   handler(event({ pathParameters: { id }, body: JSON.stringify(data) }));
 
 describe('PUT /activities/{id}', () => {
+  test('a new ride is counted towards the week', async () => {
+    db.on(GetCommand).resolves({}); // not stored yet
+    db.on(UpdateCommand).resolves({});
+    db.on(PutCommand).resolves({});
+    expect(status(await put(summary()))).toBe(200);
+    const count = db.commandCalls(UpdateCommand)[0].args[0].input;
+    expect(count.TableName).toBe('test-usage');
+    expect(count.ExpressionAttributeValues![':id']).toBe(RIDE_ID);
+  });
+
+  test('past the weekly limit a new ride is refused with a 429 and not saved', async () => {
+    db.on(GetCommand).resolves({});
+    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    const result = await put(summary());
+    expect(status(result)).toBe(429);
+    expect(body(result)).toMatchObject({ error: 'Weekly ride limit reached', limit: 10 });
+    expect(db.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  test('a ride deleted before it synced is not counted, even with the week full', async () => {
+    db.on(GetCommand).resolves({});
+    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    db.on(PutCommand).resolves({});
+    expect(status(await put(summary({ deletedAt: 1_700_000_100_000 })))).toBe(200);
+    expect(db.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
+  test('restoring a ride stored as deleted counts it again', async () => {
+    db.on(GetCommand).resolves({ Item: { activityId: RIDE_ID, deletedAt: 1_700_000_100_000 } });
+    db.on(UpdateCommand).resolves({});
+    db.on(PutCommand).resolves({});
+    expect(status(await put(summary({ deletedAt: null })))).toBe(200);
+    expect(db.commandCalls(UpdateCommand)).toHaveLength(1);
+  });
+
+  test('an edit to a stored ride is not counted, even with the week full', async () => {
+    db.on(GetCommand).resolves({ Item: { activityId: RIDE_ID } });
+    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    db.on(PutCommand).resolves({});
+    expect(status(await put(summary({ title: 'Renamed' })))).toBe(200);
+    expect(db.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
   test('saves the summary under the user from the token, with a server syncedAt', async () => {
     db.on(PutCommand).resolves({});
     const before = Date.now();
@@ -40,7 +83,8 @@ describe('PUT /activities/{id}', () => {
 
     expect(status(result)).toBe(409);
     expect(body(result)).toEqual({ applied: false, current: { id: RIDE_ID, title: 'Renamed', updatedAt: 9 } });
-    expect(db.commandCalls(GetCommand)[0].args[0].input.ConsistentRead).toBe(true);
+    // The read after the failed save (the first read only checks whether the ride is new).
+    expect(db.commandCalls(GetCommand).at(-1)!.args[0].input.ConsistentRead).toBe(true);
   });
 
   test('a failed condition with no stored copy is a server error, not an empty reply', async () => {

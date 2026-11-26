@@ -50,7 +50,14 @@ class Uploader(
      * How a run went: rides now in the cloud, and the ids not sent this time. Those the server
      * clearly refused are marked failed; the rest just wait for the next sync.
      */
-    data class Report(val synced: Int, val rejected: List<String>)
+    data class Report(
+        val synced: Int,
+        val rejected: List<String>,
+        /** New rides left waiting because the week's limit is reached; they go up after it resets. */
+        val limited: List<String> = emptyList(),
+        /** When the server counts again (Monday 00:00 UTC), if the limit was reached; else null. */
+        val limitResetsAt: Long? = null,
+    )
 
     /**
      * Uploads every waiting ride of [userId], oldest first. A ride the server refuses (a 4xx) is
@@ -63,6 +70,8 @@ class Uploader(
     suspend fun uploadPending(userId: String, stillSignedIn: () -> Boolean = { true }): Report {
         var synced = 0
         val rejected = mutableListOf<String>()
+        val limited = mutableListOf<String>()
+        var limitResetsAt: Long? = null
 
         /** Notes a ride not sent; parks it as failed only if the server clearly refused it. */
         suspend fun notSent(ride: ActivityEntity, code: Int?) {
@@ -72,6 +81,13 @@ class Uploader(
 
         for (ride in store.pendingUploads(userId)) {
             if (!stillSignedIn()) break
+            // A live ride whose track isn't up yet is new to the server, so it would count
+            // towards the week too: once the limit is reached, don't try the others this run.
+            // Edits to rides already up, and rides deleted before they synced, still go.
+            if (limited.isNotEmpty() && !ride.trackUploaded && ride.deletedAt == null) {
+                limited += ride.id
+                continue
+            }
             try {
                 if (!ride.trackUploaded && ride.deletedAt == null) {
                     val points = store.pointsFor(ride.id)
@@ -93,6 +109,10 @@ class Uploader(
                     is PutResult.Newer -> if (store.applyCloudCopy(ride.id, result.cloud)) synced++
                     is PutResult.Rejected -> notSent(ride, result.code)
                 }
+            } catch (e: RideLimitReachedException) {
+                // Not refused: it stays waiting, and the first sync after the reset sends it.
+                limited += ride.id
+                limitResetsAt = e.resetsAt
             } catch (e: RejectedException) {
                 notSent(ride, e.code)
             } catch (e: SerializationException) {
@@ -101,7 +121,7 @@ class Uploader(
                 notSent(ride, code = null)
             }
         }
-        return Report(synced, rejected)
+        return Report(synced, rejected, limited, limitResetsAt)
     }
 }
 
