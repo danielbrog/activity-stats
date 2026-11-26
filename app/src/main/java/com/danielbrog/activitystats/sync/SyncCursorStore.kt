@@ -27,12 +27,21 @@ interface SyncCursor {
 private val Context.syncStore: DataStore<Preferences> by preferencesDataStore(name = "sync")
 
 /**
+ * How this app fetches tracks. Raising it reads the ride listing again from 0 once.
+ * 2: through the API, counted per day, instead of a link to S3. An app from before reads the
+ * new reply as a damaged track and skips that ride, so rides it skipped between the backend
+ * update and this app's install are fetched now.
+ */
+internal const val TRACK_DOWNLOAD_VERSION = 2
+
+/**
  * [SyncCursor] in DataStore. The cursor is saved with the account it belongs to, so signing
  * in as someone else starts from 0 and gets all of that account's rides.
  *
- * It is also saved with the track file version this app could read. Rides whose tracks were
- * too new got skipped; once the app is updated to read them, the cursor starts again from 0,
- * so they are fetched. Rides already on the phone just come out as "keep".
+ * It is also saved with the track file version this app could read, and how it fetched them
+ * ([TRACK_DOWNLOAD_VERSION]). Rides whose tracks were too new, or came in a way the app didn't
+ * understand, got skipped; once the app is updated, the cursor starts again from 0, so they
+ * are fetched. Rides already on the phone just come out as "keep".
  */
 class SyncCursorStore(context: Context) : SyncCursor {
 
@@ -40,7 +49,8 @@ class SyncCursorStore(context: Context) : SyncCursor {
 
     override suspend fun get(userId: String): Long {
         val prefs = store.data.first()
-        val readerUpToDate = (prefs[READER] ?: 1) >= TrackFile.VERSION
+        val readerUpToDate = (prefs[READER] ?: 1) >= TrackFile.VERSION &&
+            (prefs[DOWNLOAD] ?: 1) >= TRACK_DOWNLOAD_VERSION
         return if (prefs[USER] == userId && readerUpToDate) prefs[SYNCED_AT] ?: 0L else 0L
     }
 
@@ -63,6 +73,7 @@ class SyncCursorStore(context: Context) : SyncCursor {
             it[USER] = userId
             it[SYNCED_AT] = syncedAt
             it[READER] = TrackFile.VERSION
+            it[DOWNLOAD] = TRACK_DOWNLOAD_VERSION
         }
     }
 
@@ -70,6 +81,7 @@ class SyncCursorStore(context: Context) : SyncCursor {
         val USER = stringPreferencesKey("cursor_user")
         val SYNCED_AT = longPreferencesKey("cursor_synced_at")
         val READER = intPreferencesKey("cursor_track_version")
+        val DOWNLOAD = intPreferencesKey("cursor_download_version")
         val LAST_SYNCED = longPreferencesKey("last_synced_at")
         val LAST_SYNCED_USER = stringPreferencesKey("last_synced_user")
     }

@@ -123,8 +123,7 @@ class UploaderTest {
 
         // The upload never downloads.
         override suspend fun listActivities(since: Long, page: String?) = error("not used by the upload")
-        override suspend fun trackDownloadLink(id: String) = error("not used by the upload")
-        override suspend fun downloadTrack(url: String) = error("not used by the upload")
+        override suspend fun downloadTrack(id: String) = error("not used by the upload")
     }
 
     private fun run(

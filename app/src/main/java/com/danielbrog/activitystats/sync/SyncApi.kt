@@ -8,7 +8,6 @@ import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 /** What happened to a summary sent with `PUT /activities/{id}`. */
 sealed interface PutResult {
@@ -53,11 +52,18 @@ class RejectedException(val code: Int) : Exception("Rejected with HTTP $code")
 class RideLimitReachedException(val resetsAt: Long) : Exception("Weekly ride limit reached")
 
 /**
- * The time the weekly ride limit resets, if [body] is that limit's reply: a 429 with `limit`
- * and `resetsAt`. Null for anything else, like API Gateway's own rate-limit 429, which only
- * means "slow down" and is retried. Plain Kotlin, unit-tested.
+ * This account has downloaded its tracks for the day; the server counts again from
+ * [resetsAt] (the next 00:00 UTC). Not a failure: the download stops and carries on after that.
  */
-internal fun rideLimitResetsAt(code: Int, body: String): Long? {
+class DownloadLimitReachedException(val resetsAt: Long) : Exception("Daily download limit reached")
+
+/**
+ * The time a usage limit (the weekly ride limit, the daily download limit) resets, if [body]
+ * is that limit's reply: a 429 with `limit` and `resetsAt`. Null for anything else, like API
+ * Gateway's own rate-limit 429, which only means "slow down" and is retried. Plain Kotlin,
+ * unit-tested.
+ */
+internal fun limitResetsAt(code: Int, body: String): Long? {
     if (code != 429) return null
     // Neither call suspends, so runCatching can't swallow a coroutine cancellation.
     val reply = runCatching { RideSummary.json.decodeFromString(LimitJson.serializer(), body) }.getOrNull()
@@ -79,13 +85,9 @@ internal enum class Outcome { Ok, Retry, Skip }
 /**
  * Sorts a status code into success, try again later, or give up on this ride. Plain Kotlin,
  * unit-tested, since getting it wrong either drops rides or gets them stuck.
- *
- * [fromS3] is for the track download from S3. Its link is only seconds old (it lasts five
- * minutes), so S3's 403 means S3 refused this file, not that a sign-in expired.
  */
-internal fun outcomeOf(code: Int, fromS3: Boolean = false): Outcome = when {
+internal fun outcomeOf(code: Int): Outcome = when {
     code in 200..299 -> Outcome.Ok
-    code == 403 && fromS3 -> Outcome.Skip
     // Sign-in trouble (a new token is fetched next run), timeouts, rate limits, server errors.
     code == 401 || code == 403 || code == 408 || code == 429 || code >= 500 -> Outcome.Retry
     else -> Outcome.Skip
@@ -112,6 +114,23 @@ internal fun segmentPutResultOf(code: Int, body: String): SegmentPutResult {
     }
 }
 
+/**
+ * What a reply to `GET /activities/{id}/track` means. Plain Kotlin, unit-tested: the file's
+ * bytes, or null if it has none yet (404). Throws [DownloadLimitReachedException] past the
+ * day's limit, an [IOException] for a reply worth retrying (API Gateway's own 429 among them),
+ * and [RejectedException] for a file the server won't send, like one too large (413).
+ */
+internal fun trackReplyOf(code: Int, body: ByteArray): ByteArray? {
+    if (code == 404) return null
+    // Only a 429 is read as text: a track file can be megabytes.
+    if (code == 429) limitResetsAt(code, body.decodeToString())?.let { throw DownloadLimitReachedException(it) }
+    return when (outcomeOf(code)) {
+        Outcome.Ok -> body
+        Outcome.Retry -> throw retryFor(code)
+        Outcome.Skip -> throw RejectedException(code)
+    }
+}
+
 /** The sync API calls the upload and download need. An interface, so tests can use a fake server. */
 interface SyncApi {
     suspend fun putActivity(id: String, summary: RideSummary): PutResult
@@ -128,10 +147,11 @@ interface SyncApi {
      */
     suspend fun listActivities(since: Long, page: String?): CloudPage
 
-    /** A short-lived link to download the ride's track file, or null if it has none yet (404). */
-    suspend fun trackDownloadLink(id: String): String?
-
-    suspend fun downloadTrack(url: String): ByteArray
+    /**
+     * Ride [id]'s gzipped track file, or null if it has none yet (404). Each download counts
+     * towards the day's limit; past it, throws [DownloadLimitReachedException].
+     */
+    suspend fun downloadTrack(id: String): ByteArray?
 }
 
 /** The segment sync calls. Separate from [SyncApi], so the ride tests' fakes don't need them. */
@@ -157,7 +177,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     override suspend fun putActivity(id: String, summary: RideSummary): PutResult {
         val (code, reply) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)
         val body = reply.decodeToString()
-        rideLimitResetsAt(code, body)?.let { throw RideLimitReachedException(it) }
+        limitResetsAt(code, body)?.let { throw RideLimitReachedException(it) }
         if (code == 409) return parseConflict(body)?.let { PutResult.Newer(it) } ?: PutResult.Rejected(code)
         return when (outcomeOf(code)) {
             Outcome.Ok -> PutResult.Applied
@@ -169,7 +189,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     override suspend fun uploadTrack(id: String, bytes: ByteArray) {
         val headers = mapOf("Content-Type" to TrackFile.CONTENT_TYPE)
         val (code, reply) = request("PUT", "$apiUrl/activities/$id/track", bytes, headers)
-        rideLimitResetsAt(code, reply.decodeToString())?.let { throw RideLimitReachedException(it) }
+        limitResetsAt(code, reply.decodeToString())?.let { throw RideLimitReachedException(it) }
         throwUnlessOk(code)
     }
 
@@ -180,18 +200,9 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
         return parsePage(body.decodeToString())
     }
 
-    override suspend fun trackDownloadLink(id: String): String? {
+    override suspend fun downloadTrack(id: String): ByteArray? {
         val (code, body) = request("GET", "$apiUrl/activities/$id/track", null, emptyMap())
-        if (code == 404) return null
-        throwUnlessOk(code)
-        return json.decodeFromString(LinkJson.serializer(), body.decodeToString()).url
-    }
-
-    override suspend fun downloadTrack(url: String): ByteArray {
-        // A link signed for S3: no sign-in token goes with it.
-        val (code, body) = request("GET", url, null, emptyMap(), withToken = false)
-        throwUnlessOk(code, fromS3 = true)
-        return body
+        return trackReplyOf(code, body)
     }
 
     override suspend fun putSegment(id: String, segment: SegmentUpload): SegmentPutResult {
@@ -215,14 +226,13 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
         url: String,
         body: ByteArray?,
         headers: Map<String, String>,
-        withToken: Boolean = true,
     ): Pair<Int, ByteArray> = withContext(Dispatchers.IO) {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS
             connection.requestMethod = method
-            if (withToken) connection.setRequestProperty("Authorization", "Bearer $accessToken")
+            connection.setRequestProperty("Authorization", "Bearer $accessToken")
             headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
             if (body != null) {
                 connection.doOutput = true
@@ -238,20 +248,16 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     }
 
     /** Returns on success; otherwise throws the exception that says whether to retry or skip. */
-    private fun throwUnlessOk(code: Int, fromS3: Boolean = false) {
-        when (outcomeOf(code, fromS3)) {
+    private fun throwUnlessOk(code: Int) {
+        when (outcomeOf(code)) {
             Outcome.Ok -> Unit
             Outcome.Retry -> throw retryFor(code)
             Outcome.Skip -> throw RejectedException(code)
         }
     }
 
-    @Serializable
-    private data class LinkJson(val url: String)
-
     private companion object {
         const val TIMEOUT_MS = 30_000
         val JSON_HEADERS = mapOf("Content-Type" to "application/json")
-        val json = Json { ignoreUnknownKeys = true }
     }
 }

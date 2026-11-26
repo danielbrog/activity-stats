@@ -50,7 +50,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             if (up.rejected.isNotEmpty()) Log.w(TAG, "Server refused rides ${up.rejected}")
             up.limitResetsAt?.let { resetsAt ->
                 Log.i(TAG, "Weekly ride limit reached; ${up.limited.size} rides wait for the reset")
-                // Nothing else may sync before then, so book one for just after it.
+                // Nothing else may sync before then, so book one for just after it. Booked now,
+                // so a download that fails below can't lose it.
                 Sync.requestAfter(app, resetsAt)
             }
 
@@ -64,6 +65,12 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 Log.i(TAG, "Downloaded ${down.downloaded} rides, updated ${down.updated}")
             }
             if (down.skipped.isNotEmpty()) Log.w(TAG, "Couldn't get the tracks of ${down.skipped}")
+            down.limitResetsAt?.let { resetsAt ->
+                Log.i(TAG, "Daily download limit reached; the rest wait for the reset")
+                // Replaces a weekly booking above, safely: the day always resets first, and the
+                // sync then books the week again.
+                Sync.requestAfter(app, resetsAt)
+            }
 
             // Then segments, the same way, within the same time budget.
             val segmentsUp = SegmentUploader(app.segmentRepository, api).uploadPending(session.userId, stillSignedIn)
@@ -83,6 +90,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             app.segmentRepository.awaitSegmentMatching()
             when {
                 down.more || segmentsDown.more -> Sync.request(app)
+                // Not done either, but waiting for the booked sync.
+                down.limitResetsAt != null -> Unit
                 // Only a run that got to the end counts, not one cut short by a sign-out.
                 stillSignedIn() -> cursorStore.setLastSynced(session.userId, System.currentTimeMillis())
             }
@@ -134,9 +143,9 @@ object Sync {
 
     /**
      * Starts a sync at [atMillis] (or as soon as there is a network after it), for rides held
-     * back by the weekly ride limit until it resets. Under its own name, so a sync booked for
-     * days ahead never holds up the normal ones; when it comes, it only asks for a normal sync.
-     * Booking again replaces the earlier booking.
+     * back by a usage limit (weekly rides, daily downloads) until it resets. Under its own name,
+     * so a sync booked for days ahead never holds up the normal ones; when it comes, it only asks
+     * for a normal sync. Booking again replaces the earlier booking.
      */
     fun requestAfter(context: Context, atMillis: Long) {
         // A minute after the reset, so the server's clock has surely passed it.

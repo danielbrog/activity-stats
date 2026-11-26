@@ -5,7 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 
 /**
- * Booked by [Sync.requestAfter] for when the weekly ride limit resets. It doesn't sync itself:
+ * Booked by [Sync.requestAfter] for when a usage limit resets. It doesn't sync itself:
  * it asks for a normal sync, so two syncs never run at once.
  */
 class SyncLaterWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {

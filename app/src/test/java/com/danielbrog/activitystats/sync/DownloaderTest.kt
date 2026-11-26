@@ -6,7 +6,6 @@ import com.danielbrog.activitystats.location.FixStatus
 import com.danielbrog.activitystats.location.GpsData
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -81,7 +80,10 @@ class DownloaderTest {
         val missingTracks = mutableSetOf<String>()
         val brokenTracks = mutableSetOf<String>()
         val refusedTracks = mutableSetOf<String>()
-        val badLinkReplies = mutableSetOf<String>()
+
+        /** After this many more downloads, the day's limit is reached. */
+        var downloadsLeft = Int.MAX_VALUE
+        val downloads = mutableListOf<String>()
         var failListingAt: Int? = null
 
         override suspend fun listActivities(since: Long, page: String?): CloudPage {
@@ -92,14 +94,11 @@ class DownloaderTest {
             return CloudPage(pages[index].filter { it.syncedAt > since }, next)
         }
 
-        override suspend fun trackDownloadLink(id: String): String? {
-            if (id in badLinkReplies) throw SerializationException("not JSON")
-            return if (id in missingTracks) null else "https://example.test/$id"
-        }
-
-        override suspend fun downloadTrack(url: String): ByteArray {
-            val id = url.substringAfterLast('/')
-            if (id in refusedTracks) throw RejectedException(403)
+        override suspend fun downloadTrack(id: String): ByteArray? {
+            if (id in missingTracks) return null
+            if (downloadsLeft-- <= 0) throw DownloadLimitReachedException(resetsAt = LIMIT_RESETS_AT)
+            downloads += id
+            if (id in refusedTracks) throw RejectedException(413)
             return if (id in brokenTracks) {
                 "not gzip".toByteArray()
             } else {
@@ -235,15 +234,57 @@ class DownloaderTest {
     fun aTrackThatCantBeHadSkipsJustThatRide() {
         val store = FakeStore()
         val api = FakeApi(
-            listOf(listOf(cloud("broken", 10), cloud("refused", 20), cloud("badLink", 30), cloud("fine", 40))),
+            listOf(listOf(cloud("broken", 10), cloud("refused", 20), cloud("fine", 30))),
         ).apply {
             brokenTracks += "broken"
             refusedTracks += "refused"
-            badLinkReplies += "badLink"
         }
         val report = run(store, api, FakeCursor())
-        assertEquals(listOf("broken", "refused", "badLink"), report.skipped)
+        assertEquals(listOf("broken", "refused"), report.skipped)
         assertEquals(setOf("fine"), store.rides.keys)
+    }
+
+    @Test
+    fun theDailyDownloadLimitStopsBeforeTheRideItRefusedAndSaysWhenItResets() {
+        val store = FakeStore()
+        val api = FakeApi(listOf(listOf(cloud("a", 10), cloud("b", 20), cloud("c", 30)))).apply { downloadsLeft = 1 }
+        val cursor = FakeCursor()
+        val report = run(store, api, cursor)
+
+        assertEquals(Downloader.Report(1, 0, emptyList(), limitResetsAt = LIMIT_RESETS_AT), report)
+        assertEquals(setOf("a"), store.rides.keys)
+        // Not past b: the first run after the reset fetches it, and c after it.
+        assertEquals(user to 10L, cursor.saved)
+        assertEquals(listOf("a"), api.downloads)
+
+        api.downloadsLeft = Int.MAX_VALUE
+        val next = run(store, api, cursor)
+        assertNull(next.limitResetsAt)
+        assertEquals(setOf("a", "b", "c"), store.rides.keys)
+        assertEquals(user to 30L, cursor.saved)
+    }
+
+    @Test
+    fun aRenameBeforeTheRideTheLimitStoppedAtStillComesDown() {
+        // A rename needs no download, so the limit doesn't hold it back.
+        val phone = ActivityEntity(
+            id = "mine",
+            userId = user,
+            startedAt = 1_000L,
+            endedAt = 2_000L,
+            title = "Old",
+            updatedAt = 5L,
+            syncState = SyncState.SYNCED,
+            trackUploaded = true,
+        )
+        val store = FakeStore(listOf(phone))
+        val api = FakeApi(listOf(listOf(cloud("mine", 10, updatedAt = 8, title = "Renamed"), cloud("new", 20))))
+            .apply { downloadsLeft = 0 }
+        val report = run(store, api, FakeCursor())
+        assertEquals(1, report.updated)
+        assertEquals("Renamed", store.rides.getValue("mine").title)
+        assertEquals(LIMIT_RESETS_AT, report.limitResetsAt)
+        assertFalse("new" in store.rides)
     }
 
     @Test
@@ -354,5 +395,9 @@ class DownloaderTest {
         }
         assertEquals(setOf("a"), store.rides.keys)
         assertNull(store.rides["b"])
+    }
+
+    private companion object {
+        const val LIMIT_RESETS_AT = 1_795_651_200_000L
     }
 }

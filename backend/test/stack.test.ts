@@ -154,12 +154,12 @@ describe('ActivityStatsStack', () => {
     const alarms = Object.values(template.findResources('AWS::CloudWatch::Alarm'));
     expect(alarms.map((a) => a.Properties.AlarmName).sort()).toEqual([
       'ActivityStats-ApiServerErrors',
+      'ActivityStats-GetTrackErrors',
       'ActivityStats-ListActivitiesErrors',
       'ActivityStats-ListSegmentsErrors',
       'ActivityStats-PutActivityErrors',
       'ActivityStats-PutSegmentErrors',
       'ActivityStats-PutTrackErrors',
-      'ActivityStats-TrackDownloadUrlErrors',
     ]);
     for (const a of alarms) {
       const p = a.Properties;
@@ -196,6 +196,20 @@ describe('ActivityStatsStack', () => {
     expect(text).toContain('/tracks/*');
     expect(text).not.toContain('s3:GetObject');
     // Only counting new rides: one update on the Usage table, nothing on any other table.
+    const dynamo = JSON.stringify(text).match(/dynamodb:[A-Za-z]+/g) ?? [];
+    expect([...new Set(dynamo)]).toEqual(['dynamodb:UpdateItem']);
+    expect(text).toContain('Usage');
+  });
+
+  test('the download function can only read track files and count downloads', () => {
+    const policies = Object.values(template.findResources('AWS::IAM::Policy'));
+    const downloadPolicy = policies.find((p) => JSON.stringify(p.Properties.Roles).includes('GetTrack'));
+    expect(downloadPolicy).toBeDefined();
+    const text = JSON.stringify(downloadPolicy!.Properties.PolicyDocument);
+    expect(text).toContain('s3:GetObject');
+    expect(text).toContain('/tracks/*');
+    expect(text).not.toContain('s3:PutObject');
+    expect(text).not.toContain('s3:DeleteObject');
     const dynamo = JSON.stringify(text).match(/dynamodb:[A-Za-z]+/g) ?? [];
     expect([...new Set(dynamo)]).toEqual(['dynamodb:UpdateItem']);
     expect(text).toContain('Usage');

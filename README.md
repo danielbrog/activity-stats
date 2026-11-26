@@ -50,11 +50,10 @@ flowchart LR
         Cognito["Cognito"]
         API["API Gateway"] --> Lambda["Lambda"]
         Lambda --> Dynamo[("DynamoDB")]
-        Lambda -. upload/download links .-> S3[("S3")]
+        Lambda --> S3[("S3")]
     end
     VM -. sign in .-> Cognito
-    Worker -- "ride summaries" --> API
-    Worker -- "GPS tracks" --> S3
+    Worker -- "ride summaries and GPS tracks" --> API
 ```
 
 | Folder | What's in it |
