@@ -189,7 +189,7 @@ export class ActivityStatsStack extends Stack {
 
     const putActivity = fn('PutActivity', 'put-activity.ts', 'Saves a ride summary if it is newer than the stored one');
     const listActivities = fn('ListActivities', 'list-activities.ts', 'Lists rides saved since a given server time');
-    const trackUpload = fn('TrackUploadUrl', 'track-upload-url.ts', 'Hands out a short-lived link to upload a track file');
+    const putTrack = fn('PutTrack', 'put-track.ts', 'Checks an uploaded track file and stores a clean copy');
     const trackDownload = fn('TrackDownloadUrl', 'track-download-url.ts', 'Hands out a short-lived link to download a track file');
     const segmentEnvironment = { SEGMENTS_TABLE_NAME: segments.tableName };
     const putSegment = fn('PutSegment', 'put-segment.ts', 'Saves a personal segment if it is newer than the stored one', segmentEnvironment);
@@ -199,7 +199,7 @@ export class ActivityStatsStack extends Stack {
     // from the verified token.
     table.grantReadWriteData(putActivity);
     table.grantReadData(listActivities);
-    tracks.grantPut(trackUpload, 'tracks/*');
+    tracks.grantPut(putTrack, 'tracks/*');
     tracks.grantRead(trackDownload, 'tracks/*');
     // Narrower than grantReadWriteData / grantReadData: Segments will also hold server-owned
     // review items, so these may only write a segment item and list by the rider's own index.
@@ -228,7 +228,8 @@ export class ActivityStatsStack extends Stack {
       });
     route('/activities/{id}', apigw.HttpMethod.PUT, putActivity);
     route('/activities', apigw.HttpMethod.GET, listActivities);
-    route('/activities/{id}/track-upload', apigw.HttpMethod.POST, trackUpload);
+    // Uploads go through the API, not straight to S3, so every file is checked before it is stored.
+    route('/activities/{id}/track', apigw.HttpMethod.PUT, putTrack);
     route('/activities/{id}/track', apigw.HttpMethod.GET, trackDownload);
     route('/segments/{id}', apigw.HttpMethod.PUT, putSegment);
     route('/segments', apigw.HttpMethod.GET, listSegments);
@@ -286,7 +287,7 @@ export class ActivityStatsStack extends Stack {
     const functions: [NodejsFunction, string][] = [
       [putActivity, 'Saving a ride summary failed'],
       [listActivities, 'Listing changed rides failed'],
-      [trackUpload, 'Making a track upload link failed'],
+      [putTrack, 'Saving a track file failed'],
       [trackDownload, 'Making a track download link failed'],
       [putSegment, 'Saving a segment failed'],
       [listSegments, 'Listing changed segments failed'],

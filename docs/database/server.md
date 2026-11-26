@@ -14,7 +14,7 @@ in the same change as either.
 | Store | Holds | Written by | Read by |
 |---|---|---|---|
 | DynamoDB `Activities` | one item per ride: its summary | `PutActivity` | `ListActivities` |
-| S3 `Tracks` bucket | one file per ride: every GPS fix | the phone, through a short-lived upload link | the phone, through a short-lived download link |
+| S3 `Tracks` bucket | one file per ride: every GPS fix | `PutTrack`, after checking what the phone sends | the phone, through a short-lived download link |
 | DynamoDB `Segments` | personal segments, and (later) their reviews | `PutSegment` | `ListSegments` |
 | DynamoDB `VerifiedSegments` | verified public segments | nothing yet (admin routes later) | nothing yet |
 | DynamoDB `PublicSegmentTiles` | the catalogue, by map tile | nothing yet (admin routes later) | nothing yet |
@@ -100,9 +100,14 @@ Unfinished multipart uploads are cleaned up after a day.
 Names are short because a long ride has tens of thousands of fixes. GPX stays an export format
 only: it carries just the kept points, without accuracy or status.
 
-**Links:** the phone asks `POST /activities/{id}/track-upload` for an upload link and
-`GET /activities/{id}/track` for a download link. Both are presigned S3 links valid for
-5 minutes, for that one object. A ride's track is uploaded once, before its summary, since a
+**Uploads and downloads:** the phone sends the track to `PUT /activities/{id}/track` as the
+request body. The Lambda checks it before anything is stored: at most 1 MB gzipped (about
+7 hours of recording), it must unzip within 8 MB (so a "zip bomb" is refused), and it must
+be this format with every fix sane (position in range, a time no more than a day ahead, a
+known status, at most 40,000 fixes). It then stores a fresh copy built from those fields
+alone, so nothing else can reach the bucket. Downloads use `GET /activities/{id}/track`, a
+presigned S3 link valid for 5 minutes, for that one object. A ride's track is uploaded once,
+before its summary, since a
 finished ride's points never change; a phone that downloads a ride without its track yet skips
 it and tries again later.
 
@@ -166,7 +171,7 @@ yet**; only the admin routes will be able to write them.
 |---|---|---|---|---|
 | `PutActivity` | `PUT /activities/{id}` | read, write | — | — |
 | `ListActivities` | `GET /activities` | read | — | — |
-| `TrackUploadUrl` | `POST /activities/{id}/track-upload` | — | put, under `tracks/*` | — |
+| `PutTrack` | `PUT /activities/{id}/track` | — | put, under `tracks/*` | — |
 | `TrackDownloadUrl` | `GET /activities/{id}/track` | — | read, under `tracks/*` | — |
 | `PutSegment` | `PUT /segments/{id}` | — | — | put and get an item only |
 | `ListSegments` | `GET /segments` | — | — | query the `bySyncedAt` index only |

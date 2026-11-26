@@ -12,7 +12,7 @@ const ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
 export const ACTIVITY_TYPES = ['ride', 'run', 'walk'] as const;
 
-/** How long a presigned upload or download link stays valid, in seconds. */
+/** How long a presigned track download link stays valid, in seconds. */
 export const LINK_SECONDS = 300;
 
 export function json(statusCode: number, body: unknown): ApiResult {
