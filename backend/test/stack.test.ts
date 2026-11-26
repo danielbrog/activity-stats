@@ -195,7 +195,24 @@ describe('ActivityStatsStack', () => {
     expect(text).toContain('s3:PutObject');
     expect(text).toContain('/tracks/*');
     expect(text).not.toContain('s3:GetObject');
-    expect(text).not.toContain('dynamodb:');
+    // Only counting new rides: one update on the Usage table, nothing on any other table.
+    const dynamo = JSON.stringify(text).match(/dynamodb:[A-Za-z]+/g) ?? [];
+    expect([...new Set(dynamo)]).toEqual(['dynamodb:UpdateItem']);
+    expect(text).toContain('Usage');
+  });
+
+  test('the Usage table counts rides per account and week and cleans itself up', () => {
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      KeySchema: [
+        { AttributeName: 'userId', KeyType: 'HASH' },
+        { AttributeName: 'period', KeyType: 'RANGE' },
+      ],
+      BillingMode: 'PAY_PER_REQUEST',
+      TimeToLiveSpecification: { AttributeName: 'expiresAt', Enabled: true },
+    });
+    // Its logical id is pinned: renaming it would make a new, empty table and reset every count.
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    expect(tables.filter((id) => /^Usage[0-9A-F]{8}$/.test(id))).toHaveLength(1);
   });
 
   // --- Segments (docs/database/segments.md)

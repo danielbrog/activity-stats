@@ -152,6 +152,18 @@ export class ActivityStatsStack extends Stack {
     keptTable('VerifiedSegments', str('segmentId'));
     keptTable('PublicSegmentTiles', str('tile'), str('segmentId'));
 
+    // --- Usage counts ---
+    // How many new rides each account uploaded in a week: one row per account per week
+    // (RIDES#2026-W48), holding the ride ids. Only counts, so it isn't backed up or kept, and
+    // each row deletes itself two weeks after its week ends (expiresAt, in seconds).
+    const usage = new dynamodb.Table(this, 'Usage', {
+      partitionKey: str('userId'),
+      sortKey: str('period'),
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'expiresAt',
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
     // --- Track files ---
     const tracks = new s3.Bucket(this, 'Tracks', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -187,9 +199,10 @@ export class ActivityStatsStack extends Stack {
         }),
       });
 
-    const putActivity = fn('PutActivity', 'put-activity.ts', 'Saves a ride summary if it is newer than the stored one');
+    const usageEnvironment = { USAGE_TABLE_NAME: usage.tableName };
+    const putActivity = fn('PutActivity', 'put-activity.ts', 'Saves a ride summary if it is newer than the stored one', usageEnvironment);
     const listActivities = fn('ListActivities', 'list-activities.ts', 'Lists rides saved since a given server time');
-    const putTrack = fn('PutTrack', 'put-track.ts', 'Checks an uploaded track file and stores a clean copy');
+    const putTrack = fn('PutTrack', 'put-track.ts', 'Checks an uploaded track file and stores a clean copy', usageEnvironment);
     const trackDownload = fn('TrackDownloadUrl', 'track-download-url.ts', 'Hands out a short-lived link to download a track file');
     const segmentEnvironment = { SEGMENTS_TABLE_NAME: segments.tableName };
     const putSegment = fn('PutSegment', 'put-segment.ts', 'Saves a personal segment if it is newer than the stored one', segmentEnvironment);
@@ -200,6 +213,9 @@ export class ActivityStatsStack extends Stack {
     table.grantReadWriteData(putActivity);
     table.grantReadData(listActivities);
     tracks.grantPut(putTrack, 'tracks/*');
+    // Counting a new ride is one conditional update; neither function may read or delete counts.
+    usage.grant(putTrack, 'dynamodb:UpdateItem');
+    usage.grant(putActivity, 'dynamodb:UpdateItem');
     tracks.grantRead(trackDownload, 'tracks/*');
     // Narrower than grantReadWriteData / grantReadData: Segments will also hold server-owned
     // review items, so these may only write a segment item and list by the rider's own index.

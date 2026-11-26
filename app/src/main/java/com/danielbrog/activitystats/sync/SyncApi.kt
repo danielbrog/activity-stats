@@ -47,6 +47,27 @@ sealed interface SegmentPutResult {
 class RejectedException(val code: Int) : Exception("Rejected with HTTP $code")
 
 /**
+ * This account has uploaded its new rides for the week; the server counts again from
+ * [resetsAt] (Monday 00:00 UTC). Not a failure: the ride waits, and goes up after that.
+ */
+class RideLimitReachedException(val resetsAt: Long) : Exception("Weekly ride limit reached")
+
+/**
+ * The time the weekly ride limit resets, if [body] is that limit's reply: a 429 with `limit`
+ * and `resetsAt`. Null for anything else, like API Gateway's own rate-limit 429, which only
+ * means "slow down" and is retried. Plain Kotlin, unit-tested.
+ */
+internal fun rideLimitResetsAt(code: Int, body: String): Long? {
+    if (code != 429) return null
+    // Neither call suspends, so runCatching can't swallow a coroutine cancellation.
+    val reply = runCatching { RideSummary.json.decodeFromString(LimitJson.serializer(), body) }.getOrNull()
+    return reply?.resetsAt?.takeIf { reply.limit != null }
+}
+
+@Serializable
+private class LimitJson(val limit: Int? = null, val resetsAt: Long? = null)
+
+/**
  * The API didn't accept the sign-in token (a 401). The worker asks for a new token before
  * the next try, rather than retrying with the same one.
  */
@@ -136,6 +157,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     override suspend fun putActivity(id: String, summary: RideSummary): PutResult {
         val (code, reply) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)
         val body = reply.decodeToString()
+        rideLimitResetsAt(code, body)?.let { throw RideLimitReachedException(it) }
         if (code == 409) return parseConflict(body)?.let { PutResult.Newer(it) } ?: PutResult.Rejected(code)
         return when (outcomeOf(code)) {
             Outcome.Ok -> PutResult.Applied
@@ -146,7 +168,8 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
 
     override suspend fun uploadTrack(id: String, bytes: ByteArray) {
         val headers = mapOf("Content-Type" to TrackFile.CONTENT_TYPE)
-        val (code, _) = request("PUT", "$apiUrl/activities/$id/track", bytes, headers)
+        val (code, reply) = request("PUT", "$apiUrl/activities/$id/track", bytes, headers)
+        rideLimitResetsAt(code, reply.decodeToString())?.let { throw RideLimitReachedException(it) }
         throwUnlessOk(code)
     }
 

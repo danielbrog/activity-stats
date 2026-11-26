@@ -1,8 +1,12 @@
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { pathIdOf, ApiEvent, ApiResult, error, json, requireEnv, trackKey, userIdOf } from './shared';
 import { MAX_TRACK_BYTES, parseTrack } from './track';
+import { claimRideSlot, rideLimitReached } from './usage';
 
 const s3 = new S3Client({});
+const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /** The type a stored track file has. */
 export const TRACK_CONTENT_TYPE = 'application/gzip';
@@ -12,6 +16,10 @@ export const TRACK_CONTENT_TYPE = 'application/gzip';
  * the request body; it is checked (see [parseTrack]) and a clean copy is stored in the
  * signed-in user's own folder. Replaces the old direct upload to S3, whose files nothing
  * checked: any content, any size.
+ *
+ * A new ride's track comes before its summary, so this is where a ride is usually counted
+ * towards the week's [MAX_RIDES_PER_WEEK]; past it the reply is a 429 and nothing is stored.
+ * Only a track that passes the checks is counted, and the same ride never counts twice.
  */
 export const handler = async (event: ApiEvent): Promise<ApiResult> => {
   const userId = userIdOf(event);
@@ -27,6 +35,9 @@ export const handler = async (event: ApiEvent): Promise<ApiResult> => {
 
   const parsed = parseTrack(Buffer.from(body, 'base64'));
   if (!parsed.ok) return error(parsed.status, parsed.message);
+
+  const limited = await claimRideSlot(db, requireEnv('USAGE_TABLE_NAME'), userId, activityId);
+  if (limited) return rideLimitReached(limited.resetsAt);
 
   await s3.send(
     new PutObjectCommand({

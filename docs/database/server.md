@@ -18,6 +18,7 @@ in the same change as either.
 | DynamoDB `Segments` | personal segments, and (later) their reviews | `PutSegment` | `ListSegments` |
 | DynamoDB `VerifiedSegments` | verified public segments | nothing yet (admin routes later) | nothing yet |
 | DynamoDB `PublicSegmentTiles` | the catalogue, by map tile | nothing yet (admin routes later) | nothing yet |
+| DynamoDB `Usage` | how many new rides each account uploaded each week | `PutTrack`, `PutActivity` | the same two (a condition on the update) |
 
 All requests go through one HTTP API with a Cognito sign-in check. Each Lambda takes the user
 from the verified token, never from the request, so a phone can only ever touch its own
@@ -165,16 +166,42 @@ Created empty, with the same backups and protection, for the review and catalogu
 fields are in [segments.md](segments.md#server-dynamodb). **No function can read or write them
 yet**; only the admin routes will be able to write them.
 
+## DynamoDB `Usage`
+
+On-demand. Only counts, so it isn't backed up or kept if the stack is removed.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `userId` (partition) | S | the account (`sub`) |
+| `period` (sort) | S | the week: `RIDES#2026-W48`, an ISO week, Monday to Sunday UTC |
+
+| Attribute | Type | Meaning |
+|---|---|---|
+| `rides` | SS | the ids of the new rides counted that week |
+| `expiresAt` | N | two weeks after the week ends, **in seconds**: DynamoDB deletes the row itself then |
+
+**The weekly ride limit:** a new ride is counted the first time its track (`PutTrack`) or its
+summary (`PutActivity`, only when no copy is stored yet) arrives. Counting is one conditional
+update: add the ride's id to the week's set if the set holds fewer than `MAX_RIDES_PER_WEEK`
+(10 for now, in `lambda/usage.ts`) ids or already holds this one. So a retry never counts
+twice, two uploads at once can't both take the last place, and edits, deletes and restores of
+stored rides never count. Past the limit the reply is `429` with
+`{"error":"Weekly ride limit reached","limit":10,"resetsAt":<next Monday 00:00 UTC, ms>}`, and
+nothing is stored; the `limit` field tells it apart from API Gateway's own rate-limit `429`.
+A ride deleted before it synced never counts. Known limits, to settle before raising the limit:
+a backlog claimed at sign-in goes up 10 a week, oldest first; and a ride whose track and
+summary first arrive in different weeks counts in both.
+
 ## Who may touch what
 
-| Lambda | Route | `Activities` | `Tracks` | `Segments` |
-|---|---|---|---|---|
-| `PutActivity` | `PUT /activities/{id}` | read, write | — | — |
-| `ListActivities` | `GET /activities` | read | — | — |
-| `PutTrack` | `PUT /activities/{id}/track` | — | put, under `tracks/*` | — |
-| `TrackDownloadUrl` | `GET /activities/{id}/track` | — | read, under `tracks/*` | — |
-| `PutSegment` | `PUT /segments/{id}` | — | — | put and get an item only |
-| `ListSegments` | `GET /segments` | — | — | query the `bySyncedAt` index only |
+| Lambda | Route | `Activities` | `Tracks` | `Segments` | `Usage` |
+|---|---|---|---|---|---|
+| `PutActivity` | `PUT /activities/{id}` | read, write | — | — | update only |
+| `ListActivities` | `GET /activities` | read | — | — | — |
+| `PutTrack` | `PUT /activities/{id}/track` | — | put, under `tracks/*` | — | update only |
+| `TrackDownloadUrl` | `GET /activities/{id}/track` | — | read, under `tracks/*` | — | — |
+| `PutSegment` | `PUT /segments/{id}` | — | — | put and get an item only | — |
+| `ListSegments` | `GET /segments` | — | — | query the `bySyncedAt` index only | — |
 
 Each Lambda gets only these permissions in CDK, and checks the user from the token itself.
 The segment functions are narrower than the ride ones (no delete, update or scan, and no access

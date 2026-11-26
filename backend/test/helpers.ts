@@ -3,6 +3,7 @@ import type { ApiEvent } from '../lambda/shared';
 process.env.TABLE_NAME = 'test-table';
 process.env.BUCKET_NAME = 'test-bucket';
 process.env.SEGMENTS_TABLE_NAME = 'test-segments';
+process.env.USAGE_TABLE_NAME = 'test-usage';
 process.env.AWS_REGION = 'us-east-1';
 // Presigning only needs credentials to sign with; these never reach AWS.
 process.env.AWS_ACCESS_KEY_ID = 'test-access-key';

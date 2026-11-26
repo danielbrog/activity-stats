@@ -48,6 +48,11 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val up = Uploader(app.activityRepository, api).uploadPending(session.userId, stillSignedIn)
             if (up.synced > 0) Log.i(TAG, "Uploaded ${up.synced} rides")
             if (up.rejected.isNotEmpty()) Log.w(TAG, "Server refused rides ${up.rejected}")
+            up.limitResetsAt?.let { resetsAt ->
+                Log.i(TAG, "Weekly ride limit reached; ${up.limited.size} rides wait for the reset")
+                // Nothing else may sync before then, so book one for just after it.
+                Sync.requestAfter(app, resetsAt)
+            }
 
             // A first restore can be long: stop well inside WorkManager's 10 minutes and queue
             // the rest, rather than be stopped and use up a retry.
@@ -126,6 +131,23 @@ object Sync {
     fun running(context: Context): Flow<Boolean> =
         WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WORK_NAME)
             .map { infos -> infos.any { it.state == WorkInfo.State.RUNNING } }
+
+    /**
+     * Starts a sync at [atMillis] (or as soon as there is a network after it), for rides held
+     * back by the weekly ride limit until it resets. Under its own name, so a sync booked for
+     * days ahead never holds up the normal ones; when it comes, it only asks for a normal sync.
+     * Booking again replaces the earlier booking.
+     */
+    fun requestAfter(context: Context, atMillis: Long) {
+        // A minute after the reset, so the server's clock has surely passed it.
+        val delayMs = (atMillis - System.currentTimeMillis() + 60_000L).coerceAtLeast(0L)
+        val request = OneTimeWorkRequestBuilder<SyncLaterWorker>()
+            .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(LATER_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    private const val LATER_WORK_NAME = "sync-after-limit"
 
     /**
      * Queues a sync for as soon as there is a network. Only one runs at a time. By default

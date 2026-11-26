@@ -32,6 +32,17 @@ class OutcomeTest {
     }
 
     @Test
+    fun theWeeklyLimitReplyIsToldApartFromARateLimit() {
+        val limit = """{"error":"Weekly ride limit reached","limit":10,"resetsAt":1795996800000}"""
+        assertEquals(1_795_996_800_000L, rideLimitResetsAt(429, limit))
+        // API Gateway's own rate limit: also a 429, but only "slow down", so it is retried.
+        assertNull(rideLimitResetsAt(429, """{"message":"Too Many Requests"}"""))
+        assertNull(rideLimitResetsAt(429, "<html>busy</html>"))
+        assertNull(rideLimitResetsAt(400, limit))
+        assertEquals(Outcome.Retry, outcomeOf(429))
+    }
+
+    @Test
     fun aConflictReplyThatIsNotJsonGivesNoCopy() {
         assertNull(parseConflict("<html>Bad gateway</html>"))
     }
