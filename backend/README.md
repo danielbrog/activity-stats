@@ -10,9 +10,11 @@ into the APK. The app only needs the five values printed after a deploy (see bel
 |---|---|---|
 | Accounts | Cognito user pool | Email and password, on Cognito's hosted sign-in page |
 | Ride summaries | DynamoDB table `userId` + `activityId` | Index `bySyncedAt` for "what changed since my last sync" |
+| Segments | DynamoDB table `userId` + `sk` | Each rider's own segments (`SEG#<id>`); two more tables are reserved for verified public segments, unused so far |
+| Usage counts | DynamoDB table `userId` + `period` | New rides per week, track downloads and edits per day; rows delete themselves two weeks later |
 | Track points | Private S3 bucket | One gzipped file per ride at `tracks/{userId}/{activityId}.json.gz` |
 | API | API Gateway HTTP API | Every route needs a Cognito token; throttled to 20 requests/s |
-| Logic | 4 Lambda functions | Node 22 on ARM, TypeScript |
+| Logic | 6 Lambda functions | Node 22 on ARM, TypeScript |
 
 ### API
 
@@ -22,6 +24,8 @@ into the APK. The app only needs the five values printed after a deploy (see bel
 | `GET /activities?since=<ms>&cursor=<c>` | Rides saved after `since` (the largest `syncedAt` from the last pull), 100 per page, deleted ones included |
 | `PUT /activities/{id}/track` | Saves the gzipped track file sent as the body. Checked first: at most 1 MB (`413` over), it must unzip within 8 MB and be the app's track format with sane values (`400` otherwise); a clean copy is stored. A new ride counts towards the weekly ride limit: 10 per account per week for now (`429` past it) |
 | `GET /activities/{id}/track` | The gzipped track file itself; `404` if not uploaded yet. Counts towards the daily download limit: 500 per account per UTC day for now (`429` past it) |
+| `PUT /segments/{id}` | Saves a personal segment, newer copy wins as for rides (`409` with the stored copy otherwise). Its line and sport never change (`400` with the stored copy). Every save counts towards the daily edit limit (`429` past it) |
+| `GET /segments?since=<ms>&cursor=<c>` | Segments (and, later, their reviews) saved after `since`, 100 per page, deleted ones included |
 
 ### Security
 
@@ -31,6 +35,9 @@ into the APK. The app only needs the five values printed after a deploy (see bel
   own user's folder.
 - Each function's role allows only what it needs. For example, the upload function can only
   write to `tracks/*`.
+- Each account has usage limits (new rides per week, track downloads and edits per day), in
+  [`lambda/usage.ts`](lambda/usage.ts). Every limit reply is a `429` naming its `kind`, `limit`
+  and `resetsAt`, so the app can tell it from API Gateway's own rate limit.
 - The user pool, table and bucket are **kept if the stack is deleted**, and the pool and
   table have deletion protection, so `cdk destroy` can't lose accounts or rides.
 
@@ -41,7 +48,7 @@ first sends a confirmation email; nothing arrives until its link is clicked.
 
 | Alarm | Fires when |
 |---|---|
-| `ActivityStats-PutActivityErrors`, `-ListActivitiesErrors`, `-PutTrackErrors`, `-GetTrackErrors` | That function fails at least once in 5 minutes |
+| `ActivityStats-PutActivityErrors`, `-ListActivitiesErrors`, `-PutTrackErrors`, `-GetTrackErrors`, `-PutSegmentErrors`, `-ListSegmentsErrors` | That function fails at least once in 5 minutes |
 | `ActivityStats-ApiServerErrors` | The API returns 5 or more server errors (5xx) in 5 minutes |
 | Budget `ActivityStats-monthly` | The whole account's spend this month passes $5, or is forecast to |
 
