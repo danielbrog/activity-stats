@@ -1,15 +1,12 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { pathIdOf, ApiEvent, ApiResult, error, json, requireEnv, trackKey, userIdOf } from './shared';
+import { pathIdOf, ApiEvent, ApiResult, error, json, requireEnv, TRACK_CONTENT_TYPE, trackKey, userIdOf } from './shared';
 import { MAX_TRACK_BYTES, parseTrack } from './track';
 import { claimRideSlot, rideLimitReached } from './usage';
 
 const s3 = new S3Client({});
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-
-/** The type a stored track file has. */
-export const TRACK_CONTENT_TYPE = 'application/gzip';
 
 /**
  * PUT /activities/{id}/track: saves the ride's track file. The app sends the gzipped file as

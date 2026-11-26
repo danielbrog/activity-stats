@@ -14,7 +14,7 @@ in the same change as either.
 | Store | Holds | Written by | Read by |
 |---|---|---|---|
 | DynamoDB `Activities` | one item per ride: its summary | `PutActivity` | `ListActivities` |
-| S3 `Tracks` bucket | one file per ride: every GPS fix | `PutTrack`, after checking what the phone sends | the phone, through a short-lived download link |
+| S3 `Tracks` bucket | one file per ride: every GPS fix | `PutTrack`, after checking what the phone sends | the phone, through `GetTrack` (counted per day) |
 | DynamoDB `Segments` | personal segments, and (later) their reviews | `PutSegment` | `ListSegments` |
 | DynamoDB `VerifiedSegments` | verified public segments | nothing yet (admin routes later) | nothing yet |
 | DynamoDB `PublicSegmentTiles` | the catalogue, by map tile | nothing yet (admin routes later) | nothing yet |
@@ -106,8 +106,9 @@ request body. The Lambda checks it before anything is stored: at most 1 MB gzipp
 7 hours of recording), it must unzip within 8 MB (so a "zip bomb" is refused), and it must
 be this format with every fix sane (position in range, a time no more than a day ahead, a
 known status, at most 40,000 fixes). It then stores a fresh copy built from those fields
-alone, so nothing else can reach the bucket. Downloads use `GET /activities/{id}/track`, a
-presigned S3 link valid for 5 minutes, for that one object. A ride's track is uploaded once,
+alone, so nothing else can reach the bucket. Downloads use `GET /activities/{id}/track`,
+which returns the file itself through the API (not a link to S3), so each download can be
+counted towards the daily download limit (see `Usage`). A ride's track is uploaded once,
 before its summary, since a
 finished ride's points never change; a phone that downloads a ride without its track yet skips
 it and tries again later.
@@ -173,12 +174,13 @@ On-demand. Only counts, so it isn't backed up or kept if the stack is removed.
 | Key | Type | Meaning |
 |---|---|---|
 | `userId` (partition) | S | the account (`sub`) |
-| `period` (sort) | S | the week: `RIDES#2026-W48`, an ISO week, Monday to Sunday UTC |
+| `period` (sort) | S | the week, `RIDES#2026-W48` (an ISO week, Monday to Sunday UTC), or the day, `DOWNLOADS#2026-11-26` (UTC) |
 
 | Attribute | Type | Meaning |
 |---|---|---|
-| `rides` | SS | the ids of the new rides counted that week |
-| `expiresAt` | N | two weeks after the week ends, **in seconds**: DynamoDB deletes the row itself then |
+| `rides` | SS | on a week's row: the ids of the new rides counted that week |
+| `downloads` | N | on a day's row: the track downloads that day |
+| `expiresAt` | N | two weeks after the week or day ends, **in seconds**: DynamoDB deletes the row itself then |
 
 **The weekly ride limit:** a new ride is counted the first time its track (`PutTrack`) or its
 summary (`PutActivity`, only when no copy is stored yet) arrives. Counting is one conditional
@@ -192,6 +194,15 @@ A ride deleted before it synced never counts. Known limits, to settle before rai
 a backlog claimed at sign-in goes up 10 a week, oldest first; and a ride whose track and
 summary first arrive in different weeks counts in both.
 
+**The daily download limit:** each track download (`GetTrack`) adds one to the day's
+`downloads`, in one conditional update that only succeeds while it is under
+`MAX_DOWNLOADS_PER_DAY` (500 for now). A file not uploaded yet (`404`) isn't counted; the same
+track downloaded twice counts twice. The count comes before the file is read, so a download
+past the limit costs no file read. Past the limit the reply is `429` with
+`{"error":"Daily download limit reached","limit":500,"resetsAt":<next 00:00 UTC, ms>}`. The
+phone stops downloading until then and books a sync for just after it; the rides it hasn't
+fetched stay in the listing, so the next run picks them up.
+
 ## Who may touch what
 
 | Lambda | Route | `Activities` | `Tracks` | `Segments` | `Usage` |
@@ -199,7 +210,7 @@ summary first arrive in different weeks counts in both.
 | `PutActivity` | `PUT /activities/{id}` | read, write | — | — | update only |
 | `ListActivities` | `GET /activities` | read | — | — | — |
 | `PutTrack` | `PUT /activities/{id}/track` | — | put, under `tracks/*` | — | update only |
-| `TrackDownloadUrl` | `GET /activities/{id}/track` | — | read, under `tracks/*` | — | — |
+| `GetTrack` | `GET /activities/{id}/track` | — | read, under `tracks/*` | — | update only |
 | `PutSegment` | `PUT /segments/{id}` | — | — | put and get an item only | — |
 | `ListSegments` | `GET /segments` | — | — | query the `bySyncedAt` index only | — |
 

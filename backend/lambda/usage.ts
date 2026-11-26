@@ -78,3 +78,57 @@ export async function claimRideSlot(
  */
 export const rideLimitReached = (resetsAt: number): ApiResult =>
   json(429, { error: 'Weekly ride limit reached', limit: MAX_RIDES_PER_WEEK, resetsAt });
+
+/**
+ * The most track downloads one account may make in a UTC day. A restore onto a new phone
+ * downloads every ride once, so this is also the most rides a restore brings down in a day;
+ * the rest follow the next day. A placeholder for testing, like [MAX_RIDES_PER_WEEK].
+ */
+export const MAX_DOWNLOADS_PER_DAY = 500;
+
+/** How long a day's count is kept after the day ends, before DynamoDB deletes it itself. */
+const KEEP_AFTER_DAY_MS = 14 * DAY_MS;
+
+/** The UTC day [now] falls in. [key] names its row (`DOWNLOADS#2026-11-26`). */
+export function dayOf(now: number): { key: string; startsAt: number; resetsAt: number } {
+  const startsAt = Math.floor(now / DAY_MS) * DAY_MS;
+  return { key: `DOWNLOADS#${new Date(startsAt).toISOString().slice(0, 10)}`, startsAt, resetsAt: startsAt + DAY_MS };
+}
+
+/**
+ * Counts one track download towards [userId]'s downloads today. One conditional update, so
+ * two downloads at once can't both take the last place. Unlike rides, the same track
+ * downloaded twice counts twice: each download costs the same. Null when counted; otherwise
+ * the time the count resets (the next 00:00 UTC).
+ */
+export async function claimDownload(
+  db: DynamoDBDocumentClient,
+  table: string,
+  userId: string,
+  now = Date.now(),
+): Promise<{ resetsAt: number } | null> {
+  const day = dayOf(now);
+  try {
+    await db.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: { userId, period: day.key },
+        UpdateExpression: 'ADD downloads :one SET expiresAt = :expiresAt',
+        ConditionExpression: 'attribute_not_exists(downloads) OR downloads < :max',
+        ExpressionAttributeValues: {
+          ':one': 1,
+          ':max': MAX_DOWNLOADS_PER_DAY,
+          ':expiresAt': Math.floor((day.resetsAt + KEEP_AFTER_DAY_MS) / 1000),
+        },
+      }),
+    );
+    return null;
+  } catch (e) {
+    if (e instanceof ConditionalCheckFailedException) return { resetsAt: day.resetsAt };
+    throw e;
+  }
+}
+
+/** The reply when today's downloads are used up; like [rideLimitReached], with its own [limit]. */
+export const downloadLimitReached = (resetsAt: number): ApiResult =>
+  json(429, { error: 'Daily download limit reached', limit: MAX_DOWNLOADS_PER_DAY, resetsAt });

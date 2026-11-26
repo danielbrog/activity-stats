@@ -1,7 +1,10 @@
 package com.danielbrog.activitystats.sync
 
+import java.io.IOException
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 /** Which replies are retried and which skip the ride: wrong either way and rides get stuck or dropped. */
@@ -24,22 +27,34 @@ class OutcomeTest {
     }
 
     @Test
-    fun s3RefusingAFreshDownloadLinkSkipsTheRide() {
-        // The link is seconds old, so a 403 is about this file and won't change on retry.
-        assertEquals(Outcome.Skip, outcomeOf(403, fromS3 = true))
-        assertEquals(Outcome.Retry, outcomeOf(503, fromS3 = true))
-        assertEquals(Outcome.Ok, outcomeOf(200, fromS3 = true))
+    fun aUsageLimitReplyIsToldApartFromARateLimit() {
+        val rides = """{"error":"Weekly ride limit reached","limit":10,"resetsAt":1795996800000}"""
+        assertEquals(1_795_996_800_000L, limitResetsAt(429, rides))
+        val downloads = """{"error":"Daily download limit reached","limit":500,"resetsAt":1795651200000}"""
+        assertEquals(1_795_651_200_000L, limitResetsAt(429, downloads))
+        // API Gateway's own rate limit: also a 429, but only "slow down", so it is retried.
+        assertNull(limitResetsAt(429, """{"message":"Too Many Requests"}"""))
+        assertNull(limitResetsAt(429, "<html>busy</html>"))
+        assertNull(limitResetsAt(400, rides))
+        assertEquals(Outcome.Retry, outcomeOf(429))
     }
 
     @Test
-    fun theWeeklyLimitReplyIsToldApartFromARateLimit() {
-        val limit = """{"error":"Weekly ride limit reached","limit":10,"resetsAt":1795996800000}"""
-        assertEquals(1_795_996_800_000L, rideLimitResetsAt(429, limit))
-        // API Gateway's own rate limit: also a 429, but only "slow down", so it is retried.
-        assertNull(rideLimitResetsAt(429, """{"message":"Too Many Requests"}"""))
-        assertNull(rideLimitResetsAt(429, "<html>busy</html>"))
-        assertNull(rideLimitResetsAt(400, limit))
-        assertEquals(Outcome.Retry, outcomeOf(429))
+    fun aTrackReplyIsTheFileOrSaysWhyNot() {
+        val file = byteArrayOf(0x1f, 0x8b.toByte(), 8)
+        assertArrayEquals(file, trackReplyOf(200, file))
+        // Not uploaded yet.
+        assertNull(trackReplyOf(404, ByteArray(0)))
+        // The day's downloads used up: wait for the reset.
+        val limit = """{"error":"Daily download limit reached","limit":500,"resetsAt":1795651200000}"""
+        val limited = assertThrows(DownloadLimitReachedException::class.java) { trackReplyOf(429, limit.toByteArray()) }
+        assertEquals(1_795_651_200_000L, limited.resetsAt)
+        // API Gateway's own rate limit and server trouble: retried.
+        assertThrows(IOException::class.java) { trackReplyOf(429, """{"message":"Too Many Requests"}""".toByteArray()) }
+        assertThrows(IOException::class.java) { trackReplyOf(503, ByteArray(0)) }
+        assertThrows(SignInRejectedException::class.java) { trackReplyOf(401, ByteArray(0)) }
+        // Too large to send: that ride is skipped.
+        assertEquals(413, assertThrows(RejectedException::class.java) { trackReplyOf(413, ByteArray(0)) }.code)
     }
 
     @Test

@@ -21,14 +21,14 @@ into the APK. The app only needs the five values printed after a deploy (see bel
 | `PUT /activities/{id}` | Saves a ride summary. Only replaces the stored copy if this one's `updatedAt` isn't older; otherwise returns `409` with the stored copy. A ride not stored yet counts towards the weekly ride limit (`429` past it) |
 | `GET /activities?since=<ms>&cursor=<c>` | Rides saved after `since` (the largest `syncedAt` from the last pull), 100 per page, deleted ones included |
 | `PUT /activities/{id}/track` | Saves the gzipped track file sent as the body. Checked first: at most 1 MB (`413` over), it must unzip within 8 MB and be the app's track format with sane values (`400` otherwise); a clean copy is stored. A new ride counts towards the weekly ride limit: 10 per account per week for now (`429` past it) |
-| `GET /activities/{id}/track` | A link to download the track file, valid for 5 minutes; `404` if not uploaded yet |
+| `GET /activities/{id}/track` | The gzipped track file itself; `404` if not uploaded yet. Counts towards the daily download limit: 500 per account per UTC day for now (`429` past it) |
 
 ### Security
 
 - The user id comes only from the verified Cognito token (`sub`), never from the URL or body.
 - The bucket blocks all public access, is encrypted, and refuses plain HTTP. The app reaches
-  files through the API (uploads, which are checked) and short-lived presigned download
-  links, always inside its own user's folder.
+  files only through the API (uploads are checked, downloads are counted), always inside its
+  own user's folder.
 - Each function's role allows only what it needs. For example, the upload function can only
   write to `tracks/*`.
 - The user pool, table and bucket are **kept if the stack is deleted**, and the pool and
@@ -41,7 +41,7 @@ first sends a confirmation email; nothing arrives until its link is clicked.
 
 | Alarm | Fires when |
 |---|---|
-| `ActivityStats-PutActivityErrors`, `-ListActivitiesErrors`, `-PutTrackErrors`, `-TrackDownloadUrlErrors` | That function fails at least once in 5 minutes |
+| `ActivityStats-PutActivityErrors`, `-ListActivitiesErrors`, `-PutTrackErrors`, `-GetTrackErrors` | That function fails at least once in 5 minutes |
 | `ActivityStats-ApiServerErrors` | The API returns 5 or more server errors (5xx) in 5 minutes |
 | Budget `ActivityStats-monthly` | The whole account's spend this month passes $5, or is forecast to |
 

@@ -12,9 +12,6 @@ const ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
 export const ACTIVITY_TYPES = ['ride', 'run', 'walk'] as const;
 
-/** How long a presigned track download link stays valid, in seconds. */
-export const LINK_SECONDS = 300;
-
 export function json(statusCode: number, body: unknown): ApiResult {
   return {
     statusCode,
@@ -40,6 +37,9 @@ export function pathIdOf(event: ApiEvent): string | null {
   const id = event.pathParameters?.id;
   return typeof id === 'string' && ID_PATTERN.test(id) ? id : null;
 }
+
+/** The type a track file has, stored and sent. */
+export const TRACK_CONTENT_TYPE = 'application/gzip';
 
 /** Where a ride's track file lives: under its owner's folder, so keys can never collide. */
 export const trackKey = (userId: string, activityId: string) => `tracks/${userId}/${activityId}.json.gz`;

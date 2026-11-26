@@ -153,9 +153,10 @@ export class ActivityStatsStack extends Stack {
     keptTable('PublicSegmentTiles', str('tile'), str('segmentId'));
 
     // --- Usage counts ---
-    // How many new rides each account uploaded in a week: one row per account per week
-    // (RIDES#2026-W48), holding the ride ids. Only counts, so it isn't backed up or kept, and
-    // each row deletes itself two weeks after its week ends (expiresAt, in seconds).
+    // How much each account used in a period: new rides per week (RIDES#2026-W48, holding the
+    // ride ids) and track downloads per day (DOWNLOADS#2026-11-26, a number). Only counts, so
+    // it isn't backed up or kept, and each row deletes itself two weeks after its period ends
+    // (expiresAt, in seconds).
     const usage = new dynamodb.Table(this, 'Usage', {
       partitionKey: str('userId'),
       sortKey: str('period'),
@@ -203,7 +204,7 @@ export class ActivityStatsStack extends Stack {
     const putActivity = fn('PutActivity', 'put-activity.ts', 'Saves a ride summary if it is newer than the stored one', usageEnvironment);
     const listActivities = fn('ListActivities', 'list-activities.ts', 'Lists rides saved since a given server time');
     const putTrack = fn('PutTrack', 'put-track.ts', 'Checks an uploaded track file and stores a clean copy', usageEnvironment);
-    const trackDownload = fn('TrackDownloadUrl', 'track-download-url.ts', 'Hands out a short-lived link to download a track file');
+    const getTrack = fn('GetTrack', 'get-track.ts', 'Returns a track file, counting it towards the daily download limit', usageEnvironment);
     const segmentEnvironment = { SEGMENTS_TABLE_NAME: segments.tableName };
     const putSegment = fn('PutSegment', 'put-segment.ts', 'Saves a personal segment if it is newer than the stored one', segmentEnvironment);
     const listSegments = fn('ListSegments', 'list-segments.ts', 'Lists personal segments and reviews saved since a given server time', segmentEnvironment);
@@ -213,10 +214,11 @@ export class ActivityStatsStack extends Stack {
     table.grantReadWriteData(putActivity);
     table.grantReadData(listActivities);
     tracks.grantPut(putTrack, 'tracks/*');
-    // Counting a new ride is one conditional update; neither function may read or delete counts.
+    tracks.grantRead(getTrack, 'tracks/*');
+    // Counting is one conditional update; no function may read or delete counts.
     usage.grant(putTrack, 'dynamodb:UpdateItem');
     usage.grant(putActivity, 'dynamodb:UpdateItem');
-    tracks.grantRead(trackDownload, 'tracks/*');
+    usage.grant(getTrack, 'dynamodb:UpdateItem');
     // Narrower than grantReadWriteData / grantReadData: Segments will also hold server-owned
     // review items, so these may only write a segment item and list by the rider's own index.
     segments.grant(putSegment, 'dynamodb:PutItem', 'dynamodb:GetItem');
@@ -246,7 +248,8 @@ export class ActivityStatsStack extends Stack {
     route('/activities', apigw.HttpMethod.GET, listActivities);
     // Uploads go through the API, not straight to S3, so every file is checked before it is stored.
     route('/activities/{id}/track', apigw.HttpMethod.PUT, putTrack);
-    route('/activities/{id}/track', apigw.HttpMethod.GET, trackDownload);
+    // Downloads too, so each one can be counted (a presigned S3 link could be fetched any number of times).
+    route('/activities/{id}/track', apigw.HttpMethod.GET, getTrack);
     route('/segments/{id}', apigw.HttpMethod.PUT, putSegment);
     route('/segments', apigw.HttpMethod.GET, listSegments);
 
@@ -304,7 +307,7 @@ export class ActivityStatsStack extends Stack {
       [putActivity, 'Saving a ride summary failed'],
       [listActivities, 'Listing changed rides failed'],
       [putTrack, 'Saving a track file failed'],
-      [trackDownload, 'Making a track download link failed'],
+      [getTrack, 'Returning a track file failed'],
       [putSegment, 'Saving a segment failed'],
       [listSegments, 'Listing changed segments failed'],
     ];

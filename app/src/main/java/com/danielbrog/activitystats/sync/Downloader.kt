@@ -3,7 +3,6 @@ package com.danielbrog.activitystats.sync
 import com.danielbrog.activitystats.data.ActivityEntity
 import com.danielbrog.activitystats.location.GpsData
 import java.io.IOException
-import kotlinx.serialization.SerializationException
 
 /** What the download needs from the database. [com.danielbrog.activitystats.data.ActivityRepository] provides it. */
 interface DownloadStore {
@@ -46,13 +45,24 @@ class Downloader(
      * How a run went: rides saved new, rides updated from the cloud, ids skipped because their
      * track couldn't be had, and whether it stopped for time with more still to fetch.
      */
-    data class Report(val downloaded: Int, val updated: Int, val skipped: List<String>, val more: Boolean = false)
+    data class Report(
+        val downloaded: Int,
+        val updated: Int,
+        val skipped: List<String>,
+        val more: Boolean = false,
+        /**
+         * When the server counts downloads again (the next 00:00 UTC), if the run stopped at
+         * the day's limit; else null. The rest wait until then.
+         */
+        val limitResetsAt: Long? = null,
+    )
 
     /**
      * Downloads everything changed since the last run for [userId]. Stops early if
      * [stillSignedIn] turns false, or at [deadline] (with [Report.more] set, so the caller can
-     * queue another run). Throws [IOException] on network trouble or a track not there yet,
-     * keeping the progress made so far.
+     * queue another run), or at the day's download limit (with [Report.limitResetsAt] set).
+     * Throws [IOException] on network trouble or a track not there yet, keeping the progress
+     * made so far.
      */
     suspend fun downloadChanges(
         userId: String,
@@ -72,9 +82,17 @@ class Downloader(
                 if (!stillSignedIn()) return Report(downloaded, updated, skipped)
                 if (now() >= deadline) return Report(downloaded, updated, skipped, more = true)
                 when (decide(store.getActivity(ride.id), ride)) {
-                    Decision.Download -> when (val fixes = fetchTrack(ride)) {
-                        null -> skipped += ride.id
-                        else -> {
+                    Decision.Download -> {
+                        val fixes = try {
+                            fetchTrack(ride)
+                        } catch (e: DownloadLimitReachedException) {
+                            // Stop before the cursor moves past this ride: the first run after
+                            // the reset fetches it.
+                            return Report(downloaded, updated, skipped, limitResetsAt = e.resetsAt)
+                        }
+                        if (fixes == null) {
+                            skipped += ride.id
+                        } else {
                             store.saveDownloadedRide(ride.toEntity(userId), fixes)
                             downloaded++
                         }
@@ -98,20 +116,18 @@ class Downloader(
      * the server refuses it, or it has been missing for over [MISSING_TRACK_GIVE_UP_MS]. That
      * ride is skipped rather than holding up the rest; a newer app restarts the cursor (see
      * [SyncCursorStore]), so it is tried again then. Throws [TrackNotReadyException] while a
-     * missing track is recent, and [IOException] on network trouble.
+     * missing track is recent, [DownloadLimitReachedException] once the day's downloads are used
+     * up, and [IOException] on network trouble.
      */
     private suspend fun fetchTrack(ride: CloudRide): List<GpsData>? {
         val bytes = try {
-            val link = api.trackDownloadLink(ride.id)
-            if (link == null) {
-                if (now() - ride.syncedAt > MISSING_TRACK_GIVE_UP_MS) return null
-                throw TrackNotReadyException(ride.id)
-            }
-            api.downloadTrack(link)
+            api.downloadTrack(ride.id)
         } catch (e: RejectedException) {
             return null
-        } catch (e: SerializationException) {
-            return null // a link reply that isn't what the backend sends
+        }
+        if (bytes == null) {
+            if (now() - ride.syncedAt > MISSING_TRACK_GIVE_UP_MS) return null
+            throw TrackNotReadyException(ride.id)
         }
         return try {
             TrackFile.decode(bytes)
