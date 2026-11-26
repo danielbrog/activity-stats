@@ -1,65 +1,59 @@
 # Activity Stats backend
 
-The AWS side of Activity Stats: accounts, ride summaries, track files and the sync API. It is
-a separate project from the Android app. Gradle never builds this folder and none of it goes
-into the APK. The app only needs the five values printed after a deploy (see below).
+The AWS side of Activity Stats: accounts, ride and segment sync, and track files. It's an AWS
+CDK project in TypeScript, separate from the Android app: Gradle never builds it and none of it
+goes into the APK. The full data model and rules are in
+[`docs/database/server.md`](../docs/database/server.md).
 
 ## What it creates
 
-| Part | AWS service | Notes |
+| Part | Service | Notes |
 |---|---|---|
 | Accounts | Cognito user pool | Email and password, on Cognito's hosted sign-in page |
-| Ride summaries | DynamoDB table `userId` + `activityId` | Index `bySyncedAt` for "what changed since my last sync" |
-| Segments | DynamoDB table `userId` + `sk` | Each rider's own segments (`SEG#<id>`); two more tables are reserved for verified public segments, unused so far |
-| Usage counts | DynamoDB table `userId` + `period` | New rides per week, track downloads and edits per day; rows delete themselves two weeks later |
-| Track points | Private S3 bucket | One gzipped file per ride at `tracks/{userId}/{activityId}.json.gz` |
+| Rides | DynamoDB `userId` + `activityId` | Index `bySyncedAt` for "changed since my last sync" |
+| Segments | DynamoDB `userId` + `sk` | Each rider's own; two more tables are reserved for verified public segments |
+| Usage counts | DynamoDB `userId` + `period` | For the limits below; rows delete themselves after two weeks |
+| Tracks | Private S3 bucket | One gzipped file per ride, `tracks/{userId}/{activityId}.json.gz` |
 | API | API Gateway HTTP API | Every route needs a Cognito token; throttled to 20 requests/s |
-| Logic | 6 Lambda functions | Node 22 on ARM, TypeScript |
+| Logic | 6 Lambda functions | Node 22 on ARM |
 
-### API
+## API
 
 | Route | What it does |
 |---|---|
-| `PUT /activities/{id}` | Saves a ride summary. Only replaces the stored copy if this one's `updatedAt` isn't older; otherwise returns `409` with the stored copy. A ride not stored yet counts towards the weekly ride limit; any other summary (a rename or delete) towards the daily edit limit, 200 per account per UTC day for now (`429` past either) |
-| `GET /activities?since=<ms>&cursor=<c>` | Rides saved after `since` (the largest `syncedAt` from the last pull), 100 per page, deleted ones included |
-| `PUT /activities/{id}/track` | Saves the gzipped track file sent as the body. Checked first: at most 1 MB (`413` over), it must unzip within 8 MB and be the app's track format with sane values (`400` otherwise); a clean copy is stored. A new ride counts towards the weekly ride limit: 10 per account per week for now (`429` past it) |
-| `GET /activities/{id}/track` | The gzipped track file itself; `404` if not uploaded yet. Counts towards the daily download limit: 500 per account per UTC day for now (`429` past it) |
-| `PUT /segments/{id}` | Saves a personal segment, newer copy wins as for rides (`409` with the stored copy otherwise). Its line and sport never change (`400` with the stored copy). Every save counts towards the daily edit limit (`429` past it) |
-| `GET /segments?since=<ms>&cursor=<c>` | Segments (and, later, their reviews) saved after `since`, 100 per page, deleted ones included |
+| `PUT /activities/{id}` | Saves a ride summary if it isn't older than the stored one (`409` with the stored copy otherwise) |
+| `GET /activities?since=&cursor=` | Rides saved after `since`, 100 per page, deleted ones included |
+| `PUT /activities/{id}/track` | Checks the gzipped track file (≤ 1 MB, unzips within 8 MB, sane values) and stores a clean copy |
+| `GET /activities/{id}/track` | The track file itself; `404` if not uploaded yet |
+| `PUT /segments/{id}` | Saves a segment, newer copy wins; its line and sport never change (`400` if they would) |
+| `GET /segments?since=&cursor=` | Segments saved after `since`, 100 per page |
 
-### Security
+**Two clocks.** `updatedAt` comes from the phone and decides which copy is newer. `syncedAt` is
+stamped by the server on every save, and is what "changed since" compares, so a phone with a
+wrong clock can't make another device miss a change.
 
-- The user id comes only from the verified Cognito token (`sub`), never from the URL or body.
-- The bucket blocks all public access, is encrypted, and refuses plain HTTP. The app reaches
-  files only through the API (uploads are checked, downloads are counted), always inside its
-  own user's folder.
-- Each function's role allows only what it needs. For example, the upload function can only
-  write to `tracks/*`.
-- Each account has usage limits (new rides per week, track downloads and edits per day), in
-  [`lambda/usage.ts`](lambda/usage.ts). Every limit reply is a `429` naming its `kind`, `limit`
-  and `resetsAt`, so the app can tell it from API Gateway's own rate limit.
-- The user pool, table and bucket are **kept if the stack is deleted**, and the pool and
-  table have deletion protection, so `cdk destroy` can't lose accounts or rides.
+**Limits per account**, for testing, in [`lambda/usage.ts`](lambda/usage.ts):
 
-### Alerts
-
-Everything below emails the alarm address through the `ActivityStatsAlarms` SNS topic. AWS
-first sends a confirmation email; nothing arrives until its link is clicked.
-
-| Alarm | Fires when |
+| Limit | Counts |
 |---|---|
-| `ActivityStats-PutActivityErrors`, `-ListActivitiesErrors`, `-PutTrackErrors`, `-GetTrackErrors`, `-PutSegmentErrors`, `-ListSegmentsErrors` | That function fails at least once in 5 minutes |
-| `ActivityStats-ApiServerErrors` | The API returns 5 or more server errors (5xx) in 5 minutes |
-| Budget `ActivityStats-monthly` | The whole account's spend this month passes $5, or is forecast to |
+| 10 new rides a week (Monday UTC) | A ride's first track or live summary; retries don't count twice |
+| 500 track downloads a day (UTC) | Every download that finds a file |
+| 200 edits a day (UTC) | Ride renames and deletes, and every segment save |
 
-Alarms also email when they clear. They use only built-in metrics, so they stay within
-CloudWatch's free alarms, and AWS Budgets without actions are free.
+Past a limit the reply is `429` with `kind`, `limit` and `resetsAt`, which the app tells apart
+from API Gateway's own rate limit, and nothing is stored.
 
-### Two clocks
+## Security and alerts
 
-`updatedAt` is set by the phone and decides which copy of a ride is newer. `syncedAt` is set
-by the server on every save, and is what the app asks "changed since" against. That way a
-phone with a wrong clock can't make another device miss a change.
+- The user id comes only from the verified token (`sub`), never from the URL or body.
+- The bucket blocks public access, is encrypted and refuses plain HTTP; the app only reaches it
+  through the API.
+- Each function's role allows only what it needs (stack tests check this).
+- The user pool, rides table and bucket are kept if the stack is deleted, and the pool and
+  table have deletion protection, so `cdk destroy` can't lose accounts or rides.
+- Each function has an error alarm, the API has a 5xx alarm, and a $5 monthly budget covers the
+  whole account. All of them email through the `ActivityStatsAlarms` SNS topic, once its
+  confirmation link has been clicked.
 
 ## Commands
 
@@ -68,27 +62,21 @@ From this folder:
 ```bash
 npm install          # once
 npm test             # Lambda and stack tests, no AWS account needed
-npm run synth        # build the CloudFormation template and bundle the code into cdk.out/
+npm run synth        # build the CloudFormation template into cdk.out/
 ```
 
 ## Deploying
 
-The backend lives in **us-east-2** (Ohio). The region is fixed in `bin/app.ts`, so it doesn't
-matter which region the CLI defaults to.
+The stack lives in **us-east-2** (Ohio), fixed in `bin/app.ts`.
 
-1. Sign the AWS CLI in with your console login: `aws login` (needs AWS CLI 2.32 or newer).
-   Check it with `aws sts get-caller-identity`. The session lasts up to 12 hours.
-2. Once per account and region, prepare it for the CDK: `npx cdk bootstrap aws://<account>/us-east-2`
-3. Say where alerts go, in `cdk.context.json` next to this file. It is git-ignored, so the
-   address stays on your PC:
-   ```json
-   { "alarmEmail": "you@example.com" }
-   ```
-   Or pass it each time: `npx cdk deploy -c alarmEmail=you@example.com`.
-4. Deploy: `npx cdk deploy`. Review the security changes it lists, then confirm.
+1. Sign the AWS CLI in: `aws login` (AWS CLI 2.32+), and check with `aws sts get-caller-identity`.
+2. Once per account and region: `npx cdk bootstrap aws://<account>/us-east-2`.
+3. Set where alerts go, in the git-ignored `cdk.context.json` next to this file:
+   `{ "alarmEmail": "you@example.com" }` (or pass `-c alarmEmail=…` each time).
+4. `npx cdk diff`, then `npx cdk deploy`, reviewing the security changes it lists.
 
-After a deploy, the outputs are what the app needs: `ApiUrl`, `UserPoolId`, `AppClientId`,
-`SignInUrl` and `Region`. None of them is a secret.
+The outputs are `ApiUrl`, `UserPoolId`, `AppClientId`, `SignInUrl` and `Region`; the app needs
+three of them (see the main [README](../README.md#building-from-source)). None is a secret.
 
-Cost for personal use is close to nothing: everything bills per request, and the Cognito
-Lite plan and the other services' free tiers cover a handful of users.
+Cost for personal use is close to nothing: everything bills per request, within the free tiers
+and Cognito's Lite plan.
