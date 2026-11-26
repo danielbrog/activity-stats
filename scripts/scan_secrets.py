@@ -9,8 +9,9 @@ files alike, except `.idea/`. Reports each match as `file:line  kind`. The match
 never shown, so the output is safe to paste anywhere. Exits 1 if anything matched, else 0.
 
 Besides fixed patterns (API keys, emails, AWS ids), it searches for every value in the
-git-ignored `local.properties` and `backend/cdk.context.json`. Those files hold the real
-account-specific values; this script reads them so no person or agent has to open them.
+git-ignored `local.properties`, `keystore.properties` and `backend/cdk.context.json`. Those
+files hold the real account-specific values and the release key's passwords; this script
+reads them so no person or agent has to open them.
 """
 
 import json
@@ -44,14 +45,18 @@ def git(*args: str) -> str:
 def local_values() -> dict[str, str]:
     """Values from the git-ignored files, by name. Never printed."""
     values: dict[str, str] = {}
-    props = Path("local.properties")
-    if props.exists():
+    for name in ("local.properties", "keystore.properties"):
+        props = Path(name)
+        if not props.exists():
+            continue
         for line in props.read_text(encoding="utf-8").splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
                 key, value = (part.strip() for part in line.split("=", 1))
-                # sdk.dir is a path on this PC, not a secret.
-                if key != "sdk.dir" and len(value) >= 6:
-                    values[f"local.properties {key}"] = value
+                # sdk.dir is a path on this PC, not a secret. Of the signing values only the
+                # passwords are: an alias like "upload" would match ordinary words.
+                secret = key.endswith("Password") if name == "keystore.properties" else key != "sdk.dir"
+                if secret and len(value) >= 6:
+                    values[f"{name} {key}"] = value
     context = Path("backend/cdk.context.json")
     if context.exists():
         for key, value in json.loads(context.read_text(encoding="utf-8")).items():

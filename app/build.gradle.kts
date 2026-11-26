@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -30,6 +32,20 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
+// The release signing key's location and passwords, from keystore.properties at the project
+// root, which Git ignores (see docs/release.md). Not local.properties: the Secrets plugin
+// copies every value there into BuildConfig, which would put the passwords inside the APK.
+// Without the file the release build still works, unsigned, so a fresh checkout builds.
+val releaseSigning: Map<String, String>? = rootProject.file("keystore.properties")
+    .takeIf { it.exists() }
+    ?.let { file ->
+        val props = Properties().apply { file.inputStream().use { load(it) } }
+        val keys = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        val missing = keys.filter { props.getProperty(it).isNullOrBlank() }
+        require(missing.isEmpty()) { "keystore.properties is missing $missing (see docs/release.md)" }
+        keys.associateWith { props.getProperty(it).trim() }
+    }
+
 android {
     namespace = "com.danielbrog.activitystats"
     compileSdk {
@@ -40,8 +56,10 @@ android {
         applicationId = "com.danielbrog.activitystats"
         minSdk = 26
         targetSdk = 37
+        // Each release needs a higher versionCode than the last, or phones won't take it as an
+        // update. versionName is what people see; see docs/release.md.
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -49,8 +67,21 @@ android {
         manifestPlaceholders["appAuthRedirectScheme"] = "com.danielbrog.activitystats"
     }
 
+    signingConfigs {
+        if (releaseSigning != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseSigning.getValue("storeFile"))
+                storePassword = releaseSigning.getValue("storePassword")
+                keyAlias = releaseSigning.getValue("keyAlias")
+                keyPassword = releaseSigning.getValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Signed only where keystore.properties exists; elsewhere the APK comes out unsigned.
+            if (releaseSigning != null) signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

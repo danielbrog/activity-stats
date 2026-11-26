@@ -67,6 +67,7 @@ flowchart LR
 | `export/` | GPX reading and writing |
 
 There's more about the backend in [`backend/README.md`](backend/README.md).
+Making a signed release APK is in [`docs/release.md`](docs/release.md).
 
 ## Problems I had to solve
 
