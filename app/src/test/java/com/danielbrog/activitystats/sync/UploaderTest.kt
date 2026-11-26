@@ -7,6 +7,7 @@ import com.danielbrog.activitystats.location.GpsData
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -101,6 +102,9 @@ class UploaderTest {
 
         /** Rides whose summary the server refuses because the week's limit is reached. */
         var limitedSummaries = emptySet<String>()
+
+        /** Rides whose summary the server refuses because the day's edits are used up. */
+        var editLimited = emptySet<String>()
         var beforeAnswer: (String) -> Unit = {}
         var badReplyFor: String? = null
 
@@ -109,6 +113,7 @@ class UploaderTest {
             if (failOn == "summary $id") throw IOException("offline")
             if (badReplyFor == id) throw kotlinx.serialization.SerializationException("not JSON")
             if (id in limitedSummaries) throw RideLimitReachedException(resetsAt = 2_000_000L)
+            if (id in editLimited) throw EditLimitReachedException(resetsAt = 3_000_000L)
             beforeAnswer(id)
             return answers(id)
         }
@@ -441,5 +446,58 @@ class UploaderTest {
         // The backend's MAX_TRACK_BYTES and MAX_FIXES (backend/lambda/track.ts).
         assertEquals(1_000_000, TrackFile.MAX_BYTES)
         assertEquals(40_000, TrackFile.MAX_FIXES)
+    }
+
+    @Test
+    fun anEditPastTheDaysLimitHoldsBackTheOtherEditsButNotANewRide() {
+        val store = FakeStore(
+            listOf(
+                ride("renamed", startedAt = 1_000L, trackUploaded = true),
+                ride("new", startedAt = 2_000L),
+                ride("deleted", startedAt = 3_000L, trackUploaded = true, deletedAt = 5_000L),
+            ),
+        )
+        val api = FakeApi().apply { editLimited = setOf("renamed") }
+        val report = run(store, api)
+
+        assertEquals(listOf("renamed", "deleted"), report.editLimited)
+        assertEquals(3_000_000L, report.editLimitResetsAt)
+        assertEquals(SyncState.PENDING, store.state("renamed"))
+        assertEquals(SyncState.PENDING, store.state("deleted"))
+        // The second edit isn't sent: it would only be refused too.
+        assertEquals(listOf("summary renamed", "track new", "summary new"), api.calls)
+        // Not held back: a new ride isn't an edit.
+        assertEquals(SyncState.SYNCED, store.state("new"))
+        assertEquals(1, report.synced)
+        // Neither limit is mixed up with the other, nor with a refusal.
+        assertTrue(report.limited.isEmpty())
+        assertNull(report.limitResetsAt)
+        assertTrue(report.rejected.isEmpty())
+    }
+
+    @Test
+    fun bothLimitsInOneRunAreReportedApart() {
+        val store = FakeStore(
+            listOf(
+                ride("new", startedAt = 1_000L),
+                ride("gone", startedAt = 2_000L, deletedAt = 5_000L),
+                ride("another", startedAt = 3_000L),
+            ),
+        )
+        val api = FakeApi().apply {
+            limitedTracks = setOf("new")
+            editLimited = setOf("gone")
+        }
+        val report = run(store, api)
+
+        // A ride deleted before it synced is an edit: past the weekly limit it still goes, and
+        // then waits for the edit limit instead.
+        assertEquals(listOf("new", "another"), report.limited)
+        assertEquals(listOf("gone"), report.editLimited)
+        assertEquals(1_000_000L, report.limitResetsAt)
+        assertEquals(3_000_000L, report.editLimitResetsAt)
+        assertEquals(listOf("track new", "summary gone"), api.calls)
+        assertTrue(report.rejected.isEmpty())
+        listOf("new", "gone", "another").forEach { assertEquals(it, SyncState.PENDING, store.state(it)) }
     }
 }

@@ -272,6 +272,9 @@ describe('ActivityStatsStack', () => {
     const functions = Object.values(template.findResources('AWS::Lambda::Function', { Properties: { Runtime: 'nodejs22.x' } }));
     const withSegments = functions.filter((f) => 'SEGMENTS_TABLE_NAME' in (f.Properties.Environment?.Variables ?? {}));
     expect(withSegments).toHaveLength(2);
+    // PutSegment also counts each save towards the day's edits.
+    const withUsage = functions.filter((f) => 'USAGE_TABLE_NAME' in (f.Properties.Environment?.Variables ?? {}));
+    expect(withUsage).toHaveLength(4);
     const everyEnvironment = JSON.stringify(functions.map((f) => f.Properties.Environment));
     expect(everyEnvironment).not.toContain('VERIFIED');
     expect(everyEnvironment).not.toContain('TILES');
@@ -296,9 +299,20 @@ describe('ActivityStatsStack', () => {
     expect(put).toContain(segmentsId);
     expect(put).toContain('dynamodb:PutItem');
     expect(put).toContain('dynamodb:GetItem');
-    for (const action of ['DeleteItem', 'UpdateItem', 'BatchWriteItem', 'Scan', 'Query']) {
+    for (const action of ['DeleteItem', 'BatchWriteItem', 'Scan', 'Query']) {
       expect(put).not.toContain(`dynamodb:${action}`);
     }
+    // Its one update is counting the save on Usage, never on Segments.
+    type Statement = { Action: string | string[]; Resource: unknown };
+    const statements = (JSON.parse(put).Statement as Statement[]).map((st) => ({
+      actions: ([] as string[]).concat(st.Action),
+      resource: JSON.stringify(st.Resource),
+    }));
+    const updates = statements.filter((st) => st.actions.includes('dynamodb:UpdateItem'));
+    expect(updates).toHaveLength(1);
+    expect(updates[0].actions).toEqual(['dynamodb:UpdateItem']);
+    expect(updates[0].resource).toContain('Usage');
+    expect(updates[0].resource).not.toContain(segmentsId);
     const list = policyOf('ListSegments');
     expect(list).toContain(segmentsId);
     expect(list).toContain('dynamodb:Query');

@@ -3,11 +3,14 @@ import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import {
-  claimDownload,
+  claimDaily,
   claimRideSlot,
+  dailyLimitReached,
   dayOf,
-  downloadLimitReached,
+  DOWNLOADS,
+  EDITS,
   MAX_DOWNLOADS_PER_DAY,
+  MAX_EDITS_PER_DAY,
   MAX_RIDES_PER_WEEK,
   rideLimitReached,
   weekOf,
@@ -76,54 +79,74 @@ describe('counting a ride', () => {
   test('the limit reply is a 429 the app can tell from a rate limit', () => {
     const reply = rideLimitReached(123) as { statusCode: number; body: string };
     expect(reply.statusCode).toBe(429);
-    expect(JSON.parse(reply.body)).toEqual({ error: 'Weekly ride limit reached', limit: MAX_RIDES_PER_WEEK, resetsAt: 123 });
+    expect(JSON.parse(reply.body)).toEqual({
+      error: 'Weekly ride limit reached',
+      kind: 'rides',
+      limit: MAX_RIDES_PER_WEEK,
+      resetsAt: 123,
+    });
   });
 });
 
-describe('the day a download counts in', () => {
+describe('the day a count is in', () => {
   test('runs 00:00 to 23:59 UTC', () => {
     expect(dayOf(utc('2026-11-26T12:00:00Z'))).toEqual({
-      key: 'DOWNLOADS#2026-11-26',
+      date: '2026-11-26',
       startsAt: utc('2026-11-26T00:00:00Z'),
       resetsAt: utc('2026-11-27T00:00:00Z'),
     });
-    expect(dayOf(utc('2026-11-26T23:59:59.999Z')).key).toBe('DOWNLOADS#2026-11-26');
-    expect(dayOf(utc('2026-11-27T00:00:00Z')).key).toBe('DOWNLOADS#2026-11-27');
+    expect(dayOf(utc('2026-11-26T23:59:59.999Z')).date).toBe('2026-11-26');
+    expect(dayOf(utc('2026-11-27T00:00:00Z')).date).toBe('2026-11-27');
   });
 });
 
-describe('counting a download', () => {
+describe('counting per day', () => {
   const now = utc('2026-11-26T12:00:00Z');
   const client = () => db as unknown as DynamoDBDocumentClient;
 
-  test('adds one to the day only while it is under the limit', async () => {
+  test.each([
+    [DOWNLOADS, 'DOWNLOADS#2026-11-26', 'downloads', MAX_DOWNLOADS_PER_DAY],
+    [EDITS, 'EDITS#2026-11-26', 'edits', MAX_EDITS_PER_DAY],
+  ])('adds one to the day only while it is under the limit (%#)', async (count, period, attribute, max) => {
     db.on(UpdateCommand).resolves({});
-    expect(await claimDownload(client(), 'usage', USER, now)).toBeNull();
+    expect(await claimDaily(client(), 'usage', USER, count, now)).toBeNull();
     const input = db.commandCalls(UpdateCommand)[0].args[0].input;
     expect(input.TableName).toBe('usage');
-    expect(input.Key).toEqual({ userId: USER, period: 'DOWNLOADS#2026-11-26' });
-    expect(input.UpdateExpression).toBe('ADD downloads :one SET expiresAt = :expiresAt');
-    expect(input.ConditionExpression).toBe('attribute_not_exists(downloads) OR downloads < :max');
+    expect(input.Key).toEqual({ userId: USER, period });
+    expect(input.UpdateExpression).toBe('ADD #count :one SET expiresAt = :expiresAt');
+    expect(input.ConditionExpression).toBe('attribute_not_exists(#count) OR #count < :max');
+    expect(input.ExpressionAttributeNames).toEqual({ '#count': attribute });
     const values = input.ExpressionAttributeValues!;
     expect(values[':one']).toBe(1);
-    expect(values[':max']).toBe(MAX_DOWNLOADS_PER_DAY);
+    expect(values[':max']).toBe(max);
     // Two weeks after the day ends, in seconds.
     expect(values[':expiresAt']).toBe((utc('2026-11-27T00:00:00Z') + 14 * 86_400_000) / 1000);
   });
 
+  test('the limits are 500 downloads and 200 edits', () => {
+    expect(MAX_DOWNLOADS_PER_DAY).toBe(500);
+    expect(MAX_EDITS_PER_DAY).toBe(200);
+  });
+
   test('a full day gives the time it resets', async () => {
     db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
-    expect(await claimDownload(client(), 'usage', USER, now)).toEqual({ resetsAt: utc('2026-11-27T00:00:00Z') });
+    expect(await claimDaily(client(), 'usage', USER, EDITS, now)).toEqual({ resetsAt: utc('2026-11-27T00:00:00Z') });
   });
 
   test('any other failure is left to throw', async () => {
     db.on(UpdateCommand).rejects(new Error('throttled'));
-    await expect(claimDownload(client(), 'usage', USER, now)).rejects.toThrow('throttled');
+    await expect(claimDaily(client(), 'usage', USER, DOWNLOADS, now)).rejects.toThrow('throttled');
   });
 
-  test('the limit reply is a 429 carrying the limit and reset time', () => {
-    const reply = downloadLimitReached(123) as { statusCode: number; body: string };
-    expect(reply.statusCode).toBe(429);
-    expect(JSON.parse(reply.body)).toEqual({ error: 'Daily download limit reached', limit: MAX_DOWNLOADS_PER_DAY, resetsAt: 123 });
+  test('each limit reply is a 429 naming its kind, limit and reset time', () => {
+    const body = (reply: unknown) => JSON.parse((reply as { body: string }).body);
+    expect((dailyLimitReached(DOWNLOADS, 123) as { statusCode: number }).statusCode).toBe(429);
+    expect(body(dailyLimitReached(DOWNLOADS, 123))).toEqual({
+      error: 'Daily download limit reached',
+      kind: 'downloads',
+      limit: 500,
+      resetsAt: 123,
+    });
+    expect(body(dailyLimitReached(EDITS, 123))).toEqual({ error: 'Daily edit limit reached', kind: 'edits', limit: 200, resetsAt: 123 });
   });
 });

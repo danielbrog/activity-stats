@@ -26,16 +26,19 @@ describe('PUT /activities/{id}', () => {
     db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
     const result = await put(summary());
     expect(status(result)).toBe(429);
-    expect(body(result)).toMatchObject({ error: 'Weekly ride limit reached', limit: 10 });
+    expect(body(result)).toMatchObject({ error: 'Weekly ride limit reached', kind: 'rides', limit: 10 });
     expect(db.commandCalls(PutCommand)).toHaveLength(0);
   });
 
-  test('a ride deleted before it synced is not counted, even with the week full', async () => {
+  /** The Usage rows the request counted towards. */
+  const countedIn = () => db.commandCalls(UpdateCommand).map((c) => c.args[0].input.Key!.period as string);
+
+  test('a ride deleted before it synced counts as an edit, not a ride', async () => {
     db.on(GetCommand).resolves({});
-    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    db.on(UpdateCommand).resolves({});
     db.on(PutCommand).resolves({});
     expect(status(await put(summary({ deletedAt: 1_700_000_100_000 })))).toBe(200);
-    expect(db.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(countedIn()).toEqual([expect.stringMatching(/^EDITS#/)]);
   });
 
   test('restoring a ride stored as deleted counts it again', async () => {
@@ -43,15 +46,25 @@ describe('PUT /activities/{id}', () => {
     db.on(UpdateCommand).resolves({});
     db.on(PutCommand).resolves({});
     expect(status(await put(summary({ deletedAt: null })))).toBe(200);
-    expect(db.commandCalls(UpdateCommand)).toHaveLength(1);
+    expect(countedIn()).toEqual([expect.stringMatching(/^RIDES#/)]);
   });
 
-  test('an edit to a stored ride is not counted, even with the week full', async () => {
+  test('a rename or delete of a stored ride counts as an edit, not a ride', async () => {
     db.on(GetCommand).resolves({ Item: { activityId: RIDE_ID } });
-    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    db.on(UpdateCommand).resolves({});
     db.on(PutCommand).resolves({});
     expect(status(await put(summary({ title: 'Renamed' })))).toBe(200);
-    expect(db.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(status(await put(summary({ deletedAt: 1_700_000_100_000 })))).toBe(200);
+    expect(countedIn()).toEqual([expect.stringMatching(/^EDITS#/), expect.stringMatching(/^EDITS#/)]);
+  });
+
+  test("past the day's edits an edit is refused with a 429 and not saved", async () => {
+    db.on(GetCommand).resolves({ Item: { activityId: RIDE_ID } });
+    db.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: 'full', $metadata: {} }));
+    const result = await put(summary({ title: 'Renamed' }));
+    expect(status(result)).toBe(429);
+    expect(body(result)).toMatchObject({ error: 'Daily edit limit reached', kind: 'edits', limit: 200 });
+    expect(db.commandCalls(PutCommand)).toHaveLength(0);
   });
 
   test('saves the summary under the user from the token, with a server syncedAt', async () => {

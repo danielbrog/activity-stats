@@ -43,17 +43,22 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
 
         val api = HttpSyncApi(config.apiUrl, session.accessToken)
         val stillSignedIn = { auth.signedInUserId == session.userId }
+        // Nothing else may sync before a limit resets, so each step that reaches one books a
+        // sync for just after it, booked straight away so a step failing later can't lose it.
+        val booking = ResetBooking { Sync.requestAfter(app, it) }
         return try {
             // Up first, so this phone's changes are in the cloud before others come down.
             val up = Uploader(app.activityRepository, api).uploadPending(session.userId, stillSignedIn)
             if (up.synced > 0) Log.i(TAG, "Uploaded ${up.synced} rides")
             if (up.rejected.isNotEmpty()) Log.w(TAG, "Server refused rides ${up.rejected}")
-            up.limitResetsAt?.let { resetsAt ->
+            if (up.limitResetsAt != null) {
                 Log.i(TAG, "Weekly ride limit reached; ${up.limited.size} rides wait for the reset")
-                // Nothing else may sync before then, so book one for just after it. Booked now,
-                // so a download that fails below can't lose it.
-                Sync.requestAfter(app, resetsAt)
             }
+            if (up.editLimitResetsAt != null) {
+                Log.i(TAG, "Daily edit limit reached; ${up.editLimited.size} ride edits wait for the reset")
+            }
+            booking.after(up.limitResetsAt)
+            booking.after(up.editLimitResetsAt)
 
             // A first restore can be long: stop well inside WorkManager's 10 minutes and queue
             // the rest, rather than be stopped and use up a retry.
@@ -65,17 +70,17 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 Log.i(TAG, "Downloaded ${down.downloaded} rides, updated ${down.updated}")
             }
             if (down.skipped.isNotEmpty()) Log.w(TAG, "Couldn't get the tracks of ${down.skipped}")
-            down.limitResetsAt?.let { resetsAt ->
-                Log.i(TAG, "Daily download limit reached; the rest wait for the reset")
-                // Replaces a weekly booking above, safely: the day always resets first, and the
-                // sync then books the week again.
-                Sync.requestAfter(app, resetsAt)
-            }
+            if (down.limitResetsAt != null) Log.i(TAG, "Daily download limit reached; the rest wait for the reset")
+            booking.after(down.limitResetsAt)
 
             // Then segments, the same way, within the same time budget.
             val segmentsUp = SegmentUploader(app.segmentRepository, api).uploadPending(session.userId, stillSignedIn)
             if (segmentsUp.synced > 0) Log.i(TAG, "Uploaded ${segmentsUp.synced} segments")
             if (segmentsUp.rejected.isNotEmpty()) Log.w(TAG, "Server refused segments ${segmentsUp.rejected}")
+            if (segmentsUp.limitResetsAt != null) {
+                Log.i(TAG, "Daily edit limit reached; ${segmentsUp.limited.size} segments wait for the reset")
+            }
+            booking.after(segmentsUp.limitResetsAt)
             val segmentsDown = SegmentDownloader(app.segmentRepository, api, SegmentSyncCursorStore(app))
                 .downloadChanges(session.userId, stillSignedIn, deadline)
             if (segmentsDown.downloaded > 0 || segmentsDown.updated > 0 || segmentsDown.reviews > 0) {
@@ -131,6 +136,24 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 }
 
+/**
+ * One sync's booking for after a usage limit resets. A booking replaces the one before (see
+ * [Sync.requestAfter]), so only a reset earlier than this sync's booking so far is booked: the
+ * first limit to reset wins, and that sync books any later one again. Plain Kotlin, unit-tested.
+ */
+internal class ResetBooking(private val book: (Long) -> Unit) {
+    private var bookedAt: Long? = null
+
+    /** Books [resetsAt] if it is earlier than what this sync has booked. Null (no limit reached) does nothing. */
+    fun after(resetsAt: Long?) {
+        if (resetsAt == null) return
+        val booked = bookedAt
+        if (booked != null && booked <= resetsAt) return
+        bookedAt = resetsAt
+        book(resetsAt)
+    }
+}
+
 /** The one way to start a sync, and to see whether one is running. */
 object Sync {
 
@@ -143,7 +166,7 @@ object Sync {
 
     /**
      * Starts a sync at [atMillis] (or as soon as there is a network after it), for rides held
-     * back by a usage limit (weekly rides, daily downloads) until it resets. Under its own name,
+     * back by a usage limit (weekly rides, daily downloads and edits) until it resets. Under its own name,
      * so a sync booked for days ahead never holds up the normal ones; when it comes, it only asks
      * for a normal sync. Booking again replaces the earlier booking.
      */

@@ -58,20 +58,48 @@ class RideLimitReachedException(val resetsAt: Long) : Exception("Weekly ride lim
 class DownloadLimitReachedException(val resetsAt: Long) : Exception("Daily download limit reached")
 
 /**
- * The time a usage limit (the weekly ride limit, the daily download limit) resets, if [body]
- * is that limit's reply: a 429 with `limit` and `resetsAt`. Null for anything else, like API
- * Gateway's own rate-limit 429, which only means "slow down" and is retried. Plain Kotlin,
- * unit-tested.
+ * This account has saved its edits for the day (renames and deletes of rides, segment saves);
+ * the server counts again from [resetsAt] (the next 00:00 UTC). Not a failure: the edit waits,
+ * and goes up after that.
  */
-internal fun limitResetsAt(code: Int, body: String): Long? {
+class EditLimitReachedException(val resetsAt: Long) : Exception("Daily edit limit reached")
+
+/**
+ * A usage limit's reply: which limit ([kind]: `rides`, `downloads` or `edits`; null from a
+ * backend from before kinds, which only had the ride limit), and when it resets.
+ */
+internal class UsageLimit(val kind: String?, val resetsAt: Long)
+
+/**
+ * The usage limit [body] reports, if it is a limit's reply: a 429 with `limit` and `resetsAt`.
+ * Null for anything else, like API Gateway's own rate-limit 429, which only means "slow down"
+ * and is retried. Plain Kotlin, unit-tested.
+ */
+internal fun usageLimitOf(code: Int, body: String): UsageLimit? {
     if (code != 429) return null
     // Neither call suspends, so runCatching can't swallow a coroutine cancellation.
     val reply = runCatching { RideSummary.json.decodeFromString(LimitJson.serializer(), body) }.getOrNull()
-    return reply?.resetsAt?.takeIf { reply.limit != null }
+    val resetsAt = reply?.resetsAt ?: return null
+    return if (reply.limit != null) UsageLimit(reply.kind, resetsAt) else null
 }
 
+/**
+ * The exception for a limit's reply to a ride summary, or null for any other reply. A summary
+ * can reach either limit: a new ride the weekly ride limit, a rename or delete the daily edit
+ * limit. A reply without a kind is the ride limit, the only one an older backend had. Any
+ * other kind holds back just this ride, as an edit does, rather than every new ride.
+ */
+internal fun summaryLimitOf(code: Int, body: String): Exception? = usageLimitOf(code, body)?.let {
+    when (it.kind) {
+        null, RIDES_KIND -> RideLimitReachedException(it.resetsAt)
+        else -> EditLimitReachedException(it.resetsAt)
+    }
+}
+
+private const val RIDES_KIND = "rides"
+
 @Serializable
-private class LimitJson(val limit: Int? = null, val resetsAt: Long? = null)
+private class LimitJson(val limit: Int? = null, val kind: String? = null, val resetsAt: Long? = null)
 
 /**
  * The API didn't accept the sign-in token (a 401). The worker asks for a new token before
@@ -99,10 +127,12 @@ internal fun retryFor(code: Int): IOException = if (code == 401) SignInRejectedE
 /**
  * What a reply to `PUT /segments/{id}` means. Plain Kotlin, unit-tested. A 409 carrying the
  * stored copy means the cloud's is newer; a 400 carrying it means its line or sport differs.
- * Either without a copy, like any other 4xx, is a refusal. Throws an [IOException] for a reply
- * worth retrying.
+ * Either without a copy, like any other 4xx, is a refusal. Throws [EditLimitReachedException]
+ * past the day's edits (every segment save is one), and an [IOException] for a reply worth
+ * retrying.
  */
 internal fun segmentPutResultOf(code: Int, body: String): SegmentPutResult {
+    usageLimitOf(code, body)?.let { throw EditLimitReachedException(it.resetsAt) }
     if (code == 409) {
         return parseSegmentConflict(body)?.let { SegmentPutResult.Newer(it) } ?: SegmentPutResult.Rejected(code)
     }
@@ -123,7 +153,7 @@ internal fun segmentPutResultOf(code: Int, body: String): SegmentPutResult {
 internal fun trackReplyOf(code: Int, body: ByteArray): ByteArray? {
     if (code == 404) return null
     // Only a 429 is read as text: a track file can be megabytes.
-    if (code == 429) limitResetsAt(code, body.decodeToString())?.let { throw DownloadLimitReachedException(it) }
+    if (code == 429) usageLimitOf(code, body.decodeToString())?.let { throw DownloadLimitReachedException(it.resetsAt) }
     return when (outcomeOf(code)) {
         Outcome.Ok -> body
         Outcome.Retry -> throw retryFor(code)
@@ -177,7 +207,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     override suspend fun putActivity(id: String, summary: RideSummary): PutResult {
         val (code, reply) = request("PUT", "$apiUrl/activities/$id", summary.toJson().toByteArray(), JSON_HEADERS)
         val body = reply.decodeToString()
-        limitResetsAt(code, body)?.let { throw RideLimitReachedException(it) }
+        summaryLimitOf(code, body)?.let { throw it }
         if (code == 409) return parseConflict(body)?.let { PutResult.Newer(it) } ?: PutResult.Rejected(code)
         return when (outcomeOf(code)) {
             Outcome.Ok -> PutResult.Applied
@@ -189,7 +219,7 @@ class HttpSyncApi(private val apiUrl: String, private val accessToken: String) :
     override suspend fun uploadTrack(id: String, bytes: ByteArray) {
         val headers = mapOf("Content-Type" to TrackFile.CONTENT_TYPE)
         val (code, reply) = request("PUT", "$apiUrl/activities/$id/track", bytes, headers)
-        limitResetsAt(code, reply.decodeToString())?.let { throw RideLimitReachedException(it) }
+        usageLimitOf(code, reply.decodeToString())?.let { throw RideLimitReachedException(it.resetsAt) }
         throwUnlessOk(code)
     }
 

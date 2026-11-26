@@ -44,6 +44,7 @@ describe('downloading a track', () => {
     expect(count).toHaveLength(1);
     expect(count[0].args[0].input.TableName).toBe('test-usage');
     expect(count[0].args[0].input.Key!.userId).toBe(USER);
+    expect(count[0].args[0].input.Key!.period).toMatch(/^DOWNLOADS#/);
   });
 
   test('a file not uploaded yet is a 404 and is not counted', async () => {
@@ -60,7 +61,7 @@ describe('downloading a track', () => {
     expect(reply.statusCode).toBe(429);
     expect(reply.isBase64Encoded).toBeFalsy();
     const parsed = JSON.parse(reply.body);
-    expect(parsed.limit).toBe(500);
+    expect(parsed).toMatchObject({ kind: 'downloads', limit: 500 });
     // The next 00:00 UTC.
     expect(parsed.resetsAt % 86_400_000).toBe(0);
     expect(parsed.resetsAt).toBeGreaterThan(Date.now());

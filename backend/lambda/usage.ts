@@ -75,9 +75,10 @@ export async function claimRideSlot(
 /**
  * The reply when the week's rides are used up. A 429 like API Gateway's own rate limit, but
  * with [limit] in the body, so the app can tell the two apart: this one waits for [resetsAt].
+ * [kind] says which limit, since a ride summary can reach either this or [EDITS].
  */
 export const rideLimitReached = (resetsAt: number): ApiResult =>
-  json(429, { error: 'Weekly ride limit reached', limit: MAX_RIDES_PER_WEEK, resetsAt });
+  json(429, { error: 'Weekly ride limit reached', kind: 'rides', limit: MAX_RIDES_PER_WEEK, resetsAt });
 
 /**
  * The most track downloads one account may make in a UTC day. A restore onto a new phone
@@ -86,25 +87,42 @@ export const rideLimitReached = (resetsAt: number): ApiResult =>
  */
 export const MAX_DOWNLOADS_PER_DAY = 500;
 
+/**
+ * The most edits one account may save in a UTC day: summaries of rides that aren't new (renames,
+ * deletes, a ride deleted before it synced) and every segment save, creating one included.
+ * New rides and restores count towards [MAX_RIDES_PER_WEEK] instead. A placeholder for testing.
+ */
+export const MAX_EDITS_PER_DAY = 200;
+
+/** Something counted per account per UTC day. [kind] names its row, its attribute and its limit reply. */
+export interface DailyCount {
+  readonly kind: 'downloads' | 'edits';
+  readonly max: number;
+  readonly error: string;
+}
+
+export const DOWNLOADS: DailyCount = { kind: 'downloads', max: MAX_DOWNLOADS_PER_DAY, error: 'Daily download limit reached' };
+export const EDITS: DailyCount = { kind: 'edits', max: MAX_EDITS_PER_DAY, error: 'Daily edit limit reached' };
+
 /** How long a day's count is kept after the day ends, before DynamoDB deletes it itself. */
 const KEEP_AFTER_DAY_MS = 14 * DAY_MS;
 
-/** The UTC day [now] falls in. [key] names its row (`DOWNLOADS#2026-11-26`). */
-export function dayOf(now: number): { key: string; startsAt: number; resetsAt: number } {
+/** The UTC day [now] falls in. [date] is how its rows are named (`DOWNLOADS#2026-11-26`). */
+export function dayOf(now: number): { date: string; startsAt: number; resetsAt: number } {
   const startsAt = Math.floor(now / DAY_MS) * DAY_MS;
-  return { key: `DOWNLOADS#${new Date(startsAt).toISOString().slice(0, 10)}`, startsAt, resetsAt: startsAt + DAY_MS };
+  return { date: new Date(startsAt).toISOString().slice(0, 10), startsAt, resetsAt: startsAt + DAY_MS };
 }
 
 /**
- * Counts one track download towards [userId]'s downloads today. One conditional update, so
- * two downloads at once can't both take the last place. Unlike rides, the same track
- * downloaded twice counts twice: each download costs the same. Null when counted; otherwise
- * the time the count resets (the next 00:00 UTC).
+ * Adds one to [userId]'s [count] today. One conditional update, so two requests at once can't
+ * both take the last place. Unlike rides, a repeat counts again: each request costs the same.
+ * Null when counted; otherwise the time the count resets (the next 00:00 UTC).
  */
-export async function claimDownload(
+export async function claimDaily(
   db: DynamoDBDocumentClient,
   table: string,
   userId: string,
+  count: DailyCount,
   now = Date.now(),
 ): Promise<{ resetsAt: number } | null> {
   const day = dayOf(now);
@@ -112,12 +130,14 @@ export async function claimDownload(
     await db.send(
       new UpdateCommand({
         TableName: table,
-        Key: { userId, period: day.key },
-        UpdateExpression: 'ADD downloads :one SET expiresAt = :expiresAt',
-        ConditionExpression: 'attribute_not_exists(downloads) OR downloads < :max',
+        Key: { userId, period: `${count.kind.toUpperCase()}#${day.date}` },
+        UpdateExpression: 'ADD #count :one SET expiresAt = :expiresAt',
+        ConditionExpression: 'attribute_not_exists(#count) OR #count < :max',
+        // A name placeholder, so the attribute can never clash with a DynamoDB reserved word.
+        ExpressionAttributeNames: { '#count': count.kind },
         ExpressionAttributeValues: {
           ':one': 1,
-          ':max': MAX_DOWNLOADS_PER_DAY,
+          ':max': count.max,
           ':expiresAt': Math.floor((day.resetsAt + KEEP_AFTER_DAY_MS) / 1000),
         },
       }),
@@ -129,6 +149,6 @@ export async function claimDownload(
   }
 }
 
-/** The reply when today's downloads are used up; like [rideLimitReached], with its own [limit]. */
-export const downloadLimitReached = (resetsAt: number): ApiResult =>
-  json(429, { error: 'Daily download limit reached', limit: MAX_DOWNLOADS_PER_DAY, resetsAt });
+/** The reply when today's [count] is used up; like [rideLimitReached], with its own [kind] and [limit]. */
+export const dailyLimitReached = (count: DailyCount, resetsAt: number): ApiResult =>
+  json(429, { error: count.error, kind: count.kind, limit: count.max, resetsAt });

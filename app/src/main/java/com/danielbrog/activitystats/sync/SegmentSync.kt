@@ -75,7 +75,14 @@ fun mergeLineChange(local: SegmentEntity, cloud: CloudSegment): SegmentEntity {
 class SegmentUploader(private val store: SegmentSyncStore, private val api: SegmentSyncApi) {
 
     /** Segments now in the cloud, and the ids not sent this time. */
-    data class Report(val synced: Int, val rejected: List<String>)
+    data class Report(
+        val synced: Int,
+        val rejected: List<String>,
+        /** Segments left waiting because the day's edits are used up; they go up after the reset. */
+        val limited: List<String> = emptyList(),
+        /** When the server counts edits again (the next 00:00 UTC), if the limit was reached; else null. */
+        val limitResetsAt: Long? = null,
+    )
 
     /**
      * Uploads every waiting segment of [userId]. A segment the server refuses (a 4xx other than
@@ -86,6 +93,8 @@ class SegmentUploader(private val store: SegmentSyncStore, private val api: Segm
     suspend fun uploadPending(userId: String, stillSignedIn: () -> Boolean = { true }): Report {
         var synced = 0
         val rejected = mutableListOf<String>()
+        val limited = mutableListOf<String>()
+        var limitResetsAt: Long? = null
 
         suspend fun notSent(segment: SegmentEntity, code: Int?) {
             if (code != null && refusesTheUpload(code)) store.markSegmentFailed(segment.id, segment.updatedAt)
@@ -94,6 +103,11 @@ class SegmentUploader(private val store: SegmentSyncStore, private val api: Segm
 
         for (segment in store.pendingSegmentUploads(userId)) {
             if (!stillSignedIn()) break
+            // Every segment save is an edit: once the day's are used up, the rest wait too.
+            if (limitResetsAt != null) {
+                limited += segment.id
+                continue
+            }
             try {
                 when (val result = api.putSegment(segment.id, SegmentUpload.from(segment))) {
                     SegmentPutResult.Applied -> {
@@ -105,13 +119,17 @@ class SegmentUploader(private val store: SegmentSyncStore, private val api: Segm
                     is SegmentPutResult.LineChanged -> if (store.replaceWithCloudSegment(result.cloud)) synced++
                     is SegmentPutResult.Rejected -> notSent(segment, result.code)
                 }
+            } catch (e: EditLimitReachedException) {
+                // Not refused: it stays waiting, and the first sync after the reset sends it.
+                limited += segment.id
+                limitResetsAt = e.resetsAt
             } catch (e: RejectedException) {
                 notSent(segment, e.code)
             } catch (e: SerializationException) {
                 notSent(segment, code = null) // a reply that isn't the backend's: just wait
             }
         }
-        return Report(synced, rejected)
+        return Report(synced, rejected, limited, limitResetsAt)
     }
 }
 

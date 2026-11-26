@@ -154,7 +154,8 @@ export class ActivityStatsStack extends Stack {
 
     // --- Usage counts ---
     // How much each account used in a period: new rides per week (RIDES#2026-W48, holding the
-    // ride ids) and track downloads per day (DOWNLOADS#2026-11-26, a number). Only counts, so
+    // ride ids), and track downloads and edits per day (DOWNLOADS#2026-11-26 and
+    // EDITS#2026-11-26, each a number). Only counts, so
     // it isn't backed up or kept, and each row deletes itself two weeks after its period ends
     // (expiresAt, in seconds).
     const usage = new dynamodb.Table(this, 'Usage', {
@@ -206,7 +207,10 @@ export class ActivityStatsStack extends Stack {
     const putTrack = fn('PutTrack', 'put-track.ts', 'Checks an uploaded track file and stores a clean copy', usageEnvironment);
     const getTrack = fn('GetTrack', 'get-track.ts', 'Returns a track file, counting it towards the daily download limit', usageEnvironment);
     const segmentEnvironment = { SEGMENTS_TABLE_NAME: segments.tableName };
-    const putSegment = fn('PutSegment', 'put-segment.ts', 'Saves a personal segment if it is newer than the stored one', segmentEnvironment);
+    const putSegment = fn('PutSegment', 'put-segment.ts', 'Saves a personal segment if it is newer than the stored one', {
+      ...segmentEnvironment,
+      ...usageEnvironment,
+    });
     const listSegments = fn('ListSegments', 'list-segments.ts', 'Lists personal segments and reviews saved since a given server time', segmentEnvironment);
 
     // Each function gets only what it needs. Which user's data it touches is checked in code,
@@ -219,6 +223,7 @@ export class ActivityStatsStack extends Stack {
     usage.grant(putTrack, 'dynamodb:UpdateItem');
     usage.grant(putActivity, 'dynamodb:UpdateItem');
     usage.grant(getTrack, 'dynamodb:UpdateItem');
+    usage.grant(putSegment, 'dynamodb:UpdateItem');
     // Narrower than grantReadWriteData / grantReadData: Segments will also hold server-owned
     // review items, so these may only write a segment item and list by the rider's own index.
     segments.grant(putSegment, 'dynamodb:PutItem', 'dynamodb:GetItem');
