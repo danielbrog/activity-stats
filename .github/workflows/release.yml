@@ -1,0 +1,137 @@
+# Pushing a v* tag builds the signed release APK and drafts a GitHub release with it.
+# The draft is only visible to the owner: smoke-test the APK, then publish it by hand.
+# See docs/release.md.
+#
+# The signing key and the app's settings are secrets of the `release` environment, which
+# only v* tags can use and which waits for the owner's approval. Only official actions,
+# pinned to exact commits, run next to them, and there is no Gradle cache, so nothing a
+# PR run saved can end up in the signed build.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Runs without secrets, before the approval is asked for.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag matches versionName
+        id: version
+        run: |
+          version=$(grep -oP '^\s*versionName = "\K[^"]+' app/build.gradle.kts)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match versionName $version in app/build.gradle.kts"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Tagged commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at a commit that isn't on main"
+            exit 1
+          fi
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: release
+    permissions:
+      contents: write # to create the release
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      # The same two files a local release build reads, written to this run's machine only.
+      - name: Write signing key and app settings
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
+          COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+          SYNC_API_URL: ${{ secrets.SYNC_API_URL }}
+        run: |
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD \
+                      MAPS_API_KEY COGNITO_DOMAIN COGNITO_CLIENT_ID SYNC_API_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Secret $name isn't set in the release environment"
+              exit 1
+            fi
+          done
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+          {
+            echo "MAPS_API_KEY=$MAPS_API_KEY"
+            echo "COGNITO_DOMAIN=$COGNITO_DOMAIN"
+            echo "COGNITO_CLIENT_ID=$COGNITO_CLIENT_ID"
+            echo "SYNC_API_URL=$SYNC_API_URL"
+          } > local.properties
+
+      - name: Build the release APK
+        run: ./gradlew assembleRelease --no-daemon
+
+      # Stops a build signed with the wrong key (or none) from being released.
+      - name: Check the signing certificate
+        env:
+          EXPECTED: ${{ vars.RELEASE_CERT_SHA256 }}
+        run: |
+          if [ -z "$EXPECTED" ]; then
+            echo "::error::Variable RELEASE_CERT_SHA256 isn't set"
+            exit 1
+          fi
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          apk=app/build/outputs/apk/release/app-release.apk
+          actual=$("$apksigner" verify --print-certs "$apk" \
+            | grep -oP 'Signer #1 certificate SHA-256 digest: \K[0-9a-f]+')
+          expected=$(echo "$EXPECTED" | tr -d ': ' | tr 'A-F' 'a-f')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::The APK isn't signed with the release certificate"
+            exit 1
+          fi
+          echo "Signed with the release certificate."
+
+      - name: Draft the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir out
+          cp app/build/outputs/apk/release/app-release.apk "out/activity-stats-$VERSION.apk"
+          cp app/build/outputs/mapping/release/mapping.txt "out/mapping-$VERSION.txt"
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --verify-tag --draft --prerelease --generate-notes --title "$GITHUB_REF_NAME"
+
+      - name: Remove the signing key and settings
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks" keystore.properties local.properties
