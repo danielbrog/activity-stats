@@ -31,8 +31,9 @@ Each step waits for the owner where it says so. Never skip ahead.
 - Wait for the owner to choose (for example "Fix 1 to 5"), then apply exactly those.
 
 ## 5. Check with release-checker
-- Run the `release-checker` agent before every commit. When `backend/` changed, also run
-  `npm --prefix backend run build` and `npm --prefix backend test`.
+- Run the `release-checker` agent before every commit. It picks its checks from what changed:
+  only the secret scan for docs and config, the backend type check and tests for `backend/`,
+  and all five Gradle steps for the app. It says which checks it skipped and why.
 - Fix anything it reports and run it again. Report the verdict and the test counts.
 
 ## 6. Commit (after the owner says to, usually "Push it")
