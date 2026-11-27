@@ -69,6 +69,8 @@ time and see the improvement. Solo developer.
 - Never open, print or search `local.properties`, `keystore.properties` or
   `backend/cdk.context.json`. `python -I scripts/scan_secrets.py` reads them for you and
   reports only `file:line  kind`.
+- `.githooks/pre-commit` runs that scan on every commit (turn it on per clone with
+  `git config core.hooksPath .githooks`). Never skip it with `--no-verify`.
 - Everything in `local.properties` is copied into BuildConfig and ships in the APK, so it may
   only hold values that are public by design. Release signing lives in `keystore.properties`.
 - Never stage `.idea/`. Stage files by name.
