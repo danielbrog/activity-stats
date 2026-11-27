@@ -111,16 +111,38 @@ jobs:
             echo "::error::Variable RELEASE_CERT_SHA256 isn't set"
             exit 1
           fi
-          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          echo "APKs built:"
+          ls app/build/outputs/apk/release/
           apk=app/build/outputs/apk/release/app-release.apk
-          actual=$("$apksigner" verify --print-certs "$apk" \
-            | grep -oP 'Signer #1 certificate SHA-256 digest: \K[0-9a-f]+')
-          expected=$(echo "$EXPECTED" | tr -d ': ' | tr 'A-F' 'a-f')
-          if [ "$actual" != "$expected" ]; then
-            echo "::error::The APK isn't signed with the release certificate"
+          if [ ! -f "$apk" ]; then
+            echo "::error::$apk wasn't built (an unsigned build is named app-release-unsigned.apk)"
             exit 1
           fi
-          echo "Signed with the release certificate."
+          build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "Using $build_tools/apksigner"
+
+          # The output stays on this machine. Only the fingerprint, ERROR and WARNING lines are
+          # printed: the certificate's name line (DN) may hold a name or place.
+          out="$RUNNER_TEMP/apksigner.txt"
+          if ! "$build_tools/apksigner" verify --print-certs "$apk" > "$out" 2>&1; then
+            grep -E '^(ERROR|WARNING)' "$out" || echo "(no ERROR or WARNING lines)"
+            echo "::error::apksigner couldn't verify the APK"
+            exit 1
+          fi
+          grep -i 'certificate SHA-256 digest:' "$out" || true
+
+          # Every signer (normally one) must be the release certificate.
+          digests=$(grep -i 'certificate SHA-256 digest:' "$out" | awk '{print tolower($NF)}' | sort -u)
+          expected=$(echo "$EXPECTED" | tr -d ': ' | tr 'A-F' 'a-f')
+          if [ -z "$digests" ]; then
+            echo "::error::apksigner printed no SHA-256 certificate digest"
+            exit 1
+          fi
+          if [ "$digests" != "$expected" ]; then
+            echo "::error::The APK isn't signed with the certificate in RELEASE_CERT_SHA256"
+            exit 1
+          fi
+          echo "Signed with the expected certificate."
 
       - name: Draft the GitHub release
         env:
