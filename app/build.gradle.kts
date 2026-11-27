@@ -58,8 +58,8 @@ android {
         targetSdk = 37
         // Each release needs a higher versionCode than the last, or phones won't take it as an
         // update. versionName is what people see; see docs/release.md.
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
