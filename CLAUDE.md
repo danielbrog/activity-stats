@@ -46,6 +46,8 @@ time and see the improvement. Solo developer.
 - Backend, from `backend/`: `npm run build` (type check), `npm test` (jest, runs in band).
 - Build, unit tests, ktlint check and lint: **don't run them yourself.** The `release-checker`
   agent runs them one at a time (the PC is low on memory).
+- CI: `.github/workflows/pr-checks.yml` runs the same checks on every PR and on `main`, picking
+  jobs from the changed paths. Keep it in step with `release-checker`.
 - Never run `connectedDebugAndroidTest`: it wipes the app on the phone. The owner runs it.
 
 ## How to work here

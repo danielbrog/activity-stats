@@ -1,5 +1,7 @@
 # Activity Stats
 
+[![PR checks](https://github.com/danielbrog/activity-stats/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/danielbrog/activity-stats/actions/workflows/pr-checks.yml)
+
 I built this Android app to track my bike rides. It records a ride with the phone's GPS, keeps it on the phone, and syncs it to a small AWS backend I set up, so my rides are backed up and come back if I change phones.
 
 **Download:** the APK is on the [Releases](https://github.com/danielbrog/activity-stats/releases) page, for Android 8.0 or newer. It's a pre-release, still being tested.

@@ -131,7 +131,7 @@ Reply with:
 3. **Draft PR description** in Markdown: what the change does and why, the files touched, and
    a checklist with only the checks that ran, ticked as they came out, then a "Skipped" line
    naming the others and why, and "Tried on the Pixel 7" left unticked (leave that line out
-   for docs and config only). This repo has no CI: never claim a check "runs in CI". End it with:
+   for docs and config only). GitHub Actions (`.github/workflows/pr-checks.yml`) runs the same checks once the PR is open; your local run comes before that, so never claim a check passed in CI. End it with:
    `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 
 Commit titles in this repo describe the change and never include milestone numbers like "(M4)".
