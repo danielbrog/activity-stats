@@ -82,8 +82,10 @@ When the key or a setting changes, set the secret again.
    then waits for you.
 3. **Approve the run:** Actions → Release → Review deployments → `release` → Approve. It
    builds, checks the signing certificate, and creates a **draft pre-release** with
-   `activity-stats-<versionName>.apk` and `mapping-<versionName>.txt` (to read crash traces
-   from the shrunk build).
+   `activity-stats-<versionName>.apk`. R8's mapping (to read crash traces from the shrunk
+   build) is on the run's page under **Artifacts** as `mapping-<versionName>`, for 10 days
+   only: download it and keep it outside the repository. If it's lost, rebuilding the tag
+   gives the same file.
 4. **Smoke-test the draft's APK on a device.** R8 shrinking can break things the debug build
    doesn't show. The release and debug builds are signed differently, so one can't replace the
    other (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`): sync, then `adb uninstall

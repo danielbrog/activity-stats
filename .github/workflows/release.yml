@@ -150,9 +150,18 @@ jobs:
         run: |
           mkdir out
           cp app/build/outputs/apk/release/app-release.apk "out/activity-stats-$VERSION.apk"
-          cp app/build/outputs/mapping/release/mapping.txt "out/mapping-$VERSION.txt"
-          gh release create "$GITHUB_REF_NAME" out/* \
+          gh release create "$GITHUB_REF_NAME" "out/activity-stats-$VERSION.apk" \
             --verify-tag --draft --prerelease --generate-notes --title "$GITHUB_REF_NAME"
+
+      # R8's mapping, to read crash traces from this build. Kept off the release page (it's
+      # large); download it from the run within 10 days. Rebuilding the tag gives the same file.
+      - name: Save the R8 mapping
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mapping-${{ env.VERSION }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          retention-days: 10
+          if-no-files-found: error
 
       - name: Remove the signing key and settings
         if: always()
