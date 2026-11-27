@@ -19,7 +19,8 @@ Each step waits for the owner where it says so. Never skip ahead.
 
 ## 3. Implement
 - Keep to the plan. Add or update unit tests for any behaviour change.
-- Kotlin style: `ktlintFormat` is fine to run. Don't run the build, tests or lint yourself.
+- Kotlin style: run `ktlintFormat` after changing Kotlin files (CI runs `ktlintCheck`, not
+  release-checker). Don't run the build, tests or lint yourself.
 - Backend: quick `npm --prefix backend run build` and targeted `npx jest --runInBand <file>`
   runs are fine.
 - Update `docs/database/*.md` and the READMEs when behaviour they describe changes.
@@ -33,7 +34,10 @@ Each step waits for the owner where it says so. Never skip ahead.
 ## 5. Check with release-checker
 - Run the `release-checker` agent before every commit. It picks its checks from what changed:
   only the secret scan for docs and config, the backend type check and tests for `backend/`,
-  and all five Gradle steps for the app. It says which checks it skipped and why.
+  and the Gradle build and unit tests for the app (CI runs the on-device test compile, ktlint
+  and lint on the PR). It says which checks it skipped and why.
+- If CI then fails on the PR, read the failing job (and its uploaded reports), fix it on the
+  same branch and push again.
 - Fix anything it reports and run it again. Report the verdict and the test counts.
 
 ## 6. Commit (after the owner says to, usually "Push it")

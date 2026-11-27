@@ -44,10 +44,12 @@ time and see the improvement. Solo developer.
 
 - Kotlin style fix: `$env:JAVA_HOME="E:\Android\Android Studio\jbr"; .\gradlew.bat ktlintFormat --no-daemon --max-workers=1 -q`
 - Backend, from `backend/`: `npm run build` (type check), `npm test` (jest, runs in band).
-- Build, unit tests, ktlint check and lint: **don't run them yourself.** The `release-checker`
-  agent runs them one at a time (the PC is low on memory).
-- CI: `.github/workflows/pr-checks.yml` runs the same checks on every PR and on `main`, picking
-  jobs from the changed paths. Keep it in step with `release-checker`. Pushing a `v*` tag runs
+- Build and unit tests: **don't run them yourself.** The `release-checker` agent runs them one
+  at a time (the PC is low on memory). The on-device test compile, ktlint check and lint are
+  left to CI.
+- CI: `.github/workflows/pr-checks.yml` runs all the checks (`release-checker`'s plus those
+  three) on every PR and on `main`, picking jobs from the changed paths. It must always cover
+  everything `release-checker` runs, except the local-values part of the secret scan. Pushing a `v*` tag runs
   `.github/workflows/release.yml` (signed APK, draft release); see `docs/release.md`.
 - Never run `connectedDebugAndroidTest`: it wipes the app on the phone. The owner runs it.
 
