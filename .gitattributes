@@ -1,2 +1,4 @@
 # The Gradle wrapper script runs on Linux in CI: a Windows line ending would break it.
 gradlew text eol=lf
+# The git hooks run under sh, which breaks on Windows line endings too.
+.githooks/* text eol=lf

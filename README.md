@@ -145,7 +145,7 @@ To just use the app, get the APK from [Releases](https://github.com/danielbrog/a
 
 Sync is optional: deploy your own backend ([`backend/README.md`](backend/README.md)) and add its outputs to `local.properties` as `COGNITO_DOMAIN` (`SignInUrl`), `COGNITO_CLIENT_ID` (`AppClientId`) and `SYNC_API_URL` (`ApiUrl`). Signed release builds are in [`docs/release.md`](docs/release.md).
 
-My own account details only live in git-ignored files, and [`scripts/scan_secrets.py`](scripts/scan_secrets.py) checks every change for them before I push.
+My own account details only live in git-ignored files, and [`scripts/scan_secrets.py`](scripts/scan_secrets.py) checks every change for them before I push. A pre-commit hook runs it on every commit too; turn it on once per clone with `git config core.hooksPath .githooks`.
 
 ## License
 
