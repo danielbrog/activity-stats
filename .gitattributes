@@ -1,0 +1,2 @@
+# The Gradle wrapper script runs on Linux in CI: a Windows line ending would break it.
+gradlew text eol=lf

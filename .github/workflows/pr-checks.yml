@@ -1,0 +1,126 @@
+# The checks release-checker runs locally, on GitHub's machines: app build, unit tests,
+# on-device test compile, ktlint and lint; backend type check and tests; the secret scan.
+# Jobs are picked from the changed paths, like release-checker does. A job skipped by its
+# `if:` counts as passed for branch protection, so docs-only PRs can still merge.
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+  # Runs on main too: it saves the Gradle cache that PR runs then read.
+  push:
+    branches: [main]
+
+# A newer push to the same PR cancels the run still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# No secrets are used, and the token can only read.
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      backend: ${{ steps.filter.outputs.backend }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          # A file matches a group only if it matches every pattern in it.
+          predicate-quantifier: every
+          filters: |
+            # Anything that isn't docs, config or backend: the app and "other"
+            # (scripts, gradlew, .editorconfig, ...), as in release-checker.
+            app:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.claude/**'
+              - '!.gitignore'
+              - '!backend/**'
+            backend:
+              - 'backend/**'
+              - '!**/*.md'
+            workflow:
+              - '.github/workflows/**'
+
+  app:
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      # The same JDK version Android Studio bundles.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      # Caches Gradle and checks the wrapper jar is the genuine one.
+      - uses: gradle/actions/setup-gradle@v6
+      # No local.properties here: the Secrets plugin uses secrets.defaults.properties,
+      # so the map is blank and sign-in is off. Fine for checks.
+      - name: Build, unit tests, on-device test compile, ktlint, lint
+        run: ./gradlew assembleDebug testDebugUnitTest compileDebugAndroidTestKotlin ktlintCheck lintDebug --continue
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 7
+
+  backend:
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Type check
+        run: npm run build
+      - name: Tests
+        run: npm test
+
+  # Always runs. CI has none of the git-ignored files, so this only catches the fixed
+  # patterns (keys, emails, account ids); the local scan also knows the real values.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Secret scan
+        # On a PR the checkout is the merge commit, so this diff is exactly the PR's changes.
+        # On main it is the pushed commits.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          python3 -I scripts/scan_secrets.py "$base"
