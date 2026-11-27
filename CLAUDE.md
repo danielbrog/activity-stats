@@ -47,7 +47,8 @@ time and see the improvement. Solo developer.
 - Build, unit tests, ktlint check and lint: **don't run them yourself.** The `release-checker`
   agent runs them one at a time (the PC is low on memory).
 - CI: `.github/workflows/pr-checks.yml` runs the same checks on every PR and on `main`, picking
-  jobs from the changed paths. Keep it in step with `release-checker`.
+  jobs from the changed paths. Keep it in step with `release-checker`. Pushing a `v*` tag runs
+  `.github/workflows/release.yml` (signed APK, draft release); see `docs/release.md`.
 - Never run `connectedDebugAndroidTest`: it wipes the app on the phone. The owner runs it.
 
 ## How to work here
