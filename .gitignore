@@ -20,5 +20,8 @@ replay_pid*.log
 keystore.properties
 *.jks
 *.keystore
+# Personal Claude Code notes and settings (CLAUDE.md and .claude/settings.json are shared)
+CLAUDE.local.md
+.claude/settings.local.json
 # Where Android Studio's Generate Signed APK wizard puts its APK and mapping.txt
 /app/release/

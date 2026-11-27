@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/local.properties)",
+      "Read(**/keystore.properties)",
+      "Read(**/cdk.context.json)",
+      "Edit(**/local.properties)",
+      "Edit(**/keystore.properties)",
+      "Edit(**/cdk.context.json)"
+    ]
+  }
+}
