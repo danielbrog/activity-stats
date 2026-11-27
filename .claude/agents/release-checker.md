@@ -1,6 +1,6 @@
 ---
 name: release-checker
-description: Checks a feature branch is ready for a pull request. Builds, runs the unit tests, compiles the on-device tests, runs ktlint and lint one at a time, scans the branch for secrets, and drafts the PR description. It is the only place these checks run, so it must finish all of them. Use before committing or opening a pull request.
+description: Checks a feature branch is ready for a pull request. Picks the checks from what the branch changed (Gradle build, unit tests, on-device test compile, ktlint and lint one at a time for app changes; backend type check and tests for backend changes; the secret scan always), runs them, and drafts the PR description. It is the only place these checks run, so every check that applies must finish. Use before committing or opening a pull request.
 tools: Bash, PowerShell, Read, Grep, Glob
 model: sonnet
 ---
@@ -16,12 +16,39 @@ change anything on GitHub or AWS.
 - No commits beyond `main` but uncommitted changes is normal: you are usually run before the
   commit. Check the working tree as it is.
 
-## 2. Build, tests, formatting and lint, one at a time
+## 2. What changed, and which checks apply
+List every file the branch changes against `main`, committed, uncommitted and untracked:
+
+```
+git diff --name-only main
+git ls-files --others --exclude-standard
+```
+
+Ignore anything under `.idea/`. Sort the files into groups:
+
+| Group | Paths |
+|---|---|
+| Docs and config | any `*.md` (also `backend/README.md`), anything under `docs/` or `.claude/`, `.gitignore` |
+| Backend | anything else under `backend/` |
+| App | anything under `app/` or `gradle/`, any `*.gradle.kts` |
+| Other | anything else (`scripts/`, `gradlew`, `.editorconfig`, …) |
+
+Then run:
+- **Only docs and config:** just the secret scan (section 5).
+- **Backend changed:** the backend checks (section 4).
+- **App or Other changed:** all five Gradle steps (section 3). "Other" gets the full run
+  because skipping a check that mattered is worse than running one that didn't.
+- **The secret scan always runs.**
+
+Mixed groups add up: app plus backend means section 3 and section 4. Never skip a check
+for a group that changed.
+
+## 3. Build, tests, formatting and lint, one at a time (app changes)
 
 **IMPORTANT: you are the only place these checks run.** The main session no longer runs the
-build, ktlint or lint itself; it relies on you. Every step below must **complete**, with a
-real pass or a real list of failures. A step that crashed or never finished is not a pass.
-Never report "ready" unless all five completed and passed.
+build, ktlint or lint itself; it relies on you. Every step that applies must **complete**,
+with a real pass or a real list of failures. A step that crashed or never finished is not a
+pass. Never report "ready" unless every step that applies completed and passed.
 
 The PC has little memory, so run each Gradle step on its own, in PowerShell, from the
 project root, and wait for it to finish before the next:
@@ -61,7 +88,20 @@ non-zero exit value"), that is the PC, not the code. Don't give up after one ret
 - Lint: read `app/build/reports/lint-results-debug.txt`. Ignore warnings that mention
   `colors.xml`, `RedundantLabel` or `compose-bom`; they are known. Report anything else.
 
-## 3. Secret scan
+## 4. Backend checks (backend changes)
+From the project root, one at a time:
+
+```
+npm --prefix backend run build
+npm --prefix backend test
+```
+
+- `build` is a TypeScript type check: give the first error with its file and line.
+- `test` runs jest in band. Report `N passing, M failing`, and the name and message of each
+  failure.
+- Never run `cdk diff`, `cdk deploy` or anything else that talks to AWS.
+
+## 5. Secret scan
 Run, from the project root:
 
 ```
@@ -79,15 +119,19 @@ the git-ignored `local.properties` and `backend/cdk.context.json`. It prints onl
 - Report the script's findings as it gives them. For each one, look at that line in the diff
   only if you need to tell whether it is a real problem, and still never quote the value.
 
-## 4. Report
+## 6. Report
 Reply with:
 1. **Verdict**: ready, or not ready and why.
-2. **Checks**: build, tests (`N passing, M failing`), on-device test compile, ktlint, lint,
-   secret scan. For each, say whether it completed, and how many attempts it took if more
-   than one.
+2. **Changed**: the groups from section 2 and which checks that selected.
+3. **Checks**: one line each for build, unit tests (`N passing, M failing`), on-device test
+   compile, ktlint, lint, backend type check, backend tests (`N passing, M failing`), secret
+   scan. For each, say passed, failed, or **skipped** with the reason (for example "skipped:
+   only docs and config changed"). For checks that ran, say whether they completed, and how
+   many attempts it took if more than one.
 3. **Draft PR description** in Markdown: what the change does and why, the files touched, and
-   a checklist with build, tests, ktlint and lint ticked as they came out, and "Tried on the Pixel 7"
-   left unticked. This repo has no CI: never claim a check "runs in CI". End it with:
+   a checklist with only the checks that ran, ticked as they came out, then a "Skipped" line
+   naming the others and why, and "Tried on the Pixel 7" left unticked (leave that line out
+   for docs and config only). This repo has no CI: never claim a check "runs in CI". End it with:
    `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 
 Commit titles in this repo describe the change and never include milestone numbers like "(M4)".

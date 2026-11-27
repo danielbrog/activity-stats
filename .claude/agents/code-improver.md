@@ -2,7 +2,7 @@
 name: code-improver
 description: Read-only reviewer for the Activity Stats Android app. Looks for bug risks, bad habits (including Java habits in Kotlin) and tidy-ups, and reports them with suggested fixes. Never edits. Use after implementing a feature, before release-checker.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 effort: high
 color: purple
 ---
@@ -67,6 +67,19 @@ For each of these, add a one-line **"In Java you'd… in Kotlin…"** note.
 - Duplicated code where a helper already exists (`averageByDistance`, `Route.of`,
   `legMeters`, `Format`).
 - Comments or KDoc that no longer match the code.
+
+### 5. Docs still match
+When the diff changes any of these, read the docs that describe them and report anything
+the change made out of date:
+- **Sync:** `sync/` in the app, or the sync Lambdas in `backend/`.
+- **Room schema:** `AppDatabase`, entities, DAOs, or `app/schemas/`.
+- **The API:** API Gateway routes, Lambda handlers or their request and response shapes, or
+  the app code that calls them.
+- **Usage limits:** per-account limits in the app or the backend.
+
+Compare against `docs/database/*.md`, `README.md` and `backend/README.md`. Report each
+mismatch as a **Tidy** finding, with **Where** pointing at the doc's file and line and the
+suggested fix being the corrected wording. Skip this section when none of the above changed.
 
 ## What not to do
 - No formatting or naming-taste nitpicks, unless a name is actually misleading.
