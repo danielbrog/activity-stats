@@ -119,13 +119,16 @@ Reply with:
    checks that ran, say whether they completed, and how many attempts it took if more than
    one. When app or Other files changed, add a line: "Left to CI: on-device test compile,
    ktlint, lint".
-4. **Draft PR description** in Markdown: what the change does and why, the files touched, and
-   a checklist with only the checks that ran, ticked as they came out, then a "Skipped" line
-   naming the others and why, a "Left to CI" line when app or Other files changed, and
-   "Tried on the Pixel 7" left unticked (leave that line out for docs and config only).
+4. **Draft PR description** in Markdown, kept short (the owner reads the diff, so no list of
+   files):
+   - One to three sentences: what the change does and why.
+   - **Checks**: only the checks that ran, ticked as they came out. For app changes, add
+     "Tried on the Pixel 7" unticked.
+   - The deploy order, only when both the app and the backend changed.
+   - End with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+
    GitHub Actions (`.github/workflows/pr-checks.yml`) runs all the checks once the PR is
-   open; your local run comes before that, so never claim a check passed in CI. End it with:
-   `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
+   open; your local run comes before that, so never claim a check passed in CI.
 
 Commit titles in this repo describe the change and never include milestone numbers like "(M4)".
 If a commit on the branch has one, point it out.
