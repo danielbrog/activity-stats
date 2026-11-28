@@ -31,17 +31,22 @@ Each step waits for the owner where it says so. Never skip ahead.
   finding, and your pick (fix, skip, or later) with a one-line reason.
 - Wait for the owner to choose (for example "Fix 1 to 5"), then apply exactly those.
 
-## 5. Check with release-checker
-- Run the `release-checker` agent before every commit. It picks its checks from what changed:
-  only the secret scan for docs and config, the backend type check and tests for `backend/`,
-  and the Gradle build and unit tests for the app (CI runs the on-device test compile, ktlint
-  and lint on the PR). It says which checks it skipped and why.
+## 5. Check with release-checker (app, backend or other changes)
+- Skip this when every changed file is docs or config as release-checker's table defines it
+  (`*.md`, `docs/`, `.claude/`, `.gitignore`): for those it would only run the secret scan,
+  which the pre-commit hook runs anyway (step 6).
+- Otherwise run the `release-checker` agent before every commit. It picks its checks from what
+  changed: the backend type check and tests for `backend/`, and the Gradle build and unit
+  tests for the app (CI runs the on-device test compile, ktlint and lint on the PR). It says
+  which checks it skipped and why.
+- Fix anything it reports and run it again. Report the verdict and the test counts.
 - If CI then fails on the PR, read the failing job (and its uploaded reports), fix it on the
   same branch and push again.
-- Fix anything it reports and run it again. Report the verdict and the test counts.
 
 ## 6. Commit (after the owner says to, usually "Push it")
-- `python -I scripts/scan_secrets.py` must end in `CLEAN`.
+- The pre-commit hook (`.githooks/pre-commit`) runs `scan_secrets.py` and only lets the commit
+  through on `CLEAN`. If `git config core.hooksPath` isn't `.githooks` in this clone, run
+  `python -I scripts/scan_secrets.py` by hand first; it must end in `CLEAN`.
 - Stage files by name, never `.idea/`, never `git add -A`.
 - Write the message to a file in the scratchpad and commit with `git commit -F <file>`:
   a title that describes the change (no milestone numbers), a blank line, then
@@ -49,10 +54,12 @@ Each step waits for the owner where it says so. Never skip ahead.
 
 ## 7. Push and open the PR
 - `git push -u origin <branch>`.
-- Write the PR body to a scratchpad file, from release-checker's draft:
-  - **What and why**, **Changes**, and **Checks** as a ticked list of what really passed,
-    with "Tried on the Pixel 7" unticked. Never claim anything ran in CI unless it did.
-  - The deploy order, when both the app and the backend changed.
+- Write a short PR body to a scratchpad file (from release-checker's draft when it ran). The
+  owner reads the diff, so no per-file list:
+  - One to three sentences: what changed and why.
+  - **Checks**: a ticked list of what really passed. Never claim anything ran in CI unless it
+    did. For app changes, add "Tried on the Pixel 7" unticked.
+  - The deploy order, only when both the app and the backend changed.
   - End with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 - `gh pr create --base main --title "<title>" --body-file <file>`. If `gh` isn't installed or
   signed in, print a pre-filled compare link instead
